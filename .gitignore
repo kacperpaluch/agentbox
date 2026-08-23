@@ -1,0 +1,15 @@
+.build/
+.swiftpm/
+.DS_Store
+dist/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcuserstate
+.env
+.env.*
+!.env.example
+mcp-secrets.json
+projects.local.json
+*.pem
+*.p12

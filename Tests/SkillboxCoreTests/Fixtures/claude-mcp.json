@@ -1,0 +1,21 @@
+{
+  "mcpServers" : {
+    "local" : {
+      "args" : [
+        "-y",
+        "pkg"
+      ],
+      "command" : "npx",
+      "env" : {
+        "TOKEN" : "${TOKEN}"
+      }
+    },
+    "remote" : {
+      "headers" : {
+        "Authorization" : "Bearer dummy-secret"
+      },
+      "type" : "http",
+      "url" : "https://example.com/mcp"
+    }
+  }
+}

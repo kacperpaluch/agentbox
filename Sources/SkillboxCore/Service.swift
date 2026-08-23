@@ -1,0 +1,351 @@
+import Foundation
+
+public actor SkillboxService {
+    public let store: SkillboxStore
+    private let fm = FileManager.default
+
+    public init(root: URL? = nil) throws { store = try SkillboxStore(root: root) }
+
+    public func listSkills() async throws -> [Skill] { try await store.catalog().skills.sorted { $0.name < $1.name } }
+    public func listProjects() async throws -> [Project] { try await store.configuration().projects.sorted { $0.name < $1.name } }
+
+    public func skillMarkdown(skillID: String) async throws -> String {
+        guard try await store.catalog().skills.contains(where: { $0.id == skillID }) else { throw SkillboxError.skillNotFound(skillID) }
+        let url = await store.skillsDirectory.appending(path: skillID).appending(path: "SKILL.md")
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    public func allTags() async throws -> [String] {
+        Array(Set(try await store.catalog().skills.flatMap(\.tags))).sorted()
+    }
+
+    public func checkUpdates() async throws -> Set<String> {
+        let skills = try await store.catalog().skills.filter { $0.source.kind == .git }
+        var remoteRevisions: [String: String] = [:]
+        var available = Set<String>()
+        for skill in skills {
+            let ref = skill.source.branch ?? "HEAD"
+            let key = "\(skill.source.location)|\(ref)"
+            let remote: String
+            if let cached = remoteRevisions[key] { remote = cached } else {
+                let output = try ProcessRunner.run("/usr/bin/git", ["ls-remote", skill.source.location, ref])
+                remote = output.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
+                remoteRevisions[key] = remote
+            }
+            if !remote.isEmpty, remote != skill.source.revision { available.insert(skill.id) }
+        }
+        return available
+    }
+
+    @discardableResult
+    public func addLocal(path: String, id suppliedID: String? = nil) async throws -> Skill {
+        let source = URL(fileURLWithPath: path).standardizedFileURL
+        return try await importSkill(from: source, source: SkillSource(kind: .local, location: source.path), suppliedID: suppliedID)
+    }
+
+    @discardableResult
+    public func addGit(url: String, subpath: String? = nil, branch: String? = nil, id: String? = nil) async throws -> Skill {
+        let imported = try await addGitCollection(url: url, subpath: subpath, branch: branch, id: id)
+        guard let first = imported.first else { throw SkillboxError.invalidSkill("repozytorium nie zawiera SKILL.md") }
+        return first
+    }
+
+    public func addGitCollection(url: String, subpath: String? = nil, branch: String? = nil, id: String? = nil) async throws -> [Skill] {
+        let input = Self.normalizeGitInput(url: url, subpath: subpath, branch: branch)
+        guard Self.isAllowedGitLocation(input.url) else { throw SkillboxError.invalidSkill("dozwolone źródła Git: https, http, ssh, git, file lub składnia user@host:path") }
+        let temp = fm.temporaryDirectory.appending(path: "skillbox-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: temp) }
+        var args = ["clone", "--depth", "1"]
+        if let branch = input.branch { args += ["--branch", branch] }
+        args += ["--", input.url, temp.path]
+        _ = try ProcessRunner.run("/usr/bin/git", args)
+        let revision = try ProcessRunner.run("/usr/bin/git", ["rev-parse", "HEAD"], cwd: temp)
+        let base = input.subpath.map { temp.appending(path: $0) } ?? temp
+        let candidates = discoverSkills(in: base)
+        guard !candidates.isEmpty else { throw SkillboxError.invalidSkill("brak SKILL.md w \(input.subpath ?? "repozytorium")") }
+        if id != nil, candidates.count > 1 { throw SkillboxError.invalidSkill("--id można podać tylko dla pojedynczego skilla") }
+        var imported: [Skill] = []
+        for candidate in candidates {
+            let tempPath = temp.resolvingSymlinksInPath().path
+            let candidatePath = candidate.resolvingSymlinksInPath().path
+            let relative: String?
+            if candidatePath == tempPath { relative = nil }
+            else if candidatePath.hasPrefix(tempPath + "/") { relative = String(candidatePath.dropFirst(tempPath.count + 1)) }
+            else { throw SkillboxError.unsafePath(candidatePath) }
+            let source = SkillSource(kind: .git, location: input.url, subpath: relative, branch: input.branch, revision: revision)
+            let skillID = id ?? Self.defaultSkillID(relative: relative, candidate: candidate, repository: input.url)
+            var catalog = try await store.catalog()
+            if let index = catalog.skills.firstIndex(where: { $0.id == skillID }) {
+                let existingLocation = catalog.skills[index].source.location.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                let newLocation = input.url.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                guard catalog.skills[index].source.kind == .git, existingLocation == newLocation else { throw SkillboxError.duplicateSkill(skillID) }
+                try copyReplacing(from: candidate, to: await store.skillsDirectory.appending(path: skillID))
+                catalog.skills[index].source = source
+                catalog.skills[index].updatedAt = .now
+                try await store.save(catalog)
+                imported.append(catalog.skills[index])
+            } else {
+                imported.append(try await importSkill(from: candidate, source: source, suppliedID: skillID))
+            }
+        }
+        return imported
+    }
+
+    private func discoverSkills(in root: URL) -> [URL] {
+        if fm.fileExists(atPath: root.appending(path: "SKILL.md").path) { return [root] }
+        return (fm.enumerator(at: root, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+            .filter { $0.lastPathComponent == "SKILL.md" }.map { $0.deletingLastPathComponent() }
+            .sorted { $0.path < $1.path }
+    }
+
+    private func importSkill(from sourceURL: URL, source: SkillSource, suppliedID: String?) async throws -> Skill {
+        guard fm.fileExists(atPath: sourceURL.appending(path: "SKILL.md").path) else { throw SkillboxError.invalidSkill("brak SKILL.md w \(sourceURL.path)") }
+        let id = suppliedID ?? sourceURL.lastPathComponent.lowercased().replacingOccurrences(of: " ", with: "-")
+        guard id.range(of: "^[a-z0-9]+(?:-[a-z0-9]+)*$", options: .regularExpression) != nil else { throw SkillboxError.invalidSkill(id) }
+        var catalog = try await store.catalog()
+        guard !catalog.skills.contains(where: { $0.id == id }) else { throw SkillboxError.duplicateSkill(id) }
+        let destination = await store.skillsDirectory.appending(path: id)
+        try copyReplacing(from: sourceURL, to: destination)
+        let skill = Skill(id: id, name: id, source: source)
+        catalog.skills.append(skill); try await store.save(catalog)
+        return skill
+    }
+
+    public func setTags(skillID: String, tags: [String]) async throws {
+        var catalog = try await store.catalog()
+        guard let index = catalog.skills.firstIndex(where: { $0.id == skillID }) else { throw SkillboxError.skillNotFound(skillID) }
+        catalog.skills[index].tags = Array(Set(tags.map { $0.lowercased() })).sorted()
+        try await store.save(catalog)
+    }
+
+    public func addTags(skillIDs: [String], tags: [String]) async throws {
+        var catalog = try await store.catalog()
+        let normalized = tags.map { $0.lowercased() }.filter { !$0.isEmpty }
+        var found = Set<String>()
+        for index in catalog.skills.indices where skillIDs.contains(catalog.skills[index].id) {
+            catalog.skills[index].tags = Array(Set(catalog.skills[index].tags + normalized)).sorted()
+            found.insert(catalog.skills[index].id)
+        }
+        if let missing = skillIDs.first(where: { !found.contains($0) }) { throw SkillboxError.skillNotFound(missing) }
+        try await store.save(catalog)
+    }
+
+    public func deleteSkill(skillID: String) async throws {
+        var catalog = try await store.catalog()
+        guard catalog.skills.contains(where: { $0.id == skillID }) else { throw SkillboxError.skillNotFound(skillID) }
+        let directory = await store.skillsDirectory.appending(path: skillID).standardizedFileURL
+        let skillsRoot = await store.skillsDirectory.standardizedFileURL
+        guard directory.deletingLastPathComponent() == skillsRoot else { throw SkillboxError.unsafePath(directory.path) }
+        if fm.fileExists(atPath: directory.path) { try fm.removeItem(at: directory) }
+        catalog.skills.removeAll { $0.id == skillID }
+        try await store.save(catalog)
+        var projects = try await store.configuration()
+        for index in projects.projects.indices { projects.projects[index].skillIDs.removeAll { $0 == skillID } }
+        try await store.save(projects)
+    }
+
+    @discardableResult
+    public func update(skillID: String) async throws -> Skill {
+        var catalog = try await store.catalog()
+        guard let index = catalog.skills.firstIndex(where: { $0.id == skillID }) else { throw SkillboxError.skillNotFound(skillID) }
+        var skill = catalog.skills[index]
+        let destination = await store.skillsDirectory.appending(path: skill.id)
+        switch skill.source.kind {
+        case .local:
+            try copyReplacing(from: URL(fileURLWithPath: skill.source.location), to: destination)
+        case .git:
+            let temp = fm.temporaryDirectory.appending(path: "skillbox-\(UUID().uuidString)")
+            defer { try? fm.removeItem(at: temp) }
+            var args = ["clone", "--depth", "1"]
+            if let branch = skill.source.branch { args += ["--branch", branch] }
+            guard Self.isAllowedGitLocation(skill.source.location) else { throw SkillboxError.invalidSkill("niedozwolone źródło Git") }
+            args += ["--", skill.source.location, temp.path]
+            _ = try ProcessRunner.run("/usr/bin/git", args)
+            skill.source.revision = try ProcessRunner.run("/usr/bin/git", ["rev-parse", "HEAD"], cwd: temp)
+            let source = skill.source.subpath.map { temp.appending(path: $0) } ?? discoverSkills(in: temp).first ?? temp
+            try copyReplacing(from: source, to: destination)
+        }
+        skill.updatedAt = .now; catalog.skills[index] = skill; try await store.save(catalog)
+        return skill
+    }
+
+    @discardableResult
+    public func addProject(name: String, path: String, tools: [Tool]) async throws -> Project {
+        let url = URL(fileURLWithPath: path).standardizedFileURL
+        guard fm.fileExists(atPath: url.path) else { throw SkillboxError.projectNotFound(path) }
+        var config = try await store.configuration()
+        guard !config.projects.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(name) już istnieje") }
+        let project = Project(name: name, path: url.path, tools: tools)
+        config.projects.append(project); try await store.save(config); return project
+    }
+
+    public func configureProject(name: String, skillIDs: [String], tags: [String]) async throws {
+        var config = try await store.configuration()
+        guard let index = config.projects.firstIndex(where: { $0.name == name }) else { throw SkillboxError.projectNotFound(name) }
+        config.projects[index].skillIDs = skillIDs; config.projects[index].tags = tags
+        try await store.save(config)
+    }
+
+    public func configureProject(id: UUID, skillIDs: [String], tags: [String]) async throws {
+        var config = try await store.configuration()
+        guard let index = config.projects.firstIndex(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
+        config.projects[index].skillIDs = skillIDs; config.projects[index].tags = tags
+        try await store.save(config)
+    }
+
+    public func updateProject(_ project: Project) async throws {
+        var config = try await store.configuration()
+        guard let index = config.projects.firstIndex(where: { $0.id == project.id }) else { throw SkillboxError.projectNotFound(project.name) }
+        guard !config.projects.contains(where: { $0.id != project.id && $0.name.caseInsensitiveCompare(project.name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(project.name) już istnieje") }
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
+        config.projects[index] = project
+        try await store.save(config)
+    }
+
+    public func deleteProject(id: UUID) async throws {
+        var config = try await store.configuration()
+        guard config.projects.contains(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
+        config.projects.removeAll { $0.id == id }
+        try await store.save(config)
+        var mcp = try await store.mcpConfiguration()
+        mcp.projectPresetIDs.removeValue(forKey: id.uuidString)
+        var profiles = mcp.projectProfileSelections ?? [:]
+        profiles.removeValue(forKey: id.uuidString)
+        mcp.projectProfileSelections = profiles
+        try await store.save(mcp)
+    }
+
+    public func backupStatus() async throws -> String {
+        let root = store.root
+        guard fm.fileExists(atPath: root.appending(path: ".git").path) else { return "Backup Git nie jest jeszcze skonfigurowany." }
+        let remote = (try? ProcessRunner.run("/usr/bin/git", ["remote", "get-url", "origin"], cwd: root)) ?? "brak zdalnego repozytorium"
+        let changes = try ProcessRunner.run("/usr/bin/git", ["status", "--short"], cwd: root)
+        return "Repozytorium: \(remote)\n\(changes.isEmpty ? "Wszystkie zmiany są zapisane." : changes)"
+    }
+
+    public func copyLibrary(to destination: URL) async throws {
+        let source = store.root.standardizedFileURL
+        let target = destination.standardizedFileURL
+        guard source != target else { return }
+        guard !target.path.hasPrefix(source.path + "/") else { throw SkillboxError.unsafePath("nowy folder nie może znajdować się wewnątrz obecnej biblioteki") }
+        try fm.createDirectory(at: target, withIntermediateDirectories: true)
+        let existing = try fm.contentsOfDirectory(at: target, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent != ".DS_Store" }
+        guard existing.isEmpty else { throw SkillboxError.invalidSkill("wybrany folder nie jest pusty") }
+        for item in try fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil) {
+            try fm.copyItem(at: item, to: target.appending(path: item.lastPathComponent))
+        }
+    }
+
+    public func syncProject(name: String, dryRun: Bool = false) async throws -> [Tool: SyncResult] {
+        let config = try await store.configuration()
+        guard let project = config.projects.first(where: { $0.name == name }) else { throw SkillboxError.projectNotFound(name) }
+        return try await syncProject(id: project.id, dryRun: dryRun)
+    }
+
+    public func syncProject(id: UUID, dryRun: Bool = false) async throws -> [Tool: SyncResult] {
+        let config = try await store.configuration()
+        guard let project = config.projects.first(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
+        let catalog = try await store.catalog()
+        let selected = catalog.skills.filter { project.skillIDs.contains($0.id) || !$0.tags.filter(project.tags.contains).isEmpty }
+        var results: [Tool: SyncResult] = [:]
+        for tool in project.tools {
+            let target = URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath)
+            results[tool] = try await sync(skills: selected, to: target, dryRun: dryRun)
+        }
+        return results
+    }
+
+    public func syncGlobal(tool: Tool, skillIDs: [String], tags: [String] = [], dryRun: Bool = false) async throws -> SyncResult {
+        let catalog = try await store.catalog()
+        let selected = catalog.skills.filter { skillIDs.contains($0.id) || !$0.tags.filter(tags.contains).isEmpty }
+        return try await sync(skills: selected, to: tool.globalSkillsURL(), dryRun: dryRun)
+    }
+
+    private func sync(skills: [Skill], to target: URL, dryRun: Bool) async throws -> SyncResult {
+        guard target.pathComponents.contains("skills"), target.path != "/" else { throw SkillboxError.unsafePath(target.path) }
+        let manifest = target.appending(path: ".skillbox.json")
+        let previous: [String] = (try? JSONDecoder().decode([String].self, from: Data(contentsOf: manifest))) ?? []
+        let current = skills.map(\.id).sorted(); var result = SyncResult()
+        for stale in Set(previous).subtracting(current) { result.removed.append(stale); if !dryRun { try? fm.removeItem(at: target.appending(path: stale)) } }
+        for skill in skills {
+            result.copied.append(skill.id)
+            if !dryRun { try fm.createDirectory(at: target, withIntermediateDirectories: true); try copyReplacing(from: await store.skillsDirectory.appending(path: skill.id), to: target.appending(path: skill.id)) }
+        }
+        if !dryRun { try JSONEncoder().encode(current).write(to: manifest, options: .atomic) }
+        return result
+    }
+
+    public func backup(remote: String? = nil, message: String = "Agentbox backup", push: Bool = true) async throws -> String {
+        let root = store.root
+        if !fm.fileExists(atPath: root.appending(path: ".git").path) { _ = try ProcessRunner.run("/usr/bin/git", ["init"], cwd: root) }
+        try ensureLibraryGitignore(root)
+        if let remote {
+            let existing = try? ProcessRunner.run("/usr/bin/git", ["remote", "get-url", "origin"], cwd: root)
+            _ = try ProcessRunner.run("/usr/bin/git", existing == nil ? ["remote", "add", "origin", remote] : ["remote", "set-url", "origin", remote], cwd: root)
+        }
+        var tracked = [".gitignore", "skills"]
+        for name in ["catalog.json", "mcp.json"] where fm.fileExists(atPath: root.appending(path: name).path) { tracked.append(name) }
+        _ = try ProcessRunner.run("/usr/bin/git", ["add"] + tracked, cwd: root)
+        let staged = try ProcessRunner.run("/usr/bin/git", ["diff", "--cached", "--name-only"], cwd: root)
+        if !staged.isEmpty { _ = try ProcessRunner.run("/usr/bin/git", ["commit", "-m", message], cwd: root) }
+        if push, (try? ProcessRunner.run("/usr/bin/git", ["remote", "get-url", "origin"], cwd: root)) != nil { return try ProcessRunner.run("/usr/bin/git", ["push", "-u", "origin", "HEAD"], cwd: root) }
+        return staged.isEmpty ? "Brak zmian" : "Utworzono lokalny commit"
+    }
+
+    public func automaticBackup(push: Bool) async throws -> String? {
+        let root = store.root
+        guard fm.fileExists(atPath: root.appending(path: ".git").path) else { return nil }
+        return try await backup(message: "Agentbox automatic backup", push: push)
+    }
+
+    private func ensureLibraryGitignore(_ root: URL) throws {
+        let url = root.appending(path: ".gitignore")
+        var text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        for entry in ["projects.local.json", "mcp-secrets.json"] where !text.split(whereSeparator: \.isNewline).contains(Substring(entry)) {
+            if !text.isEmpty && !text.hasSuffix("\n") { text += "\n" }
+            text += entry + "\n"
+        }
+        try text.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private static func isAllowedGitLocation(_ value: String) -> Bool {
+        guard !value.hasPrefix("-") else { return false }
+        if value.range(of: "^[^@\\s]+@[^:\\s]+:.+$", options: .regularExpression) != nil { return true }
+        guard let scheme = URL(string: value)?.scheme?.lowercased() else { return false }
+        return ["https", "http", "ssh", "git", "file"].contains(scheme)
+    }
+
+    private static func defaultSkillID(relative: String?, candidate: URL, repository: String) -> String {
+        let repositoryName: String = {
+            if let parsed = URL(string: repository), !parsed.lastPathComponent.isEmpty { return parsed.lastPathComponent }
+            let tail = repository.split(separator: "/").last.map(String.init) ?? candidate.lastPathComponent
+            return tail.split(separator: ":").last.map(String.init) ?? tail
+        }()
+        let base = relative == nil ? repositoryName : candidate.lastPathComponent
+        let withoutGit = base.hasSuffix(".git") ? String(base.dropLast(4)) : base
+        return withoutGit.lowercased().replacingOccurrences(of: " ", with: "-")
+    }
+
+    static func normalizeGitInput(url: String, subpath: String?, branch: String?) -> (url: String, subpath: String?, branch: String?) {
+        guard let parsed = URL(string: url), parsed.host?.lowercased() == "github.com" else { return (url, subpath, branch) }
+        let parts = parsed.pathComponents.filter { $0 != "/" }
+        guard parts.count >= 5, parts[2] == "tree" else { return (url, subpath, branch) }
+        let repository = parts[1].hasSuffix(".git") ? parts[1] : parts[1] + ".git"
+        let cloneURL = "https://github.com/\(parts[0])/\(repository)"
+        let detectedPath = parts.dropFirst(4).joined(separator: "/")
+        return (cloneURL, subpath ?? (detectedPath.isEmpty ? nil : detectedPath), branch ?? parts[3])
+    }
+
+    private func copyReplacing(from source: URL, to destination: URL) throws {
+        guard fm.fileExists(atPath: source.path) else { throw SkillboxError.invalidSkill(source.path) }
+        let staging = destination.deletingLastPathComponent().appending(path: ".skillbox-stage-\(UUID().uuidString)")
+        try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fm.copyItem(at: source, to: staging)
+        if fm.fileExists(atPath: destination.path) { try fm.removeItem(at: destination) }
+        try fm.moveItem(at: staging, to: destination)
+    }
+}

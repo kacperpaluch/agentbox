@@ -1,0 +1,11 @@
+# >>> skillbox managed MCP >>>
+[mcp_servers.local]
+command = "npx"
+args = ["-y", "pkg"]
+env_vars = ["TOKEN"]
+
+[mcp_servers.remote]
+url = "https://example.com/mcp"
+http_headers = { Authorization = "Bearer dummy-secret" }
+
+# <<< skillbox managed MCP <<<

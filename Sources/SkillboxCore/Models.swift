@@ -1,0 +1,175 @@
+import Foundation
+
+public enum Tool: String, Codable, CaseIterable, Sendable {
+    case claude, codex, opencode
+
+    public var projectSkillsPath: String {
+        switch self {
+        case .claude: ".claude/skills"
+        case .codex: ".codex/skills"
+        case .opencode: ".opencode/skills"
+        }
+    }
+
+    public func globalSkillsURL(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
+        switch self {
+        case .claude: home.appending(path: ".claude/skills")
+        case .codex: home.appending(path: ".codex/skills")
+        case .opencode: home.appending(path: ".config/opencode/skills")
+        }
+    }
+}
+
+public struct SkillSource: Codable, Hashable, Sendable {
+    public enum Kind: String, Codable, Sendable { case local, git }
+    public var kind: Kind
+    public var location: String
+    public var subpath: String?
+    public var branch: String?
+    public var revision: String?
+
+    public init(kind: Kind, location: String, subpath: String? = nil, branch: String? = nil, revision: String? = nil) {
+        self.kind = kind; self.location = location; self.subpath = subpath
+        self.branch = branch; self.revision = revision
+    }
+}
+
+public struct Skill: Codable, Identifiable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+    public var tags: [String]
+    public var source: SkillSource
+    public var updatedAt: Date
+
+    public init(id: String, name: String, tags: [String] = [], source: SkillSource, updatedAt: Date = .now) {
+        self.id = id; self.name = name; self.tags = tags
+        self.source = source; self.updatedAt = updatedAt
+    }
+}
+
+public struct Project: Codable, Identifiable, Hashable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var path: String
+    public var tools: [Tool]
+    public var skillIDs: [String]
+    public var tags: [String]
+
+    public init(id: UUID = UUID(), name: String, path: String, tools: [Tool], skillIDs: [String] = [], tags: [String] = []) {
+        self.id = id; self.name = name; self.path = path; self.tools = tools
+        self.skillIDs = skillIDs; self.tags = tags
+    }
+}
+
+public struct Catalog: Codable, Sendable {
+    public var version = 1
+    public var skills: [Skill] = []
+    public init() {}
+}
+
+public struct LocalConfiguration: Codable, Sendable {
+    public var projects: [Project] = []
+    public var backupRemote: String?
+    public init() {}
+}
+
+public struct SyncResult: Sendable {
+    public var copied: [String] = []
+    public var removed: [String] = []
+    public init() {}
+}
+
+public enum MCPTransport: String, Codable, CaseIterable, Sendable { case stdio, http }
+
+public struct MCPServer: Codable, Identifiable, Hashable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var transport: MCPTransport
+    public var command: String
+    public var arguments: [String]
+    public var url: String
+    /// Maps environment variable passed to the server -> source environment variable name.
+    public var environment: [String: String]
+    /// Maps HTTP header -> source environment variable name. Literal secrets are intentionally unsupported.
+    public var headers: [String: String]
+    public var enabled: Bool
+    public var literalEnvironment: [String: String]?
+    public var literalHeaders: [String: String]?
+    public var secretEnvironment: [String: String]?
+    public var secretHeaders: [String: String]?
+    public var group: String?
+    public var profile: String?
+
+    public init(id: UUID = UUID(), name: String, transport: MCPTransport, command: String = "", arguments: [String] = [], url: String = "", environment: [String: String] = [:], headers: [String: String] = [:], enabled: Bool = true, literalEnvironment: [String: String]? = nil, literalHeaders: [String: String]? = nil, secretEnvironment: [String: String]? = nil, secretHeaders: [String: String]? = nil, group: String? = nil, profile: String? = nil) {
+        self.id = id; self.name = name; self.transport = transport; self.command = command
+        self.arguments = arguments; self.url = url; self.environment = environment
+        self.headers = headers; self.enabled = enabled
+        self.literalEnvironment = literalEnvironment; self.literalHeaders = literalHeaders
+        self.secretEnvironment = secretEnvironment; self.secretHeaders = secretHeaders
+        self.group = group; self.profile = profile
+    }
+}
+
+public struct MCPPreset: Codable, Identifiable, Hashable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var serverIDs: [UUID]
+    public init(id: UUID = UUID(), name: String, serverIDs: [UUID] = []) { self.id = id; self.name = name; self.serverIDs = serverIDs }
+}
+
+public struct MCPConfiguration: Codable, Sendable {
+    public var version = 1
+    public var servers: [MCPServer] = []
+    public var presets: [MCPPreset] = []
+    public var projectPresetIDs: [String: [UUID]] = [:]
+    public var projectProfileSelections: [String: [String: UUID]]?
+    public var aiSettings: MCPAISettings?
+    public init() {}
+}
+
+public enum MCPAIProvider: String, Codable, CaseIterable, Sendable { case openAI, claude }
+
+public struct MCPAISettings: Codable, Sendable {
+    public var provider: MCPAIProvider
+    public var openAIModel: String
+    public var claudeModel: String
+    public init(provider: MCPAIProvider = .openAI, openAIModel: String = "gpt-5.6", claudeModel: String = "claude-sonnet-5") {
+        self.provider = provider; self.openAIModel = openAIModel; self.claudeModel = claudeModel
+    }
+}
+
+public struct MCPImportSummary: Sendable {
+    public var servers: [MCPServer]
+    public var secretCount: Int
+    public var stdioCount: Int
+    public var httpCount: Int
+    public var profileGroups: [String]
+    public init(servers: [MCPServer], secretCount: Int, stdioCount: Int, httpCount: Int, profileGroups: [String]) { self.servers = servers; self.secretCount = secretCount; self.stdioCount = stdioCount; self.httpCount = httpCount; self.profileGroups = profileGroups }
+}
+
+public struct MCPPreview: Sendable {
+    public var tool: Tool
+    public var file: String
+    public var content: String
+    public var added: [String]
+    public var removed: [String]
+    public init(tool: Tool, file: String, content: String, added: [String], removed: [String]) { self.tool = tool; self.file = file; self.content = content; self.added = added; self.removed = removed }
+}
+
+public enum SkillboxError: LocalizedError {
+    case invalidSkill(String), duplicateSkill(String), skillNotFound(String)
+    case projectNotFound(String), commandFailed(String), unsafePath(String)
+    case mcpConflict(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidSkill(let value): "Nieprawidłowy skill: \(value)"
+        case .duplicateSkill(let value): "Skill już istnieje: \(value)"
+        case .skillNotFound(let value): "Nie znaleziono skilla: \(value)"
+        case .projectNotFound(let value): "Nie znaleziono projektu: \(value)"
+        case .commandFailed(let value): "Polecenie nie powiodło się: \(value)"
+        case .unsafePath(let value): "Niebezpieczna ścieżka: \(value)"
+        case .mcpConflict(let value): "Konflikt MCP: \(value)"
+        }
+    }
+}
