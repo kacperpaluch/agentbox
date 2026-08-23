@@ -3,7 +3,8 @@ set -euo pipefail
 
 project_dir="${0:A:h:h}"
 app_path="$project_dir/dist/Agentbox.app"
-dmg_path="$project_dir/dist/Agentbox-0.1.0.dmg"
+version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$project_dir/Resources/Info.plist")"
+dmg_path="$project_dir/dist/Agentbox-$version.dmg"
 staging_dir="$(mktemp -d)"
 trap 'rm -rf "$staging_dir"' EXIT
 

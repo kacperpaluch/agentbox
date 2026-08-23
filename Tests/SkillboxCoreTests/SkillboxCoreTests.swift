@@ -2,6 +2,22 @@ import XCTest
 @testable import SkillboxCore
 
 final class SkillboxCoreTests: XCTestCase {
+    func testExistingMVPLibraryCanBeRecognizedAndOpened() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/legacy")
+        let library = root.appending(path: "old-mvp-library")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try "---\nname: Legacy\ndescription: MVP skill\n---\n".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let original = try SkillboxService(root: library)
+        _ = try await original.addLocal(path: source.path)
+
+        XCTAssertTrue(SkillboxService.isExistingLibrary(at: library))
+        let reopened = try SkillboxService(root: library)
+        try await reopened.validateLibrary()
+        let reopenedIDs = try await reopened.listSkills().map(\.id)
+        XCTAssertEqual(reopenedIDs, ["legacy"])
+    }
+
     func testGitHubTreeURLIsNormalizedToRepositoryBranchAndSubpath() {
         let value = SkillboxService.normalizeGitInput(url: "https://github.com/anthropics/skills/tree/main/skills/docx", subpath: nil, branch: nil)
         XCTAssertEqual(value.url, "https://github.com/anthropics/skills.git")

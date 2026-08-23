@@ -6,6 +6,21 @@ public actor SkillboxService {
 
     public init(root: URL? = nil) throws { store = try SkillboxStore(root: root) }
 
+    public static func isExistingLibrary(at url: URL) -> Bool {
+        let fm = FileManager.default
+        let names = ["catalog.json", "projects.local.json", "mcp.json", "mcp-secrets.json"]
+        if names.contains(where: { fm.fileExists(atPath: url.appending(path: $0).path) }) { return true }
+        var isDirectory: ObjCBool = false
+        return fm.fileExists(atPath: url.appending(path: "skills").path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+
+    public func validateLibrary() async throws {
+        _ = try await store.catalog()
+        _ = try await store.configuration()
+        _ = try await store.mcpConfiguration()
+        _ = try await store.secrets()
+    }
+
     public func listSkills() async throws -> [Skill] { try await store.catalog().skills.sorted { $0.name < $1.name } }
     public func listProjects() async throws -> [Project] { try await store.configuration().projects.sorted { $0.name < $1.name } }
 

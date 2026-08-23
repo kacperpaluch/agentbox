@@ -27,11 +27,11 @@ open dist/Agentbox.app
 ./scripts/build-dmg.sh
 ```
 
-Skrypty wykonują build release, tworzą `dist/Agentbox.app` oraz opcjonalnie `dist/Agentbox-0.1.0.dmg` i podpisują aplikację lokalnym podpisem ad-hoc. W DMG znajduje się także skrót do `Applications`. Taki bundle działa na bieżącym Macu, ale nie jest jeszcze podpisany certyfikatem Apple Developer ani notarized do publicznej dystrybucji, dlatego macOS może przy pierwszym uruchomieniu wymagać użycia `Otwórz` z menu kontekstowego.
+Skrypty wykonują build release, tworzą `dist/Agentbox.app` oraz wersjonowany obraz `dist/Agentbox-<wersja>.dmg` i podpisują aplikację lokalnym podpisem ad-hoc. W DMG znajduje się także skrót do `Applications`. Taki bundle działa na bieżącym Macu, ale nie jest jeszcze podpisany certyfikatem Apple Developer ani notarized do publicznej dystrybucji, dlatego macOS może przy pierwszym uruchomieniu wymagać użycia `Otwórz` z menu kontekstowego.
 
 ## Folder biblioteki
 
-Domyślna lokalizacja to `~/Library/Application Support/Skillbox`. Stara nazwa została zachowana, aby aktualizacja aplikacji nie odcięła danych utworzonych podczas testów MVP. Folder można zmienić w `Ustawienia → Folder biblioteki`; dane zostaną skopiowane do pustego katalogu, a poprzedni pozostanie jako kopia.
+Domyślna lokalizacja to `~/Library/Application Support/Skillbox`. Stara nazwa została zachowana, aby aktualizacja aplikacji nie odcięła danych utworzonych podczas testów MVP. W `Ustawienia → Folder biblioteki` można podłączyć istniejącą bibliotekę bez kopiowania albo wskazać pusty katalog, do którego zostaną skopiowane aktualne dane.
 
 ```text
 Skillbox/

@@ -70,7 +70,23 @@ enum SectionKind: String, CaseIterable, Identifiable {
     func saveAIProvider(_ provider: MCPAIProvider, model: String, key: String?) async { await perform { try await self.service?.saveMCPAIProvider(provider, model: model, apiKey: key); self.message = "Zapisano ustawienia \(provider == .openAI ? "OpenAI" : "Anthropic")" } }
     func moveLibrary(to url: URL) async {
         isWorking = true; defer { isWorking = false }
-        do { try await service?.copyLibrary(to: url); UserDefaults.standard.set(url.path, forKey: "SkillboxLibraryRoot"); try AgentboxRootPreference.save(url); rootPath = url.path; service = try SkillboxService(root: url); await reload(); message = "Biblioteka skopiowana do nowego folderu" }
+        do {
+            let existing = SkillboxService.isExistingLibrary(at: url)
+            if existing {
+                let candidate = try SkillboxService(root: url)
+                try await candidate.validateLibrary()
+                service = candidate
+            } else {
+                try await service?.copyLibrary(to: url)
+                service = try SkillboxService(root: url)
+            }
+            UserDefaults.standard.set(url.standardizedFileURL.path, forKey: "SkillboxLibraryRoot")
+            try AgentboxRootPreference.save(url)
+            rootPath = url.standardizedFileURL.path
+            selection = nil
+            await reload()
+            message = existing ? "Podłączono istniejącą bibliotekę" : "Biblioteka skopiowana do nowego folderu"
+        }
         catch { message = error.localizedDescription }
     }
     private func perform(autoBackup: Bool = false, _ action: @escaping @MainActor () async throws -> Void) async { isWorking = true; defer { isWorking = false }; do { try await action(); await reload(); if autoBackup { scheduleAutomaticBackup() } } catch { await reload(); message = error.localizedDescription } }
@@ -286,7 +302,7 @@ struct SettingsView: View {
         ScrollView { VStack(alignment: .leading, spacing: 20) {
             Label("Ustawienia", systemImage: "gearshape").font(.largeTitle.bold())
             GroupBox("Folder biblioteki") { VStack(alignment: .leading, spacing: 12) { Text(model.rootPath).font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading); Text("Tutaj Agentbox przechowuje skille, katalog, konfigurację projektów i repozytorium backupu Git.").font(.caption).foregroundStyle(.secondary); Button("Wybierz nowy folder…") { chooseFolder() } }.padding(8) }
-            Text("Przy zmianie zawartość zostanie skopiowana do pustego folderu. Dotychczasowy katalog pozostanie na dysku jako kopia bezpieczeństwa.").foregroundStyle(.secondary)
+            Text("Istniejąca biblioteka Agentbox/Skillbox zostanie podłączona bez kopiowania. Jeśli wskażesz pusty folder, obecna biblioteka zostanie do niego skopiowana.").foregroundStyle(.secondary)
             Text("Asystent AI do konfiguracji MCP").font(.title2.bold())
             HStack(alignment: .top, spacing: 16) {
                 AIProviderSettingsCard(title: "OpenAI", icon: "sparkles", modelLabel: "Model OpenAI", modelName: $openAIModel, key: $openAIKey, hasSavedKey: model.hasOpenAIKey) { Task { await model.saveAIProvider(.openAI, model: openAIModel, key: openAIKey.isEmpty ? nil : openAIKey); openAIKey = "" } }
