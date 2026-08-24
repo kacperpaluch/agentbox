@@ -281,6 +281,49 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: projectURL.appending(path: ".mcp.json"), encoding: .utf8), manual)
     }
 
+    func testImportClassificationCanBeOverriddenByUser() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let service = try SkillboxService(root: root)
+        let json = #"{"custom":{"command":"tool","env":{"CREDENTIAL":"hidden-value","TOKEN_LIMIT":"4096"}}}"#
+        let analyzed = try await service.analyzeMCPJSON(json)
+        XCTAssertEqual(analyzed.fields.first(where: { $0.key == "CREDENTIAL" })?.classification, .literal)
+        XCTAssertEqual(analyzed.fields.first(where: { $0.key == "TOKEN_LIMIT" })?.classification, .secret)
+        let overrides: [String: MCPValueClassification] = [
+            "custom|environment|CREDENTIAL": .secret,
+            "custom|environment|TOKEN_LIMIT": .literal
+        ]
+        let imported = try await service.importMCPJSON(json, classifications: overrides)
+        let server = try XCTUnwrap(imported.servers.first)
+        XCTAssertNotNil(server.secretEnvironment?["CREDENTIAL"])
+        XCTAssertEqual(server.literalEnvironment?["TOKEN_LIMIT"], "4096")
+        let secrets = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: root.appending(path: "mcp-secrets.json")))
+        XCTAssertEqual(secrets["mcp/custom/env/CREDENTIAL"], "hidden-value")
+    }
+
+    func testProjectTransactionRollsBackSkillsWhenLaterToolFails() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/demo")
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        try "version one".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        let project = try await service.addProject(name: "rollback", path: projectURL.path, tools: [.claude])
+        try await service.configureProject(id: project.id, skillIDs: ["demo"], tags: [])
+        _ = try await service.syncProject(id: project.id)
+        try "version two".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        _ = try await service.update(skillID: "demo")
+
+        var changedProject = project; changedProject.tools = [.claude, .codex]
+        try await service.updateProject(changedProject)
+        try "blocks directory creation".write(to: projectURL.appending(path: ".codex"), atomically: true, encoding: .utf8)
+        do { _ = try await service.syncProjectTransaction(projectID: project.id); XCTFail("Oczekiwano błędu zapisu") } catch {}
+        let restored = try String(contentsOf: projectURL.appending(path: ".claude/skills/demo/SKILL.md"), encoding: .utf8)
+        XCTAssertEqual(restored, "version one")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appending(path: "data/.agentbox-snapshots").path))
+    }
+
     private func runGit(_ arguments: [String], in directory: URL) throws {
         let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = arguments; process.currentDirectoryURL = directory

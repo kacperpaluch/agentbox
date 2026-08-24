@@ -7,6 +7,7 @@ public actor SkillboxStore {
     private var localURL: URL { root.appending(path: "projects.local.json") }
     private var mcpURL: URL { root.appending(path: "mcp.json") }
     private var secretsURL: URL { root.appending(path: "mcp-secrets.json") }
+    private var snapshotsDirectory: URL { root.appending(path: ".agentbox-snapshots") }
     private let fm = FileManager.default
     private let encoder: JSONEncoder
     private let decoder = JSONDecoder()
@@ -24,9 +25,9 @@ public actor SkillboxStore {
     public func configuration() throws -> LocalConfiguration { try read(localURL, fallback: LocalConfiguration()) }
     public func mcpConfiguration() throws -> MCPConfiguration { try read(mcpURL, fallback: MCPConfiguration()) }
 
-    public func save(_ catalog: Catalog) throws { try atomicWrite(catalog, to: catalogURL) }
-    public func save(_ config: LocalConfiguration) throws { try atomicWrite(config, to: localURL) }
-    public func save(_ config: MCPConfiguration) throws { try atomicWrite(config, to: mcpURL) }
+    public func save(_ catalog: Catalog) throws { try snapshotLibrary(); try atomicWrite(catalog, to: catalogURL) }
+    public func save(_ config: LocalConfiguration) throws { try snapshotLibrary(); try atomicWrite(config, to: localURL) }
+    public func save(_ config: MCPConfiguration) throws { try snapshotLibrary(); try atomicWrite(config, to: mcpURL) }
     public func secrets() throws -> [String: String] { try read(secretsURL, fallback: [:]) }
     public func saveSecrets(_ additions: [String: String]) throws {
         var values: [String: String] = try read(secretsURL, fallback: [:])
@@ -53,5 +54,26 @@ public actor SkillboxStore {
     private func atomicWrite<T: Encodable>(_ value: T, to url: URL) throws {
         let data = try encoder.encode(value)
         try data.write(to: url, options: .atomic)
+    }
+
+    private func snapshotLibrary() throws {
+        let sources = [catalogURL, localURL, mcpURL].filter { fm.fileExists(atPath: $0.path) }
+        guard !sources.isEmpty else { return }
+        let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let name = formatter.string(from: .now).replacingOccurrences(of: ":", with: "-") + "-" + UUID().uuidString
+        let snapshot = snapshotsDirectory.appending(path: name)
+        try fm.createDirectory(at: snapshot, withIntermediateDirectories: true)
+        for source in sources { try fm.copyItem(at: source, to: snapshot.appending(path: source.lastPathComponent)) }
+        try pruneSnapshots(keeping: 10)
+    }
+
+    private func pruneSnapshots(keeping limit: Int) throws {
+        guard fm.fileExists(atPath: snapshotsDirectory.path) else { return }
+        let items = try fm.contentsOfDirectory(at: snapshotsDirectory, includingPropertiesForKeys: [.contentModificationDateKey])
+        let sorted = items.sorted {
+            ((try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) >
+            ((try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
+        }
+        for item in sorted.dropFirst(limit) { try fm.removeItem(at: item) }
     }
 }

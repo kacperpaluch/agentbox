@@ -144,7 +144,30 @@ public struct MCPImportSummary: Sendable {
     public var stdioCount: Int
     public var httpCount: Int
     public var profileGroups: [String]
-    public init(servers: [MCPServer], secretCount: Int, stdioCount: Int, httpCount: Int, profileGroups: [String]) { self.servers = servers; self.secretCount = secretCount; self.stdioCount = stdioCount; self.httpCount = httpCount; self.profileGroups = profileGroups }
+    public var fields: [MCPImportField]
+    public init(servers: [MCPServer], secretCount: Int, stdioCount: Int, httpCount: Int, profileGroups: [String], fields: [MCPImportField] = []) { self.servers = servers; self.secretCount = secretCount; self.stdioCount = stdioCount; self.httpCount = httpCount; self.profileGroups = profileGroups; self.fields = fields }
+}
+
+public enum MCPValueClassification: String, Codable, CaseIterable, Sendable {
+    case environment = "Zmienna systemowa"
+    case secret = "Sekret lokalny"
+    case literal = "Zwykła wartość"
+}
+
+public struct MCPImportField: Identifiable, Hashable, Sendable {
+    public enum Location: String, Codable, Sendable { case environment, header }
+    public var id: String
+    public var serverName: String
+    public var location: Location
+    public var key: String
+    public var displayValue: String
+    public var classification: MCPValueClassification
+
+    public init(serverName: String, location: Location, key: String, displayValue: String, classification: MCPValueClassification) {
+        self.id = "\(serverName)|\(location.rawValue)|\(key)"
+        self.serverName = serverName; self.location = location; self.key = key
+        self.displayValue = displayValue; self.classification = classification
+    }
 }
 
 public struct MCPPreview: Sendable {
@@ -154,6 +177,23 @@ public struct MCPPreview: Sendable {
     public var added: [String]
     public var removed: [String]
     public init(tool: Tool, file: String, content: String, added: [String], removed: [String]) { self.tool = tool; self.file = file; self.content = content; self.added = added; self.removed = removed }
+}
+
+public struct SkillSyncPreview: Sendable {
+    public var tool: Tool
+    public var target: String
+    public var added: [String]
+    public var updated: [String]
+    public var removed: [String]
+    public init(tool: Tool, target: String, added: [String], updated: [String], removed: [String]) {
+        self.tool = tool; self.target = target; self.added = added; self.updated = updated; self.removed = removed
+    }
+}
+
+public struct ProjectSyncPreview: Sendable {
+    public var skills: [SkillSyncPreview]
+    public var mcp: [MCPPreview]
+    public init(skills: [SkillSyncPreview], mcp: [MCPPreview]) { self.skills = skills; self.mcp = mcp }
 }
 
 public enum SkillboxError: LocalizedError {

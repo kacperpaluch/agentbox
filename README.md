@@ -4,6 +4,8 @@ Agentbox to natywna aplikacja macOS i CLI do zarządzania skillami oraz serweram
 
 Projekt jest obecnie MVP. Agentbox nie uruchamia serwerów MCP i nie zastępuje klientów AI — przygotowuje dla nich pliki konfiguracyjne i katalogi skilli.
 
+Szczegółowy opis pierwszego uruchomienia, klasyfikacji sekretów, bezpiecznej synchronizacji i odzyskiwania danych znajduje się w [instrukcji użytkownika](docs/USER_GUIDE.md). Historia wydań i zmian jest prowadzona w [changelogu](CHANGELOG.md).
+
 ## Wymagania i uruchomienie
 
 - macOS 14 lub nowszy,
@@ -109,6 +111,8 @@ Usunięcie serwera usuwa go ze wszystkich presetów i kasuje jego wartości z lo
 
 `Importuj lub użyj AI → Mam JSON` obsługuje cały obiekt z `mcpServers`, samą mapę serwerów oraz plik JSON. Po analizie pokazuje typy, liczbę sekretów i profile. Można zaznaczyć tylko wybrane serwery do importu.
 
+Agentbox proponuje również klasyfikację każdej zmiennej i każdego nagłówka jako `Zmienna systemowa`, `Sekret lokalny` albo `Zwykła wartość`. Przed importem użytkownik może poprawić każdą propozycję. Automatyczne rozpoznawanie jest heurystyką i nie zastępuje sprawdzenia wartości.
+
 ### Konfiguracja z AI
 
 W trybie `Mam instrukcję — przygotuj z AI` można wkleić README, instrukcję z GitHuba albo opis. Agentbox korzysta z OpenAI Responses API lub Anthropic Messages API. Wygenerowany JSON jest zawsze pokazywany i wymaga wyboru oraz zatwierdzenia; istniejące sekrety MCP nie są wysyłane do modelu.
@@ -125,6 +129,8 @@ Agentbox zachowuje niezależne, ręczne ustawienia w plikach projektu. Konflikt 
 ```
 
 Agentbox zachowuje maksymalnie 10 ostatnich katalogów kopii MCP. Jeśli źródłem jest `opencode.jsonc`, podgląd ostrzega, że komentarze i formatowanie zostaną utracone podczas przepisania pliku.
+
+GUI pokazuje również pełny plan zmian skilli dla każdego narzędzia. Synchronizacja skilli i MCP działa jako jedna transakcja: błąd na dowolnym etapie przywraca zarządzane katalogi i pliki do stanu sprzed operacji. Ostatnie kopie znajdują się w `.skillbox/sync-backups/`.
 
 ### Sekrety
 
@@ -171,6 +177,8 @@ swift run agentbox backup --message "Aktualizacja skilli i MCP"
 Pierwsze wywołanie inicjalizuje Git w folderze biblioteki. `--remote` ustawia `origin`, wykonuje commit zmian i próbuje je wypchnąć.
 
 Po pierwszym ręcznym backupie GUI może automatycznie tworzyć lokalne commity po zmianach skilli, tagów, serwerów i presetów MCP. Zmiany wykonane w ciągu 5 sekund są łączone w jeden commit. Automatyczny push do `origin` ma osobny przełącznik i domyślnie jest wyłączony. Projekty, sekrety, klucze AI i sama synchronizacja folderu projektu nie uruchamiają automatycznego backupu.
+
+Przed zapisem danych Agentbox tworzy także lokalny snapshot `catalog.json`, `projects.local.json` i `mcp.json` w `.agentbox-snapshots/`. Zachowuje 10 ostatnich snapshotów; sekrety nie są kopiowane, a folder snapshotów nie trafia do Git.
 
 ## Ograniczenia i bezpieczeństwo MVP
 

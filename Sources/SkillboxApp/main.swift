@@ -17,6 +17,11 @@ enum SectionKind: String, CaseIterable, Identifiable {
     var icon: String { switch self { case .library: "square.grid.2x2"; case .projects: "folder"; case .mcp: "network"; case .backup: "externaldrive.badge.timemachine"; case .settings: "gearshape" } }
 }
 
+struct OperationLogEntry: Identifiable {
+    enum Kind { case success, error, info }
+    let id = UUID(); let date = Date(); let kind: Kind; let text: String
+}
+
 @MainActor final class AppModel: ObservableObject {
     @Published var skills: [Skill] = []
     @Published var projects: [Project] = []
@@ -31,6 +36,7 @@ enum SectionKind: String, CaseIterable, Identifiable {
     @Published var mcp = MCPConfiguration()
     @Published var hasOpenAIKey = false
     @Published var hasAnthropicKey = false
+    @Published var operationLog: [OperationLogEntry] = []
     private var automaticBackupTask: Task<Void, Never>?
     var service: SkillboxService?
     init() {
@@ -62,9 +68,10 @@ enum SectionKind: String, CaseIterable, Identifiable {
     func deleteMCPPreset(_ id: UUID) async { await perform(autoBackup: true) { try await self.service?.deleteMCPPreset(id: id); self.message = "Usunięto preset MCP" } }
     func previewMCP(_ project: Project) async throws -> [MCPPreview] { try await service?.previewMCP(projectID: project.id) ?? [] }
     func syncMCP(_ project: Project) async { await perform { _ = try await self.service?.syncMCP(projectID: project.id); self.message = "Zsynchronizowano MCP dla \(project.name)" } }
-    func syncEverything(_ project: Project) async { await perform { _ = try await self.service?.syncProject(id: project.id); _ = try await self.service?.syncMCP(projectID: project.id); self.message = "Zsynchronizowano skille i MCP dla \(project.name)" } }
+    func previewProjectSync(_ project: Project) async throws -> ProjectSyncPreview { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewProjectSync(projectID: project.id) }
+    func syncEverything(_ project: Project) async { await perform { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille i MCP dla \(project.name)" } }
     func analyzeMCP(_ text: String) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.analyzeMCPJSON(text) }
-    func importMCP(_ text: String, serverNames: Set<String>) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text, serverNames: serverNames); await reload(); scheduleAutomaticBackup(); message = "Zaimportowano \(result.servers.count) serwerów MCP"; return result }
+    func importMCP(_ text: String, serverNames: Set<String>, classifications: [String: MCPValueClassification]) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text, serverNames: serverNames, classifications: classifications); await reload(); scheduleAutomaticBackup(); message = "Zaimportowano \(result.servers.count) serwerów MCP"; record(.success, message); return result }
     func generateMCP(_ instructions: String, settings: MCPAISettings, key: String?) async throws -> String { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; try await service.saveMCPAISettings(settings, apiKey: key); return try await service.generateMCPConfiguration(instructions: instructions, settings: settings) }
     func saveAISettings(_ settings: MCPAISettings, key: String?) async { await perform { try await self.service?.saveMCPAISettings(settings, apiKey: key); self.message = key?.isEmpty == false ? "Zapisano ustawienia AI i klucz API" : "Zapisano ustawienia AI" } }
     func saveAIProvider(_ provider: MCPAIProvider, model: String, key: String?) async { await perform { try await self.service?.saveMCPAIProvider(provider, model: model, apiKey: key); self.message = "Zapisano ustawienia \(provider == .openAI ? "OpenAI" : "Anthropic")" } }
@@ -89,7 +96,9 @@ enum SectionKind: String, CaseIterable, Identifiable {
         }
         catch { message = error.localizedDescription }
     }
-    private func perform(autoBackup: Bool = false, _ action: @escaping @MainActor () async throws -> Void) async { isWorking = true; defer { isWorking = false }; do { try await action(); await reload(); if autoBackup { scheduleAutomaticBackup() } } catch { await reload(); message = error.localizedDescription } }
+    private func perform(autoBackup: Bool = false, _ action: @escaping @MainActor () async throws -> Void) async { isWorking = true; defer { isWorking = false }; do { try await action(); await reload(); if !message.isEmpty { record(.success, message) }; if autoBackup { scheduleAutomaticBackup() } } catch { await reload(); message = error.localizedDescription; record(.error, message) } }
+    private func record(_ kind: OperationLogEntry.Kind, _ text: String) { operationLog.insert(OperationLogEntry(kind: kind, text: text), at: 0); if operationLog.count > 100 { operationLog.removeLast(operationLog.count - 100) } }
+    func reportError(_ error: Error) { message = error.localizedDescription; record(.error, message) }
     private func scheduleAutomaticBackup() {
         guard UserDefaults.standard.object(forKey: "AgentboxAutoBackup") == nil || UserDefaults.standard.bool(forKey: "AgentboxAutoBackup") else { return }
         automaticBackupTask?.cancel()
@@ -107,6 +116,7 @@ struct ContentView: View {
     @StateObject private var model = AppModel(); @State private var section: SectionKind? = .library
     @State private var showGit = false
     @State private var showProject = false
+    @State private var showHistory = false
     var body: some View {
         NavigationSplitView { List(SectionKind.allCases, selection: $section) { item in Label(item.rawValue, systemImage: item.icon).tag(item) }.navigationTitle("Agentbox").navigationSplitViewColumnWidth(min: 180, ideal: 210) } detail: {
             Group { switch section ?? .library { case .library: LibraryView(model: model, showGit: $showGit); case .projects: ProjectsView(model: model, showProject: $showProject); case .mcp: MCPView(model: model); case .backup: BackupView(model: model); case .settings: SettingsView(model: model) } }
@@ -116,7 +126,16 @@ struct ContentView: View {
         .overlay { if model.isWorking { ProgressView().controlSize(.large).padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
         .sheet(isPresented: $showGit) { AddGitView { url, path in Task { await model.addGit(url, subpath: path) } } }
         .sheet(isPresented: $showProject) { ProjectEditor(skills: model.skills, presets: model.mcp.presets, servers: model.mcp.servers, project: nil, selectedPresetIDs: [], selectedProfiles: [:]) { project, presets, profiles in Task { await model.addProject(project, presetIDs: presets, profiles: profiles) } } }
+        .sheet(isPresented: $showHistory) { OperationHistoryView(entries: model.operationLog) }
+        .toolbar { Button { showHistory = true } label: { Label("Historia operacji", systemImage: "clock.arrow.circlepath") } }
     }
+}
+
+struct OperationHistoryView: View {
+    @Environment(\.dismiss) private var dismiss
+    let entries: [OperationLogEntry]
+    private let formatter: DateFormatter = { let value = DateFormatter(); value.dateStyle = .short; value.timeStyle = .medium; return value }()
+    var body: some View { VStack(alignment: .leading, spacing: 14) { HStack { Text("Historia operacji").font(.title2.bold()); Spacer(); Button("Zamknij") { dismiss() } }; if entries.isEmpty { ContentUnavailableView("Brak operacji", systemImage: "clock", description: Text("Sukcesy i błędy z tej sesji pojawią się tutaj.")) } else { List(entries) { entry in HStack(alignment: .top) { Image(systemName: entry.kind == .error ? "xmark.octagon.fill" : entry.kind == .success ? "checkmark.circle.fill" : "info.circle.fill").foregroundStyle(entry.kind == .error ? .red : entry.kind == .success ? .green : .blue); VStack(alignment: .leading) { Text(entry.text).textSelection(.enabled); Text(formatter.string(from: entry.date)).font(.caption).foregroundStyle(.secondary) } } } } }.padding(20).frame(width: 680, height: 520) }
 }
 
 enum SkillSort: String, CaseIterable, Identifiable { case name = "Nazwa", newest = "Najnowsze", source = "Źródło"; var id: String { rawValue } }
@@ -230,6 +249,7 @@ struct MCPImportView: View {
     @State private var apiKey = ""
     @State private var working = false
     @State private var selected = Set<String>()
+    @State private var classifications: [String: MCPValueClassification] = [:]
     var body: some View { VStack(alignment: .leading, spacing: 0) { ScrollView { VStack(alignment: .leading, spacing: 14) {
         Text("Import konfiguracji MCP").font(.title2.bold())
         Picker("Tryb", selection: $useAI) { Text("Mam JSON").tag(false); Text("Mam instrukcję — przygotuj z AI").tag(true) }.pickerStyle(.segmented)
@@ -240,12 +260,23 @@ struct MCPImportView: View {
             Text("Wklej README, fragment instrukcji z GitHuba albo opisz serwer").font(.caption).foregroundStyle(.secondary)
         } else { HStack { Text("Wklej konfigurację Claude (`mcpServers` lub sam obiekt serwerów).").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Wybierz plik…") { chooseFile() } } }
         TextEditor(text: $source).font(.system(.body, design: .monospaced)).frame(minHeight: 220).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
-        if let summary { GroupBox("Rozpoznano") { VStack(alignment: .leading, spacing: 8) { HStack { Text("\(summary.servers.count) serwerów · \(summary.stdioCount) lokalnych · \(summary.httpCount) HTTP · \(summary.secretCount) sekretów"); Spacer(); Button("Wszystkie") { selected = Set(summary.servers.map(\.name)) }.buttonStyle(.link); Button("Wyczyść") { selected.removeAll() }.buttonStyle(.link) }; if !summary.profileGroups.isEmpty { Text("Warianty: \(summary.profileGroups.joined(separator: ", "))").foregroundStyle(.purple) }; ForEach(summary.servers) { server in Toggle(isOn: Binding(get: { selected.contains(server.name) }, set: { if $0 { selected.insert(server.name) } else { selected.remove(server.name) } })) { HStack { Image(systemName: server.transport == .stdio ? "terminal" : "globe"); Text(server.name); Spacer(); if let profile = server.profile { Text(profile).font(.caption).foregroundStyle(.secondary) } } }.toggleStyle(.checkbox) } }.padding(6).frame(maxWidth: .infinity, alignment: .leading) } }
+        if let summary {
+            GroupBox("Rozpoznano") { VStack(alignment: .leading, spacing: 8) {
+                HStack { Text("\(summary.servers.count) serwerów · \(summary.stdioCount) lokalnych · \(summary.httpCount) HTTP"); Spacer(); Button("Wszystkie") { selected = Set(summary.servers.map(\.name)) }.buttonStyle(.link); Button("Wyczyść") { selected.removeAll() }.buttonStyle(.link) }
+                if !summary.profileGroups.isEmpty { Text("Warianty: \(summary.profileGroups.joined(separator: ", "))").foregroundStyle(.purple) }
+                ForEach(summary.servers) { server in Toggle(isOn: Binding(get: { selected.contains(server.name) }, set: { if $0 { selected.insert(server.name) } else { selected.remove(server.name) } })) { HStack { Image(systemName: server.transport == .stdio ? "terminal" : "globe"); Text(server.name); Spacer(); if let profile = server.profile { Text(profile).font(.caption).foregroundStyle(.secondary) } } }.toggleStyle(.checkbox) }
+            }.padding(6).frame(maxWidth: .infinity, alignment: .leading) }
+            if !summary.fields.isEmpty { GroupBox("Klasyfikacja wartości") { VStack(alignment: .leading, spacing: 8) {
+                Text("Agentbox zaproponował typ każdej wartości. Sprawdź go przed importem — zwykłe wartości trafiają do backupu Git, sekrety lokalne nie.").font(.caption).foregroundStyle(.secondary)
+                ForEach(summary.fields.filter { selected.contains($0.serverName) }) { field in HStack { VStack(alignment: .leading, spacing: 2) { Text("\(field.serverName) · \(field.key)").font(.callout.weight(.medium)); Text(field.location == .header ? "Nagłówek" : "Zmienna środowiskowa").font(.caption2).foregroundStyle(.secondary) }; Spacer(); Text(field.displayValue).font(.system(.caption, design: .monospaced)).lineLimit(1).frame(maxWidth: 170, alignment: .trailing); Picker("Typ", selection: classificationBinding(field)) { ForEach(MCPValueClassification.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.labelsHidden().frame(width: 175) }.padding(.vertical, 2) }
+            }.padding(6) } }
+        }
         if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
     }.padding(24) }; Divider(); HStack { if working { ProgressView() }; if summary != nil { Text("Wybrano: \(selected.count)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Anuluj") { dismiss() }; Button(useAI ? "Przygotuj z AI" : "Analizuj") { Task { await prepare() } }.disabled(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working); Button("Importuj wybrane") { Task { await importNow() } }.buttonStyle(.borderedProminent).disabled(summary == nil || selected.isEmpty || working) }.padding(16).background(.bar)
     }.frame(width: 760, height: 680).onAppear { if let settings = model.mcp.aiSettings { provider = settings.provider; openAIModel = settings.openAIModel; claudeModel = settings.claudeModel } } }
-    private func prepare() async { working = true; error = ""; summary = nil; selected.removeAll(); defer { working = false }; do { if useAI { let settings = MCPAISettings(provider: provider, openAIModel: openAIModel, claudeModel: claudeModel); source = try await model.generateMCP(source, settings: settings, key: apiKey.isEmpty ? nil : apiKey) }; let analyzed = try await model.analyzeMCP(source); summary = analyzed; selected = Set(analyzed.servers.map(\.name)) } catch { self.error = error.localizedDescription } }
-    private func importNow() async { working = true; error = ""; defer { working = false }; do { _ = try await model.importMCP(source, serverNames: selected); dismiss() } catch { self.error = error.localizedDescription } }
+    private func prepare() async { working = true; error = ""; summary = nil; selected.removeAll(); classifications.removeAll(); defer { working = false }; do { if useAI { let settings = MCPAISettings(provider: provider, openAIModel: openAIModel, claudeModel: claudeModel); source = try await model.generateMCP(source, settings: settings, key: apiKey.isEmpty ? nil : apiKey) }; let analyzed = try await model.analyzeMCP(source); summary = analyzed; selected = Set(analyzed.servers.map(\.name)); classifications = Dictionary(uniqueKeysWithValues: analyzed.fields.map { ($0.id, $0.classification) }) } catch { self.error = error.localizedDescription; model.reportError(error) } }
+    private func importNow() async { working = true; error = ""; defer { working = false }; do { _ = try await model.importMCP(source, serverNames: selected, classifications: classifications); dismiss() } catch { self.error = error.localizedDescription; model.reportError(error) } }
+    private func classificationBinding(_ field: MCPImportField) -> Binding<MCPValueClassification> { Binding(get: { classifications[field.id] ?? field.classification }, set: { classifications[field.id] = $0 }) }
     private func chooseFile() { let panel = NSOpenPanel(); panel.allowedContentTypes = [.json, .plainText]; panel.canChooseFiles = true; panel.canChooseDirectories = false; if panel.runModal() == .OK, let url = panel.url { do { source = try String(contentsOf: url, encoding: .utf8); summary = nil } catch { self.error = error.localizedDescription } } }
 }
 
@@ -261,19 +292,29 @@ struct MCPPresetEditor: View {
 struct MCPPreviewView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var model: AppModel; let project: Project
-    @State private var previews: [MCPPreview] = []; @State private var error = ""
+    @State private var preview: ProjectSyncPreview?; @State private var error = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Synchronizacja · \(project.name)").font(.title2.bold())
-            Text("Skille zostaną zsynchronizowane po zatwierdzeniu poniższych konfiguracji MCP.").font(.caption).foregroundStyle(.secondary)
+            Text("Poniżej znajduje się pełny plan zmian skilli i konfiguracji MCP. Całość zostanie wycofana, jeśli którykolwiek zapis się nie powiedzie.").font(.caption).foregroundStyle(.secondary)
             Label("Pliki projektu mogą zawierać jawne sekrety. Agentbox doda je do lokalnego .git/info/exclude, ale nie szyfruje ich na dysku.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
-            if previews.contains(where: { $0.file.hasSuffix(".jsonc") }) { Label("Plik OpenCode JSONC zostanie przepisany jako JSON. Komentarze i dotychczasowe formatowanie zostaną usunięte; kopia powstanie w .skillbox/mcp-backups.", systemImage: "text.badge.xmark").font(.caption).foregroundStyle(.orange) }
+            if preview?.mcp.contains(where: { $0.file.hasSuffix(".jsonc") }) == true { Label("Plik OpenCode JSONC zostanie przepisany jako JSON. Komentarze i dotychczasowe formatowanie zostaną usunięte; kopia powstanie w .skillbox/mcp-backups.", systemImage: "text.badge.xmark").font(.caption).foregroundStyle(.orange) }
             if !error.isEmpty { Text(error).foregroundStyle(.red) }
-            else if previews.isEmpty { ProgressView() }
-            else { ScrollView { VStack(alignment: .leading, spacing: 12) { ForEach(previews, id: \.tool.rawValue) { preview in GroupBox { VStack(alignment: .leading, spacing: 8) { Text(preview.file).font(.caption).foregroundStyle(.secondary); HStack { ForEach(preview.added, id: \.self) { Text("+ \($0)").foregroundStyle(.green) }; ForEach(preview.removed, id: \.self) { Text("− \($0)").foregroundStyle(.orange) } }; DisclosureGroup("Podgląd pliku") { Text(preview.content).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6) } }.padding(7) } label: { Label(preview.tool.rawValue.capitalized, systemImage: "doc.text") } } } } }
-            HStack { Spacer(); Button("Zamknij") { dismiss() }; Button("Synchronizuj skille i MCP") { Task { await model.syncEverything(project); dismiss() } }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || previews.isEmpty) }
-        }.padding(24).frame(width: 780, height: 650).task { do { previews = try await model.previewMCP(project) } catch { self.error = error.localizedDescription } }
+            else if preview == nil { ProgressView() }
+            else if let preview { ScrollView { VStack(alignment: .leading, spacing: 12) {
+                Text("Skille").font(.headline)
+                ForEach(preview.skills, id: \.tool) { item in GroupBox { VStack(alignment: .leading, spacing: 6) { Text(item.target).font(.caption).foregroundStyle(.secondary); SyncChangeRows(added: item.added, updated: item.updated, removed: item.removed) }.padding(7) } label: { Label(item.tool.rawValue.capitalized, systemImage: "folder") } }
+                Text("MCP").font(.headline).padding(.top, 4)
+                ForEach(preview.mcp, id: \.tool.rawValue) { item in GroupBox { VStack(alignment: .leading, spacing: 8) { Text(item.file).font(.caption).foregroundStyle(.secondary); SyncChangeRows(added: item.added, updated: [], removed: item.removed); DisclosureGroup("Podgląd pliku") { Text(item.content).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6) } }.padding(7) } label: { Label(item.tool.rawValue.capitalized, systemImage: "doc.text") } }
+            } } }
+            HStack { Spacer(); Button("Zamknij") { dismiss() }; Button("Synchronizuj skille i MCP") { Task { await model.syncEverything(project) } }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || preview == nil || model.isWorking) }
+        }.padding(24).frame(width: 820, height: 700).task { do { preview = try await model.previewProjectSync(project) } catch { self.error = error.localizedDescription; model.reportError(error) } }
     }
+}
+
+struct SyncChangeRows: View {
+    let added: [String], updated: [String], removed: [String]
+    var body: some View { VStack(alignment: .leading, spacing: 3) { if added.isEmpty && updated.isEmpty && removed.isEmpty { Text("Brak zmian").font(.caption).foregroundStyle(.secondary) }; ForEach(added, id: \.self) { Label($0, systemImage: "plus.circle.fill").foregroundStyle(.green) }; ForEach(updated, id: \.self) { Label($0, systemImage: "arrow.triangle.2.circlepath").foregroundStyle(.blue) }; ForEach(removed, id: \.self) { Label($0, systemImage: "minus.circle.fill").foregroundStyle(.orange) } }.font(.caption) }
 }
 
 struct BackupView: View {

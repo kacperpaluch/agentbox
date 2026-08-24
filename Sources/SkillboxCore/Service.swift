@@ -285,7 +285,11 @@ public actor SkillboxService {
         let manifest = target.appending(path: ".skillbox.json")
         let previous: [String] = (try? JSONDecoder().decode([String].self, from: Data(contentsOf: manifest))) ?? []
         let current = skills.map(\.id).sorted(); var result = SyncResult()
-        for stale in Set(previous).subtracting(current) { result.removed.append(stale); if !dryRun { try? fm.removeItem(at: target.appending(path: stale)) } }
+        for stale in Set(previous).subtracting(current) {
+            result.removed.append(stale)
+            let staleURL = target.appending(path: stale)
+            if !dryRun, fm.fileExists(atPath: staleURL.path) { try fm.removeItem(at: staleURL) }
+        }
         for skill in skills {
             result.copied.append(skill.id)
             if !dryRun { try fm.createDirectory(at: target, withIntermediateDirectories: true); try copyReplacing(from: await store.skillsDirectory.appending(path: skill.id), to: target.appending(path: skill.id)) }
@@ -320,7 +324,7 @@ public actor SkillboxService {
     private func ensureLibraryGitignore(_ root: URL) throws {
         let url = root.appending(path: ".gitignore")
         var text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-        for entry in ["projects.local.json", "mcp-secrets.json"] where !text.split(whereSeparator: \.isNewline).contains(Substring(entry)) {
+        for entry in ["projects.local.json", "mcp-secrets.json", ".agentbox-snapshots/"] where !text.split(whereSeparator: \.isNewline).contains(Substring(entry)) {
             if !text.isEmpty && !text.hasSuffix("\n") { text += "\n" }
             text += entry + "\n"
         }
@@ -360,7 +364,16 @@ public actor SkillboxService {
         let staging = destination.deletingLastPathComponent().appending(path: ".skillbox-stage-\(UUID().uuidString)")
         try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fm.copyItem(at: source, to: staging)
-        if fm.fileExists(atPath: destination.path) { try fm.removeItem(at: destination) }
-        try fm.moveItem(at: staging, to: destination)
+        let previous = destination.deletingLastPathComponent().appending(path: ".skillbox-previous-\(UUID().uuidString)")
+        let existed = fm.fileExists(atPath: destination.path)
+        if existed { try fm.moveItem(at: destination, to: previous) }
+        do {
+            try fm.moveItem(at: staging, to: destination)
+            if existed { try? fm.removeItem(at: previous) }
+        } catch {
+            try? fm.removeItem(at: staging)
+            if existed, fm.fileExists(atPath: previous.path) { try? fm.moveItem(at: previous, to: destination) }
+            throw error
+        }
     }
 }
