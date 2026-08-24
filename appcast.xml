@@ -6,6 +6,28 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.5.0</title>
+      <pubDate>Mon, 24 Aug 2026 08:13:07 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.5.0</link>
+      <sparkle:version>10</sparkle:version>
+      <sparkle:shortVersionString>0.5.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.5.0</h2>
+        <ul>
+          <li>Projekty są grupowane według bezpośredniego folderu nadrzędnego.</li>
+          <li>Nowy zbiorczy podgląd pokazuje zmiany dla wszystkich projektów przed pierwszym zapisem.</li>
+          <li>Wszystkie projekty można synchronizować jednym przyciskiem.</li>
+          <li>Każdy projekt zachowuje własny transakcyjny backup i rollback.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.5.0/Agentbox-0.5.0.dmg"
+        length="4625753"
+        type="application/octet-stream"
+        sparkle:edSignature="26EomQHdmsW1qYTCL2d2D2iiXOdndofFKLZDhkE5Zado+U0RAIAU8bj9b1x1My4NvoxXptyHtQUiI0GVGS6QBQ==" />
+    </item>
+    <item>
       <title>Agentbox 0.4.2</title>
       <pubDate>Mon, 24 Aug 2026 07:51:54 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.4.2</link>
