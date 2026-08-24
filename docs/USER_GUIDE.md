@@ -1,5 +1,11 @@
 # Agentbox — instrukcja użytkownika
 
+## Instalacja CLI
+
+Wersja DMG zawiera aplikację oraz polecenie terminalowe. Po przeniesieniu Agentbox do folderu `Aplikacje` otwórz `Ustawienia → Wiersz poleceń (CLI)` i wybierz `Zainstaluj CLI`. Agentbox utworzy dowiązanie `/usr/local/bin/agentbox`; macOS może poprosić o hasło administratora. Symlink wskazuje plik wewnątrz aplikacji, dlatego aktualizacja Agentbox aktualizuje również CLI.
+
+Po instalacji otwórz nowe okno Terminala i wykonaj np. `agentbox project list`. Polecenie `agentbox update --all` sprawdza i pobiera wszystkie dostępne aktualizacje skilli Git do biblioteki. Nie kopiuje ich automatycznie do projektów — użyj potem `agentbox sync project <nazwa>` albo `Synchronizuj wszystko` w GUI. Komenda `agentbox refresh` łączy aktualizację skilli, pełny backup lokalny, backup Git i transakcyjną synchronizację wszystkich projektów w jeden workflow. Pełna lista poleceń znajduje się w [instrukcji CLI](CLI.md).
+
 ## Pierwsze uruchomienie
 
 1. Dodaj skill z lokalnego katalogu albo repozytorium Git.

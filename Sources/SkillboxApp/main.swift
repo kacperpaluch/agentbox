@@ -465,6 +465,61 @@ struct UpdateSettingsCard: View {
     }.padding(8) } }
 }
 
+@MainActor final class CLISettingsModel: ObservableObject {
+    @Published var status = ""
+    @Published var installed = false
+    private let destination = URL(fileURLWithPath: "/usr/local/bin/agentbox")
+
+    init() { refresh() }
+
+    func refresh() {
+        guard let bundledCLI else { status = "Ta kompilacja aplikacji nie zawiera CLI."; installed = false; return }
+        guard let linked = try? FileManager.default.destinationOfSymbolicLink(atPath: destination.path) else {
+            if FileManager.default.fileExists(atPath: destination.path) { status = "Ścieżka /usr/local/bin/agentbox jest zajęta przez inny plik. Agentbox go nie nadpisze." }
+            else { status = "CLI nie jest zainstalowane w /usr/local/bin." }
+            installed = false; return
+        }
+        installed = URL(fileURLWithPath: linked).standardizedFileURL == bundledCLI.standardizedFileURL
+        status = installed ? "CLI jest zainstalowane: /usr/local/bin/agentbox" : "Ścieżka /usr/local/bin/agentbox prowadzi do innego pliku. Agentbox go nie nadpisze."
+    }
+
+    func install() {
+        guard let bundledCLI else { status = "Ta kompilacja aplikacji nie zawiera CLI."; return }
+        guard !Bundle.main.bundleURL.path.hasPrefix("/Volumes/") else { status = "Najpierw przenieś Agentbox do folderu Aplikacje i uruchom go ponownie."; return }
+        let fm = FileManager.default
+        if fm.fileExists(atPath: destination.path) || (try? fm.destinationOfSymbolicLink(atPath: destination.path)) != nil {
+            refresh()
+            if !installed { status = "Ścieżka /usr/local/bin/agentbox jest zajęta. Usuń istniejący plik ręcznie, jeśli chcesz go zastąpić." }
+            return
+        }
+        do {
+            if fm.isWritableFile(atPath: destination.deletingLastPathComponent().path) {
+                try fm.createSymbolicLink(at: destination, withDestinationURL: bundledCLI)
+            } else {
+                let escaped = bundledCLI.path.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+                let source = "do shell script \"/bin/mkdir -p /usr/local/bin && /bin/ln -s \" & quoted form of \"\(escaped)\" & \" /usr/local/bin/agentbox\" with administrator privileges"
+                var scriptError: NSDictionary?
+                NSAppleScript(source: source)?.executeAndReturnError(&scriptError)
+                if let scriptError { throw NSError(domain: "AgentboxCLIInstaller", code: 1, userInfo: [NSLocalizedDescriptionKey: scriptError[NSAppleScript.errorMessage] as? String ?? "Nie udało się zainstalować CLI."]) }
+            }
+            refresh()
+        } catch { status = "Nie udało się zainstalować CLI: \(error.localizedDescription)"; installed = false }
+    }
+
+    private var bundledCLI: URL? {
+        let value = Bundle.main.bundleURL.appending(path: "Contents/MacOS/agentbox")
+        return FileManager.default.isExecutableFile(atPath: value.path) ? value : nil
+    }
+}
+
+struct CLISettingsCard: View {
+    @StateObject private var model = CLISettingsModel()
+    var body: some View { GroupBox("Wiersz poleceń (CLI)") { VStack(alignment: .leading, spacing: 10) {
+        Text(model.status).font(.caption).foregroundStyle(model.installed ? .green : .secondary).textSelection(.enabled)
+        HStack { Text("Po instalacji użyj np. `agentbox project list` w nowym oknie Terminala.").font(.caption).foregroundStyle(.secondary); Spacer(); Button(model.installed ? "Zainstalowano" : "Zainstaluj CLI") { model.install() }.disabled(model.installed) }
+    }.padding(8) }.onAppear { model.refresh() } }
+}
+
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     let updater: SPUUpdater
@@ -476,6 +531,7 @@ struct SettingsView: View {
         ScrollView { VStack(alignment: .leading, spacing: 20) {
             Label("Ustawienia", systemImage: "gearshape").font(.largeTitle.bold())
             UpdateSettingsCard(updater: updater)
+            CLISettingsCard()
             GroupBox("Folder biblioteki") { VStack(alignment: .leading, spacing: 12) { Text(model.rootPath).font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading); Text("Tutaj Agentbox przechowuje skille, katalog, konfigurację projektów i repozytorium backupu Git.").font(.caption).foregroundStyle(.secondary); Button("Wybierz nowy folder…") { chooseFolder() } }.padding(8) }
             Text("Istniejąca biblioteka Agentbox/Skillbox zostanie podłączona bez kopiowania. Jeśli wskażesz pusty folder, obecna biblioteka zostanie do niego skopiowana.").foregroundStyle(.secondary)
             Text("Asystent AI do konfiguracji MCP").font(.title2.bold())

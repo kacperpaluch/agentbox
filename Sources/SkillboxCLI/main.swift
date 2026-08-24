@@ -30,16 +30,48 @@ struct AgentboxCLI {
             try await service.setTags(skillID: args[1], tags: Array(args.dropFirst(2))); print("Zapisano tagi")
         case "update":
             guard args.count >= 2 else { print("Użycie: agentbox update <skill|--all>"); return }
-            let ids = args[1] == "--all" ? try await service.listSkills().map(\.id) : [args[1]]
-            for id in ids { _ = try await service.update(skillID: id); print("Zaktualizowano \(id)") }
+            if args[1] == "--all" {
+                print("Sprawdzanie aktualizacji…")
+                let ids = try await service.checkUpdates().sorted()
+                guard !ids.isEmpty else { print("Wszystkie skille są aktualne"); return }
+                print("Dostępne aktualizacje: \(ids.count)")
+                for id in ids { _ = try await service.update(skillID: id); print("Zaktualizowano \(id)") }
+            } else {
+                _ = try await service.update(skillID: args[1]); print("Zaktualizowano \(args[1])")
+            }
         case "project": try await projectCommand(service, Array(args.dropFirst()))
         case "sync": try await syncCommand(service, Array(args.dropFirst()))
+        case "refresh": try await refreshCommand(service, args)
         case "backup":
             let output = try await service.backup(remote: option("--remote", in: args), message: option("--message", in: args) ?? "Skillbox backup")
             print(output)
         case "mcp": try await mcpCommand(service, Array(args.dropFirst()))
         default: printHelp()
         }
+    }
+
+    static func refreshCommand(_ service: SkillboxService, _ args: [String]) async throws {
+        print("1/4 Sprawdzanie aktualizacji skilli…")
+        let updates = try await service.checkUpdates().sorted()
+        if updates.isEmpty { print("Wszystkie skille są aktualne") }
+        else { for id in updates { _ = try await service.update(skillID: id); print("Zaktualizowano \(id)") } }
+
+        print("2/4 Tworzenie pełnego backupu lokalnego…")
+        let local = try await service.createFullBackup(applicationVersion: "CLI")
+        print("Utworzono \(local.name)")
+
+        print("3/4 Tworzenie backupu Git…")
+        let git = try await service.backup(remote: option("--remote", in: args), message: option("--message", in: args) ?? "Agentbox refresh", push: true, requireRemote: true)
+        print(git)
+
+        print("4/4 Synchronizacja projektów…")
+        let projects = try await service.listProjects()
+        for project in projects {
+            let preview = try await service.syncProjectTransaction(projectID: project.id)
+            let skillChanges = preview.skills.reduce(0) { $0 + $1.added.count + $1.updated.count + $1.removed.count }
+            print("Zsynchronizowano \(project.name): \(skillChanges) operacji na skillach, \(preview.mcp.count) plików MCP")
+        }
+        print("Gotowe: zaktualizowano \(updates.count) skilli i zsynchronizowano \(projects.count) projektów")
     }
 
     static func projectCommand(_ service: SkillboxService, _ args: [String]) async throws {
@@ -102,6 +134,7 @@ struct AgentboxCLI {
       agentbox project add|set|list ...
       agentbox sync project <name> [--dry-run]
       agentbox sync global <claude|codex|opencode> --skills a,b [--tags x]
+      agentbox refresh [--remote git-url] [--message text]
       agentbox backup [--remote git-url] [--message text]
       agentbox mcp list|server|assign|preview|sync ...
     """) }

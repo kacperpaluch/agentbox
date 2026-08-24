@@ -300,7 +300,7 @@ public actor SkillboxService {
         return result
     }
 
-    public func backup(remote: String? = nil, message: String = "Agentbox backup", push: Bool = true) async throws -> String {
+    public func backup(remote: String? = nil, message: String = "Agentbox backup", push: Bool = true, requireRemote: Bool = false) async throws -> String {
         let root = store.root
         if !fm.fileExists(atPath: root.appending(path: ".git").path) { _ = try ProcessRunner.run("/usr/bin/git", ["init"], cwd: root) }
         try ensureLibraryGitignore(root)
@@ -308,12 +308,14 @@ public actor SkillboxService {
             let existing = try? ProcessRunner.run("/usr/bin/git", ["remote", "get-url", "origin"], cwd: root)
             _ = try ProcessRunner.run("/usr/bin/git", existing == nil ? ["remote", "add", "origin", remote] : ["remote", "set-url", "origin", remote], cwd: root)
         }
+        let hasRemote = (try? ProcessRunner.run("/usr/bin/git", ["remote", "get-url", "origin"], cwd: root)) != nil
+        if requireRemote, !hasRemote { throw SkillboxError.commandFailed("brak zdalnego repozytorium Git; skonfiguruj origin lub podaj --remote") }
         var tracked = [".gitignore", "skills"]
         for name in ["catalog.json", "mcp.json"] where fm.fileExists(atPath: root.appending(path: name).path) { tracked.append(name) }
         _ = try ProcessRunner.run("/usr/bin/git", ["add"] + tracked, cwd: root)
         let staged = try ProcessRunner.run("/usr/bin/git", ["diff", "--cached", "--name-only"], cwd: root)
         if !staged.isEmpty { _ = try ProcessRunner.run("/usr/bin/git", ["commit", "-m", message], cwd: root) }
-        if push, (try? ProcessRunner.run("/usr/bin/git", ["remote", "get-url", "origin"], cwd: root)) != nil { return try ProcessRunner.run("/usr/bin/git", ["push", "-u", "origin", "HEAD"], cwd: root) }
+        if push, hasRemote { return try ProcessRunner.run("/usr/bin/git", ["push", "-u", "origin", "HEAD"], cwd: root) }
         return staged.isEmpty ? "Brak zmian" : "Utworzono lokalny commit"
     }
 

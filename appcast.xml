@@ -6,6 +6,29 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.4.1</title>
+      <pubDate>Mon, 24 Aug 2026 07:46:54 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.4.1</link>
+      <sparkle:version>8</sparkle:version>
+      <sparkle:shortVersionString>0.4.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.4.1</h2>
+        <ul>
+          <li>CLI jest dołączone do aplikacji i obrazu DMG.</li>
+          <li>Instalacja polecenia agentbox jest dostępna w ustawieniach.</li>
+          <li>agentbox update --all sprawdza i pobiera dostępne aktualizacje skilli Git.</li>
+          <li>agentbox refresh aktualizuje skille, wykonuje lokalny backup i push Git oraz synchronizuje wszystkie projekty.</li>
+          <li>Rozszerzona dokumentacja instalacji i użycia CLI.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.4.1/Agentbox-0.4.1.dmg"
+        length="3634988"
+        type="application/octet-stream"
+        sparkle:edSignature="JPheRbKV9upMuSdXwLXneHKDVH1L3nMTGNzNyRvxujXOxONl5U49dPIw9w/AZefdYTawp3X6B0JAN8eC8IIsBg==" />
+    </item>
+    <item>
       <title>Agentbox 0.4.0</title>
       <pubDate>Mon, 24 Aug 2026 07:34:33 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.4.0</link>

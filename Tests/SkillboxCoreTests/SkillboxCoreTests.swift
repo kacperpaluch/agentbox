@@ -141,6 +141,17 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertTrue(ignore.contains("projects.local.json") && ignore.contains("mcp-secrets.json"))
     }
 
+    func testBackupCanRequireConfiguredRemote() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        do {
+            _ = try await service.backup(push: true, requireRemote: true)
+            XCTFail("Backup wymagający remote powinien zakończyć się błędem")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("zdalnego repozytorium Git"))
+        }
+    }
+
     func testAutomaticBackupRequiresInitializationAndCommitsOnlyNewChanges() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let source = root.appending(path: "source/demo")

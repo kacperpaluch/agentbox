@@ -1,15 +1,17 @@
 # Agentbox CLI — instrukcja
 
-CLI korzysta z tej samej biblioteki co aplikacja. Uruchom pomoc poleceniem:
+CLI korzysta z tej samej biblioteki co aplikacja. W wydaniu DMG przejdź do `Ustawienia → Wiersz poleceń (CLI)` i wybierz `Zainstaluj CLI`. Aplikacja utworzy dowiązanie `/usr/local/bin/agentbox` do binarki dołączonej do bundla, dlatego CLI będzie aktualizowane razem z aplikacją.
+
+Po instalacji uruchom pomoc poleceniem:
 
 ```bash
-swift run agentbox --help
+agentbox --help
 ```
 
-Gotową binarkę release można wywoływać jako `.build/release/agentbox`. Zmienna `SKILLBOX_HOME` wskazuje inną bibliotekę:
+Podczas pracy ze źródłami można używać `swift run agentbox --help` albo `.build/release/agentbox`. Zmienna `SKILLBOX_HOME` wskazuje inną bibliotekę:
 
 ```bash
-SKILLBOX_HOME="$HOME/Documents/AgentboxData" swift run agentbox list
+SKILLBOX_HOME="$HOME/Documents/AgentboxData" agentbox list
 ```
 
 ## Skille
@@ -24,6 +26,8 @@ agentbox update --all
 ```
 
 `add` kopiuje lokalny skill albo importuje wszystkie znalezione `SKILL.md` z Git. `tag` zastępuje listę tagów wskazanego skilla. `update` działa dla skilli pochodzących z Git.
+
+`agentbox update --all` najpierw sprawdza zdalne rewizje wszystkich skilli Git, a następnie pobiera wyłącznie dostępne aktualizacje. Skille lokalne są pomijane. Aktualizacja biblioteki nie zmienia automatycznie plików projektów — po niej uruchom `agentbox sync project <nazwa>` dla projektów, które mają otrzymać nowe wersje.
 
 ## Projekty
 
@@ -45,6 +49,15 @@ agentbox sync global codex --skills docx --dry-run
 ```
 
 `--dry-run` pokazuje liczbę planowanych kopii i usunięć bez zapisu. CLI rozdziela synchronizację skilli i MCP; GUI wykonuje je razem jako transakcję.
+
+## Pełny workflow
+
+```bash
+agentbox refresh
+agentbox refresh --remote git@github.com:user/agentbox-backup.git --message "Aktualizacja biblioteki"
+```
+
+`refresh` wykonuje kolejno: sprawdzenie i pobranie aktualizacji skilli Git, pełny backup lokalny, commit i push backupu Git oraz transakcyjną synchronizację skilli i MCP we wszystkich projektach. Push jest obowiązkowy; jeśli biblioteka nie ma skonfigurowanego `origin`, podaj `--remote`. Błąd zatrzymuje workflow, a synchronizacja aktualnie przetwarzanego projektu korzysta z automatycznego rollbacku. Projekty zakończone wcześniej pozostają zsynchronizowane.
 
 ## MCP
 
