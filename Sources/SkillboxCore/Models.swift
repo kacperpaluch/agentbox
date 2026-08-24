@@ -99,14 +99,16 @@ public struct MCPServer: Codable, Identifiable, Hashable, Sendable {
     public var secretHeaders: [String: String]?
     public var group: String?
     public var profile: String?
+    public var tags: [String]?
 
-    public init(id: UUID = UUID(), name: String, transport: MCPTransport, command: String = "", arguments: [String] = [], url: String = "", environment: [String: String] = [:], headers: [String: String] = [:], enabled: Bool = true, literalEnvironment: [String: String]? = nil, literalHeaders: [String: String]? = nil, secretEnvironment: [String: String]? = nil, secretHeaders: [String: String]? = nil, group: String? = nil, profile: String? = nil) {
+    public init(id: UUID = UUID(), name: String, transport: MCPTransport, command: String = "", arguments: [String] = [], url: String = "", environment: [String: String] = [:], headers: [String: String] = [:], enabled: Bool = true, literalEnvironment: [String: String]? = nil, literalHeaders: [String: String]? = nil, secretEnvironment: [String: String]? = nil, secretHeaders: [String: String]? = nil, group: String? = nil, profile: String? = nil, tags: [String]? = nil) {
         self.id = id; self.name = name; self.transport = transport; self.command = command
         self.arguments = arguments; self.url = url; self.environment = environment
         self.headers = headers; self.enabled = enabled
         self.literalEnvironment = literalEnvironment; self.literalHeaders = literalHeaders
         self.secretEnvironment = secretEnvironment; self.secretHeaders = secretHeaders
         self.group = group; self.profile = profile
+        self.tags = tags
     }
 }
 
@@ -123,6 +125,8 @@ public struct MCPConfiguration: Codable, Sendable {
     public var presets: [MCPPreset] = []
     public var projectPresetIDs: [String: [UUID]] = [:]
     public var projectProfileSelections: [String: [String: UUID]]?
+    public var projectServerIDs: [String: [UUID]]?
+    public var projectServerTags: [String: [String]]?
     public var aiSettings: MCPAISettings?
     public init() {}
 }

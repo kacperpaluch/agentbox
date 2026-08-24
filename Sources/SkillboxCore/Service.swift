@@ -228,6 +228,8 @@ public actor SkillboxService {
         var profiles = mcp.projectProfileSelections ?? [:]
         profiles.removeValue(forKey: id.uuidString)
         mcp.projectProfileSelections = profiles
+        var servers = mcp.projectServerIDs ?? [:]; servers.removeValue(forKey: id.uuidString); mcp.projectServerIDs = servers
+        var tags = mcp.projectServerTags ?? [:]; tags.removeValue(forKey: id.uuidString); mcp.projectServerTags = tags
         try await store.save(mcp)
     }
 

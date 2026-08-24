@@ -5,7 +5,7 @@
 1. Dodaj skill z lokalnego katalogu albo repozytorium Git.
 2. Dodaj projekt i wybierz obsługiwane narzędzia.
 3. Przypisz skille bezpośrednio lub przez tagi dynamiczne.
-4. Opcjonalnie zaimportuj serwery MCP i utwórz preset.
+4. Opcjonalnie zaimportuj serwery MCP i przypisz im tagi.
 5. W projekcie wybierz `Synchronizuj wszystko`, sprawdź plan zmian i zatwierdź.
 6. Skonfiguruj lokalny lub zdalny backup Git biblioteki.
 
@@ -29,9 +29,15 @@ Sekret przechowywany poza backupem biblioteki może zostać zapisany jawnie w wy
 
 ## Podgląd i synchronizacja
 
+### Wybór MCP w projekcie
+
+Serwery MCP wybiera się tak samo jak skille: pojedynczo albo dynamicznie według tagów. Oba sposoby można łączyć, a projekt może korzystać równocześnie z dowolnej liczby serwerów, również takich, które wcześniej były traktowane jako wzajemnie wykluczające się warianty.
+
+Tagi dodaje się w szczegółach serwera MCP. Menu `Używane tagi` pokazuje istniejące wartości, co pomaga zachować jednolite nazwy. To samo menu jest dostępne podczas tagowania pojedynczych i wielu skilli. Stare przypisania presetów są zachowane przy odczycie i zamieniane na bezpośredni wybór serwerów przy następnym zapisie projektu.
+
 ### Dodawanie wielu projektów
 
-W sekcji `Projekty` wybierz `Dodaj wiele`, a następnie wskaż folder nadrzędny. Agentbox pokaże jego bezpośrednie, nieukryte podfoldery. Zaznacz projekty i ustaw wspólne narzędzia, pojedyncze skille, tagi dynamiczne, presety oraz warianty MCP. Podfolder zapisany już jako projekt jest oznaczony i nie można dodać go ponownie.
+W sekcji `Projekty` wybierz `Dodaj wiele`, a następnie wskaż folder nadrzędny. Agentbox pokaże jego bezpośrednie, nieukryte podfoldery. Zaznacz projekty i ustaw wspólne narzędzia, pojedyncze skille i MCP oraz dynamiczne tagi obu typów. Podfolder zapisany już jako projekt jest oznaczony i nie można dodać go ponownie.
 
 Ustawienia są kopiowane w chwili importu. Późniejsza edycja jednego projektu nie zmienia pozostałych; folder nadrzędny nie jest trwałym szablonem ani źródłem dziedziczenia.
 

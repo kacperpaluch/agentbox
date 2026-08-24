@@ -29,6 +29,7 @@ extension SkillboxService {
         }
         config.servers.removeAll { $0.id == id }
         for index in config.presets.indices { config.presets[index].serverIDs.removeAll { $0 == id } }
+        if var assignments = config.projectServerIDs { for key in assignments.keys { assignments[key]?.removeAll { $0 == id } }; config.projectServerIDs = assignments }
         try await store.save(config)
     }
 
@@ -53,6 +54,17 @@ extension SkillboxService {
         try await store.save(config)
     }
 
+    public func setMCPServers(projectID: UUID, serverIDs: [UUID], tags: [String]) async throws {
+        var config = try await store.mcpConfiguration()
+        var assignments = config.projectServerIDs ?? [:]
+        assignments[projectID.uuidString] = Array(Set(serverIDs))
+        config.projectServerIDs = assignments
+        var tagAssignments = config.projectServerTags ?? [:]
+        tagAssignments[projectID.uuidString] = Array(Set(tags.map { $0.lowercased() })).sorted()
+        config.projectServerTags = tagAssignments
+        try await store.save(config)
+    }
+
     public func mcpPresetIDs(projectID: UUID) async throws -> [UUID] {
         try await store.mcpConfiguration().projectPresetIDs[projectID.uuidString] ?? []
     }
@@ -64,14 +76,10 @@ extension SkillboxService {
         guard FileManager.default.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
         let mcp = try await store.mcpConfiguration()
         let presetIDs = Set(mcp.projectPresetIDs[projectID.uuidString] ?? [])
-        let serverIDs = Set(mcp.presets.filter { presetIDs.contains($0.id) }.flatMap(\.serverIDs))
-        let candidates = mcp.servers.filter { serverIDs.contains($0.id) && $0.enabled }
-        let selections = mcp.projectProfileSelections?[projectID.uuidString] ?? [:]
-        var servers = candidates.filter { server in
-            guard let group = server.group else { return true }
-            let groupCandidates = candidates.filter { $0.group == group }
-            return selections[group].map { $0 == server.id } ?? (groupCandidates.first?.id == server.id)
-        }
+        var serverIDs = Set(mcp.presets.filter { presetIDs.contains($0.id) }.flatMap(\.serverIDs))
+        serverIDs.formUnion(mcp.projectServerIDs?[projectID.uuidString] ?? [])
+        let tags = Set(mcp.projectServerTags?[projectID.uuidString] ?? [])
+        var servers = mcp.servers.filter { serverIDs.contains($0.id) || !tags.isDisjoint(with: $0.tags ?? []) }.filter(\.enabled)
         servers.sort { $0.name < $1.name }
         let secrets = try await store.secrets()
         return try project.tools.map { try MCPRenderer.preview(tool: $0, project: URL(fileURLWithPath: project.path), servers: servers, secrets: secrets) }

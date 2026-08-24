@@ -41,7 +41,7 @@ Domyślna lokalizacja to `~/Library/Application Support/Skillbox`. Stara nazwa z
 Skillbox/
 ├── catalog.json           # katalog skilli, źródła i tagi
 ├── projects.local.json    # projekty i lokalne ścieżki
-├── mcp.json               # serwery, presety i przypisania MCP
+├── mcp.json               # serwery, tagi i przypisania MCP
 ├── mcp-secrets.json       # sekrety i klucze AI, bez szyfrowania
 └── skills/
     └── nazwa-skilla/SKILL.md
@@ -87,7 +87,7 @@ swift run agentbox update my-skill
 
 ## Projekty i synchronizacja
 
-Projekt wskazuje istniejący folder na dysku oraz obsługiwane narzędzia. Można mu przypisać pojedyncze skille, tagi dynamiczne, presety MCP i warianty serwerów, np. `n8n: Domyślny` albo `n8n: Tailscale`.
+Projekt wskazuje istniejący folder na dysku oraz obsługiwane narzędzia. Można mu przypisać pojedyncze skille i serwery MCP albo wybierać oba typy dynamicznie według tagów.
 
 Opcja `Dodaj wiele` przyjmuje folder nadrzędny, wykrywa jego bezpośrednie podfoldery i pozwala utworzyć z nich projekty z jednym wspólnym zestawem ustawień. Foldery już dodane do Agentbox są pomijane. Po imporcie każdy projekt ma niezależną kopię konfiguracji i może być edytowany osobno.
 
@@ -105,15 +105,15 @@ Usunięcie projektu usuwa jedynie wpis i przypisania MCP z Agentbox. Folder proj
 
 ## MCP
 
-### Serwery, presety i profile
+### Serwery i tagi
 
-Obsługiwane są lokalne serwery STDIO i zdalne HTTP, argumenty, zmienne środowiskowe, nagłówki, wartości lokalne oraz odwołania do zmiennych systemowych. Serwery można łączyć w presety. Wykryte warianty jednego serwera można wybierać osobno dla każdego projektu.
+Obsługiwane są lokalne serwery STDIO i zdalne HTTP, argumenty, zmienne środowiskowe, nagłówki, wartości lokalne oraz odwołania do zmiennych systemowych. Każdy serwer może mieć tagi. Projekt wybiera dowolne pojedyncze serwery albo wszystkie serwery oznaczone wskazanym tagiem; serwery `n8n` i `n8n-tailscale` mogą działać równocześnie.
 
-Usunięcie serwera usuwa go ze wszystkich presetów i kasuje jego wartości z lokalnego pliku sekretów. Usunięcie presetu usuwa jego przypisania do projektów. Wynikowe pliki projektów są aktualizowane podczas kolejnej synchronizacji.
+Usunięcie serwera usuwa jego bezpośrednie przypisania i kasuje jego wartości z lokalnego pliku sekretów. Wynikowe pliki projektów są aktualizowane podczas kolejnej synchronizacji.
 
 ### Import JSON
 
-`Importuj lub użyj AI → Mam JSON` obsługuje cały obiekt z `mcpServers`, samą mapę serwerów oraz plik JSON. Po analizie pokazuje typy, liczbę sekretów i profile. Można zaznaczyć tylko wybrane serwery do importu.
+`Importuj lub użyj AI → Mam JSON` obsługuje cały obiekt z `mcpServers`, samą mapę serwerów oraz plik JSON. Po analizie pokazuje typy i liczbę sekretów. Można zaznaczyć tylko wybrane serwery do importu, a po imporcie przypisać im tagi.
 
 Agentbox proponuje również klasyfikację każdej zmiennej i każdego nagłówka jako `Zmienna systemowa`, `Sekret lokalny` albo `Zwykła wartość`. Przed importem użytkownik może poprawić każdą propozycję. Automatyczne rozpoznawanie jest heurystyką i nie zastępuje sprawdzenia wartości.
 
@@ -162,8 +162,7 @@ Serwery takie jak Senuto zapisuje się tylko jako URL. Logowanie przez przegląd
 ```bash
 swift run agentbox mcp server add context7 --command npx --args "-y,@upstash/context7-mcp"
 swift run agentbox mcp server add senuto --url https://mcp.senuto.com/mcp
-swift run agentbox mcp preset add seo --servers context7,senuto
-swift run agentbox mcp assign website --presets seo
+swift run agentbox mcp assign website --servers context7,senuto --tags seo
 swift run agentbox mcp preview website
 swift run agentbox mcp sync website
 ```
@@ -182,7 +181,7 @@ swift run agentbox backup --message "Aktualizacja skilli i MCP"
 
 Pierwsze wywołanie inicjalizuje Git w folderze biblioteki. `--remote` ustawia `origin`, wykonuje commit zmian i próbuje je wypchnąć.
 
-Po pierwszym ręcznym backupie GUI może automatycznie tworzyć lokalne commity po zmianach skilli, tagów, serwerów i presetów MCP. Zmiany wykonane w ciągu 5 sekund są łączone w jeden commit. Automatyczny push do `origin` ma osobny przełącznik i domyślnie jest wyłączony. Projekty, sekrety, klucze AI i sama synchronizacja folderu projektu nie uruchamiają automatycznego backupu.
+Po pierwszym ręcznym backupie GUI może automatycznie tworzyć lokalne commity po zmianach skilli, tagów i serwerów MCP. Zmiany wykonane w ciągu 5 sekund są łączone w jeden commit. Automatyczny push do `origin` ma osobny przełącznik i domyślnie jest wyłączony. Projekty, sekrety, klucze AI i sama synchronizacja folderu projektu nie uruchamiają automatycznego backupu.
 
 Przed zapisem danych Agentbox tworzy także lokalny snapshot `catalog.json`, `projects.local.json` i `mcp.json` w `.agentbox-snapshots/`. Zachowuje 10 ostatnich snapshotów; sekrety nie są kopiowane, a folder snapshotów nie trafia do Git.
 
@@ -200,9 +199,9 @@ Przed zapisem danych Agentbox tworzy także lokalny snapshot `catalog.json`, `pr
 
 1. Dodaj skille z dysku lub Git.
 2. Przypisz im tagi.
-3. Zaimportuj serwery MCP i utwórz presety.
+3. Zaimportuj serwery MCP i przypisz im tagi.
 4. Dodaj projekt i wskaż jego folder.
-5. Wybierz narzędzia, skille, tagi, presety i profile MCP.
+5. Wybierz narzędzia, skille oraz serwery MCP pojedynczo lub według tagów.
 6. Kliknij `Synchronizuj wszystko`.
 7. Sprawdź podgląd i zatwierdź zapis.
 8. Uruchom wybranego klienta w folderze projektu.

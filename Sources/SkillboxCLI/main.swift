@@ -67,32 +67,28 @@ struct AgentboxCLI {
     }
 
     static func mcpCommand(_ service: SkillboxService, _ args: [String]) async throws {
-        guard let action = args.first else { print("Użycie: agentbox mcp list|server|preset|assign|preview|sync"); return }
+        guard let action = args.first else { print("Użycie: agentbox mcp list|server|assign|preview|sync"); return }
         let config = try await service.mcpConfiguration()
         switch action {
         case "list":
-            for server in config.servers { print("server\t\(server.name)\t\(server.transport.rawValue)") }
-            for preset in config.presets { print("preset\t\(preset.name)\t\(preset.serverIDs.count) servers") }
+            for server in config.servers { print("server\t\(server.name)\t\(server.transport.rawValue)\t\((server.tags ?? []).joined(separator: ","))") }
         case "server" where args.count >= 3 && args[1] == "add":
             let name = args[2]
-            if let url = option("--url", in: args) { try await service.saveMCPServer(MCPServer(name: name, transport: .http, url: url, headers: mapOption("--headers", in: args))) }
-            else if let command = option("--command", in: args) { try await service.saveMCPServer(MCPServer(name: name, transport: .stdio, command: command, arguments: csvOption("--args", in: args), environment: mapOption("--env", in: args))) }
+            if let url = option("--url", in: args) { try await service.saveMCPServer(MCPServer(name: name, transport: .http, url: url, headers: mapOption("--headers", in: args), tags: csvOption("--tags", in: args))) }
+            else if let command = option("--command", in: args) { try await service.saveMCPServer(MCPServer(name: name, transport: .stdio, command: command, arguments: csvOption("--args", in: args), environment: mapOption("--env", in: args), tags: csvOption("--tags", in: args))) }
             else { throw SkillboxError.invalidSkill("podaj --url lub --command") }
             print("Dodano serwer \(name)")
-        case "preset" where args.count >= 3 && args[1] == "add":
-            let names = Set(csvOption("--servers", in: args)); let ids = config.servers.filter { names.contains($0.name) }.map(\.id)
-            try await service.saveMCPPreset(MCPPreset(name: args[2], serverIDs: ids)); print("Dodano preset \(args[2])")
         case "assign" where args.count >= 2:
             guard let project = try await service.listProjects().first(where: { $0.name == args[1] }) else { throw SkillboxError.projectNotFound(args[1]) }
-            let names = Set(csvOption("--presets", in: args)); let ids = config.presets.filter { names.contains($0.name) }.map(\.id)
-            try await service.setMCPPresets(projectID: project.id, presetIDs: ids); print("Przypisano presety")
+            let names = Set(csvOption("--servers", in: args)); let ids = config.servers.filter { names.contains($0.name) }.map(\.id)
+            try await service.setMCPServers(projectID: project.id, serverIDs: ids, tags: csvOption("--tags", in: args)); print("Przypisano serwery MCP")
         case "preview" where args.count >= 2:
             guard let project = try await service.listProjects().first(where: { $0.name == args[1] }) else { throw SkillboxError.projectNotFound(args[1]) }
             for preview in try await service.previewMCP(projectID: project.id) { print("--- \(preview.file)\n\(preview.content)") }
         case "sync" where args.count >= 2:
             guard let project = try await service.listProjects().first(where: { $0.name == args[1] }) else { throw SkillboxError.projectNotFound(args[1]) }
             _ = try await service.syncMCP(projectID: project.id); print("Zsynchronizowano MCP")
-        default: print("Użycie: agentbox mcp list | server add <name> --url URL|--command CMD [--args a,b] | preset add <name> --servers a,b | assign <project> --presets a,b | preview <project> | sync <project>")
+        default: print("Użycie: agentbox mcp list | server add <name> --url URL|--command CMD [--args a,b] [--tags x,y] | assign <project> --servers a,b [--tags x,y] | preview <project> | sync <project>")
         }
     }
 
@@ -107,6 +103,6 @@ struct AgentboxCLI {
       agentbox sync project <name> [--dry-run]
       agentbox sync global <claude|codex|opencode> --skills a,b [--tags x]
       agentbox backup [--remote git-url] [--message text]
-      agentbox mcp list|server|preset|assign|preview|sync ...
+      agentbox mcp list|server|assign|preview|sync ...
     """) }
 }

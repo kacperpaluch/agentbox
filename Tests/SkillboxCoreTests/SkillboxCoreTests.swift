@@ -363,6 +363,22 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: projectURL.appending(path: ".claude/skills/demo/SKILL.md"), encoding: .utf8), "version one")
     }
 
+    func testProjectSelectsMCPServersDirectlyAndByTagWithoutProfileExclusion() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let project = try await service.addProject(name: "mcp-tags", path: projectURL.path, tools: [.claude])
+        let direct = MCPServer(name: "n8n", transport: .http, url: "https://example.test/mcp", group: "n8n", profile: "Domyślny", tags: ["automation"])
+        let tagged = MCPServer(name: "n8n-tailscale", transport: .http, url: "https://tailscale.example.test/mcp", group: "n8n", profile: "Tailscale", tags: ["private"])
+        try await service.saveMCPServer(direct); try await service.saveMCPServer(tagged)
+        try await service.setMCPServers(projectID: project.id, serverIDs: [direct.id], tags: ["private"])
+        let previews = try await service.previewMCP(projectID: project.id)
+        let preview = try XCTUnwrap(previews.first)
+        XCTAssertTrue(preview.content.contains("\"n8n\""))
+        XCTAssertTrue(preview.content.contains("\"n8n-tailscale\""))
+    }
+
     private func runGit(_ arguments: [String], in directory: URL) throws {
         let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = arguments; process.currentDirectoryURL = directory

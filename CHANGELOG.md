@@ -6,6 +6,19 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-24
+
+### Dodano
+
+- Tagi serwerów MCP i dynamiczne przypisywanie serwerów do projektów według tagów.
+- Wybór dowolnej liczby pojedynczych serwerów MCP w edytorze projektu i imporcie wielu projektów.
+- Listę już używanych tagów przy tagowaniu skilli i serwerów MCP.
+
+### Zmieniono
+
+- Presety i wymuszony wybór jednego wariantu MCP zostały zastąpione bezpośrednim wyborem serwerów oraz tagami.
+- Stare przypisania presetów są odczytywane jako konkretne serwery i migrowane przy zapisie projektu.
+
 ## [0.3.0] - 2026-08-24
 
 ### Dodano
@@ -66,7 +79,8 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 - Lokalny i zdalny backup Git biblioteki bez sekretów i ścieżek projektów.
 - Obraz instalacyjny DMG podpisany ad-hoc.
 
-[Unreleased]: https://github.com/kacperpaluch/agentbox/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/kacperpaluch/agentbox/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/kacperpaluch/agentbox/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/kacperpaluch/agentbox/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kacperpaluch/agentbox/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/kacperpaluch/agentbox/releases/tag/v0.1.1

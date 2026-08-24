@@ -6,6 +6,29 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.3.1</title>
+      <pubDate>Mon, 24 Aug 2026 05:10:00 +0000</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.3.1</link>
+      <sparkle:version>5</sparkle:version>
+      <sparkle:shortVersionString>0.3.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.3.1</h2>
+        <ul>
+          <li>Dowolny wybór pojedynczych serwerów MCP w projekcie.</li>
+          <li>Dynamiczne przypisywanie MCP według tagów, analogicznie do skilli.</li>
+          <li>Usunięcie presetów i wymuszonego wyboru jednego wariantu MCP.</li>
+          <li>Lista już używanych tagów podczas tagowania skilli i MCP.</li>
+          <li>Zachowanie i migracja wcześniejszych przypisań presetów.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.3.1/Agentbox-0.3.1.dmg"
+        length="4065246"
+        type="application/octet-stream"
+        sparkle:edSignature="tZXkV5NDs/RloofaTGHXHohAUkln+jvTM2Vz4vBJY6ftpzejHQgPjkP8CdghNS7PlCkHSZkIv1UMOa2KcqsrAg==" />
+    </item>
+    <item>
       <title>Agentbox 0.3.0</title>
       <pubDate>Mon, 24 Aug 2026 04:50:00 +0000</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.3.0</link>
