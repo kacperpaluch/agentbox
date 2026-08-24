@@ -507,7 +507,7 @@ struct UpdateSettingsCard: View {
     }
 
     private var bundledCLI: URL? {
-        let value = Bundle.main.bundleURL.appending(path: "Contents/MacOS/agentbox")
+        let value = Bundle.main.bundleURL.appending(path: "Contents/Helpers/agentbox")
         return FileManager.default.isExecutableFile(atPath: value.path) ? value : nil
     }
 }

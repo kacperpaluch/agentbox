@@ -6,6 +6,28 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.4.2</title>
+      <pubDate>Mon, 24 Aug 2026 07:51:54 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.4.2</link>
+      <sparkle:version>9</sparkle:version>
+      <sparkle:shortVersionString>0.4.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.4.2</h2>
+        <ul>
+          <li>Naprawiono krytyczny błąd uruchamiania GUI w wersji 0.4.1.</li>
+          <li>CLI znajduje się teraz w oddzielnym katalogu Contents/Helpers.</li>
+          <li>Build sprawdza, czy pliki wykonywalne GUI i CLI są odrębne.</li>
+          <li>Publikacja release czyści lokalny folder dist po potwierdzonym uploadzie.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.4.2/Agentbox-0.4.2.dmg"
+        length="4580956"
+        type="application/octet-stream"
+        sparkle:edSignature="Hlw3MCdFR1zeEy2RfhRSuf9/BOz0sZMcrAdXVSY9r3WHYc2EW66HXTs9KfzK7dc+xaxBL4knR1oK5igCK6cuAw==" />
+    </item>
+    <item>
       <title>Agentbox 0.4.1</title>
       <pubDate>Mon, 24 Aug 2026 07:46:54 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.4.1</link>

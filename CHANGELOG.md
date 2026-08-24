@@ -6,6 +6,17 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-24
+
+### Zmieniono
+
+- Skrypt publikacji GitHub Release czyści lokalne artefakty `dist/` dopiero po potwierdzonym uploadzie DMG.
+
+### Naprawiono
+
+- Krytyczny błąd pakowania 0.4.1, w którym CLI `agentbox` nadpisywało plik GUI `Agentbox` na systemach plików nierozróżniających wielkości liter.
+- CLI jest przechowywane w osobnym katalogu `Contents/Helpers`, a build odrzuca identyczne pliki wykonywalne GUI i CLI.
+
 ## [0.4.1] - 2026-08-24
 
 ### Dodano
@@ -118,7 +129,8 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 - Lokalny i zdalny backup Git biblioteki bez sekretów i ścieżek projektów.
 - Obraz instalacyjny DMG podpisany ad-hoc.
 
-[Unreleased]: https://github.com/kacperpaluch/agentbox/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/kacperpaluch/agentbox/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/kacperpaluch/agentbox/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/kacperpaluch/agentbox/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/kacperpaluch/agentbox/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/kacperpaluch/agentbox/compare/v0.3.1...v0.3.2

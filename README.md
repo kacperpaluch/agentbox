@@ -29,6 +29,8 @@ open dist/Agentbox.app
 ./scripts/build-dmg.sh
 ```
 
+Publikację gotowego DMG można wykonać przez `./scripts/publish-release.sh <wersja> <plik-notatek>`. Skrypt tworzy GitHub Release, potwierdza upload artefaktu i dopiero wtedy usuwa lokalne `Agentbox.app` oraz `Agentbox-*.dmg` z `dist/`.
+
 Skrypty wykonują build release GUI i CLI, umieszczają oba pliki wykonywalne w `dist/Agentbox.app`, tworzą wersjonowany obraz `dist/Agentbox-<wersja>.dmg` i podpisują aplikację lokalnym podpisem ad-hoc. W DMG znajduje się także skrót do `Applications`. Po przeniesieniu aplikacji do `Aplikacje` polecenie terminalowe można włączyć przez `Ustawienia → Wiersz poleceń (CLI) → Zainstaluj CLI`. Symlink wskazuje binarkę wewnątrz aplikacji, więc aktualizacje Agentbox obejmują też CLI. Taki bundle działa na bieżącym Macu, ale nie jest jeszcze podpisany certyfikatem Apple Developer ani notarized do publicznej dystrybucji, dlatego macOS może przy pierwszym uruchomieniu wymagać użycia `Otwórz` z menu kontekstowego.
 
 Od wersji 0.3.0 Agentbox sprawdza raz dziennie podpisany kanał aktualizacji Sparkle. Zachowanie można zmienić w `Ustawienia → Aktualizacje`, a ręczne sprawdzenie uruchomić z menu aplikacji. Wersję 0.3.0 trzeba jeszcze zainstalować ręcznie; kolejne wydania będą już dostępne z poziomu aplikacji. Brak Developer ID oznacza, że przy pierwszym uruchomieniu nowo zainstalowanej wersji macOS może nadal wyświetlić ostrzeżenie Gatekeepera.
