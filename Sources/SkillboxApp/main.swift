@@ -8,10 +8,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) { NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true); DispatchQueue.main.async { NSApp.windows.first?.makeKeyAndOrderFront(nil) } }
 }
 
+@MainActor final class UpdateFeedDelegate: NSObject, SPUUpdaterDelegate {
+    func feedURLString(for updater: SPUUpdater) -> String? {
+        guard let base = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
+              var components = URLComponents(string: base) else { return nil }
+        var items = components.queryItems ?? []
+        items.removeAll { $0.name == "cacheBust" }
+        items.append(URLQueryItem(name: "cacheBust", value: String(Int(Date().timeIntervalSince1970))))
+        components.queryItems = items
+        return components.url?.absoluteString
+    }
+}
+
+enum AppVersion {
+    static var display: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+        return "Wersja \(version) (\(build))"
+    }
+}
+
 @main struct AgentboxApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    private let updateFeedDelegate: UpdateFeedDelegate
     private let updaterController: SPUStandardUpdaterController
-    init() { updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil) }
+    init() { let delegate = UpdateFeedDelegate(); updateFeedDelegate = delegate; updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: delegate, userDriverDelegate: nil) }
     var body: some Scene {
         WindowGroup { ContentView(updater: updaterController.updater) }.defaultSize(width: 1100, height: 720)
             .commands { CommandGroup(after: .appInfo) { CheckForUpdatesView(updater: updaterController.updater) } }
@@ -134,7 +155,7 @@ struct ContentView: View {
     @State private var showHistory = false
     init(updater: SPUUpdater) { self.updater = updater; _model = StateObject(wrappedValue: AppModel()) }
     var body: some View {
-        NavigationSplitView { List(SectionKind.allCases, selection: $section) { item in Label(item.rawValue, systemImage: item.icon).tag(item) }.navigationTitle("Agentbox").navigationSplitViewColumnWidth(min: 180, ideal: 210) } detail: {
+        NavigationSplitView { VStack(spacing: 0) { List(SectionKind.allCases, selection: $section) { item in Label(item.rawValue, systemImage: item.icon).tag(item) }.navigationTitle("Agentbox"); Divider(); Text(AppVersion.display).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(12) }.navigationSplitViewColumnWidth(min: 180, ideal: 210) } detail: {
             Group { switch section ?? .library { case .library: LibraryView(model: model, showGit: $showGit); case .projects: ProjectsView(model: model, showProject: $showProject); case .mcp: MCPView(model: model); case .backup: BackupView(model: model); case .recovery: RecoveryView(model: model); case .settings: SettingsView(model: model, updater: updater) } }
         }
         .overlay(alignment: .bottom) { if !model.message.isEmpty { StatusToast(text: model.message) { model.message = "" } } }
@@ -408,7 +429,7 @@ struct UpdateSettingsCard: View {
             get: { model.automaticallyDownloads },
             set: { value in model.setAutomaticallyDownloads(value) }
         )).disabled(!model.automaticallyChecks)
-        HStack { Text("Wersja \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Sprawdź teraz") { model.check() }.disabled(!model.canCheckForUpdates) }
+        HStack { Text(AppVersion.display).font(.caption).foregroundStyle(.secondary); Spacer(); Button("Sprawdź teraz") { model.check() }.disabled(!model.canCheckForUpdates) }
         Text("Aktualizacje są pobierane z GitHub Releases i weryfikowane podpisem EdDSA przed instalacją.").font(.caption).foregroundStyle(.secondary)
     }.padding(8) } }
 }

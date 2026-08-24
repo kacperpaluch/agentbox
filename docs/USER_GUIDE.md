@@ -13,6 +13,8 @@
 
 Od wersji 0.3.0 Agentbox używa Sparkle i raz dziennie sprawdza podpisany kanał aktualizacji. W `Ustawienia → Aktualizacje` można osobno włączyć automatyczne sprawdzanie oraz pobieranie, a przycisk `Sprawdź teraz` uruchamia kontrolę ręcznie. To samo polecenie jest dostępne w menu aplikacji.
 
+Numer zainstalowanej wersji i buildu jest stale widoczny na dole paska bocznego. Każde sprawdzenie aktualizacji używa unikalnego parametru URL, dzięki czemu nieaktualna kopia feedu nie jest pobierana z cache.
+
 Każdy obraz aktualizacji jest weryfikowany kluczem EdDSA osadzonym w aplikacji. Prywatny klucz wydawcy pozostaje w macOS Keychain i nie jest przechowywany w repozytorium. Ponieważ wydanie nie ma jeszcze podpisu Developer ID ani notaryzacji Apple, Gatekeeper może wymagać zatwierdzenia aplikacji przez `Otwórz` z menu kontekstowego. Wersję 0.3.0 należy zainstalować ręcznie; mechanizm automatyczny obsłuży następne wydania.
 
 ## Klasyfikacja wartości MCP

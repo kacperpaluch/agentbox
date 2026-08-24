@@ -6,6 +6,26 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.3.2</title>
+      <pubDate>Mon, 24 Aug 2026 05:18:00 +0000</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.3.2</link>
+      <sparkle:version>6</sparkle:version>
+      <sparkle:shortVersionString>0.3.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.3.2</h2>
+        <ul>
+          <li>Sprawdzanie aktualizacji zawsze omija nieaktualny cache feedu.</li>
+          <li>Numer wersji i buildu jest stale widoczny na pasku bocznym.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.3.2/Agentbox-0.3.2.dmg"
+        length="4071414"
+        type="application/octet-stream"
+        sparkle:edSignature="GU3M4SoMVcMUgoa1N/Et1lwwYm3wwpgKuxCAOKqfwYvaeMd/cvaNqFU9lw0bkE52bBkJ9A0fEAmncAf3GXcHAA==" />
+    </item>
+    <item>
       <title>Agentbox 0.3.1</title>
       <pubDate>Mon, 24 Aug 2026 05:10:00 +0000</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.3.1</link>
