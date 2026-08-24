@@ -162,9 +162,8 @@ public struct MCPImportSummary: Sendable {
     public var secretCount: Int
     public var stdioCount: Int
     public var httpCount: Int
-    public var profileGroups: [String]
     public var fields: [MCPImportField]
-    public init(servers: [MCPServer], secretCount: Int, stdioCount: Int, httpCount: Int, profileGroups: [String], fields: [MCPImportField] = []) { self.servers = servers; self.secretCount = secretCount; self.stdioCount = stdioCount; self.httpCount = httpCount; self.profileGroups = profileGroups; self.fields = fields }
+    public init(servers: [MCPServer], secretCount: Int, stdioCount: Int, httpCount: Int, fields: [MCPImportField] = []) { self.servers = servers; self.secretCount = secretCount; self.stdioCount = stdioCount; self.httpCount = httpCount; self.fields = fields }
 }
 
 public enum MCPValueClassification: String, Codable, CaseIterable, Sendable {

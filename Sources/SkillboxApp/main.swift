@@ -47,7 +47,7 @@ enum SectionKind: String, CaseIterable, Identifiable {
 }
 
 struct OperationLogEntry: Identifiable {
-    enum Kind { case success, error, info }
+    enum Kind { case success, error }
     let id = UUID(); let date = Date(); let kind: Kind; let text: String
 }
 
@@ -91,10 +91,8 @@ struct OperationLogEntry: Identifiable {
     func addProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async { await perform { if let created = try await self.service?.addProject(name: project.name, path: project.path, tools: project.tools) { try await self.service?.configureProject(id: created.id, skillIDs: project.skillIDs, tags: project.tags); try await self.service?.setMCPServers(projectID: created.id, serverIDs: serverIDs, tags: serverTags) }; self.message = "Dodano projekt \(project.name)" } }
     func addProjects(_ projects: [Project], serverIDs: [UUID], serverTags: [String]) async { await perform { for project in projects { if let created = try await self.service?.addProject(name: project.name, path: project.path, tools: project.tools) { try await self.service?.configureProject(id: created.id, skillIDs: project.skillIDs, tags: project.tags); try await self.service?.setMCPServers(projectID: created.id, serverIDs: serverIDs, tags: serverTags) } }; self.message = "Dodano projekty: \(projects.count)" } }
     func updateProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async { await perform { try await self.service?.updateProject(project); try await self.service?.setMCPServers(projectID: project.id, serverIDs: serverIDs, tags: serverTags); try await self.service?.setMCPPresets(projectID: project.id, presetIDs: []); self.message = "Zapisano projekt" } }
-    func selectedMCPServerIDs(for project: Project) -> [UUID] { let direct = modelServerIDs(project.id); let legacyPresetIDs = Set(mcp.projectPresetIDs[project.id.uuidString] ?? []); let legacy = mcp.presets.filter { legacyPresetIDs.contains($0.id) }.flatMap(\.serverIDs); return Array(Set(direct + legacy)) }
-    private func modelServerIDs(_ projectID: UUID) -> [UUID] { mcp.projectServerIDs?[projectID.uuidString] ?? [] }
+    func selectedMCPServerIDs(for project: Project) -> [UUID] { let direct = mcp.projectServerIDs?[project.id.uuidString] ?? []; let legacyPresetIDs = Set(mcp.projectPresetIDs[project.id.uuidString] ?? []); let legacy = mcp.presets.filter { legacyPresetIDs.contains($0.id) }.flatMap(\.serverIDs); return Array(Set(direct + legacy)) }
     func deleteProject(_ project: Project) async { await perform { try await self.service?.deleteProject(id: project.id); self.message = "Usunięto projekt \(project.name) z Agentbox" } }
-    func sync(_ project: Project) async { await perform { _ = try await self.service?.syncProject(id: project.id); self.message = "Zsynchronizowano \(project.name)" } }
     func loadBackupStatus() async { backupStatus = (try? await service?.backupStatus()) ?? "Nie można odczytać statusu." }
     func backup(remote: String) async { await perform { self.message = try await self.service?.backup(remote: remote.isEmpty ? nil : remote) ?? "Gotowe" }; await loadBackupStatus() }
     func loadFullBackups() async { do { fullBackups = try await service?.fullBackups() ?? [] } catch { reportError(error) } }
@@ -104,7 +102,6 @@ struct OperationLogEntry: Identifiable {
     func loadRecovery() async { do { librarySnapshots = try await service?.librarySnapshots() ?? []; projectBackups = try await service?.projectSyncBackups() ?? [] } catch { reportError(error) } }
     func restoreLibrary(_ snapshot: LibrarySnapshot) async { await perform { let files = try await self.service?.restoreLibrarySnapshot(named: snapshot.name) ?? []; self.message = "Przywrócono snapshot biblioteki: \(files.joined(separator: ", "))" }; await loadRecovery() }
     func restoreProject(_ backup: ProjectSyncBackup) async { await perform { let targets = try await self.service?.restoreProjectSyncBackup(projectID: backup.projectID, named: backup.name) ?? []; self.message = "Przywrócono \(targets.count) elementów projektu \(backup.projectName)" }; await loadRecovery() }
-    func saveMCPServer(_ server: MCPServer) async { await perform(autoBackup: true) { try await self.service?.saveMCPServer(server); self.message = "Zapisano serwer MCP" } }
     func managedFields(for server: MCPServer) async -> [MCPManagedField] { (try? await service?.managedFields(serverID: server.id)) ?? [] }
     func saveMCPServer(_ server: MCPServer, fields: [MCPManagedField]) async -> Bool {
         isWorking = true; defer { isWorking = false }
@@ -115,7 +112,6 @@ struct OperationLogEntry: Identifiable {
     }
     func deleteMCPServer(_ id: UUID) async { await perform(autoBackup: true) { try await self.service?.deleteMCPServer(id: id); self.message = "Usunięto serwer MCP" } }
     func previewMCP(_ project: Project) async throws -> [MCPPreview] { try await service?.previewMCP(projectID: project.id) ?? [] }
-    func syncMCP(_ project: Project) async { await perform { _ = try await self.service?.syncMCP(projectID: project.id); self.message = "Zsynchronizowano MCP dla \(project.name)" } }
     func previewProjectSync(_ project: Project) async throws -> ProjectSyncPreview { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewProjectSync(projectID: project.id) }
     func syncEverything(_ project: Project) async { await perform { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille i MCP dla \(project.name)" } }
     func previewAllProjectsSync() async throws -> [ProjectSyncPlan] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewAllProjectsSync() }
@@ -139,7 +135,6 @@ struct OperationLogEntry: Identifiable {
     func analyzeMCP(_ text: String) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.analyzeMCPJSON(text) }
     func importMCP(_ text: String, serverNames: Set<String>, classifications: [String: MCPValueClassification]) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text, serverNames: serverNames, classifications: classifications); await reload(); scheduleAutomaticBackup(); message = "Zaimportowano \(result.servers.count) serwerów MCP"; record(.success, message); return result }
     func generateMCP(_ instructions: String, settings: MCPAISettings, key: String?) async throws -> String { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; try await service.saveMCPAISettings(settings, apiKey: key); return try await service.generateMCPConfiguration(instructions: instructions, settings: settings) }
-    func saveAISettings(_ settings: MCPAISettings, key: String?) async { await perform { try await self.service?.saveMCPAISettings(settings, apiKey: key); self.message = key?.isEmpty == false ? "Zapisano ustawienia AI i klucz API" : "Zapisano ustawienia AI" } }
     func saveAIProvider(_ provider: MCPAIProvider, model: String, key: String?) async { await perform { try await self.service?.saveMCPAIProvider(provider, model: model, apiKey: key); self.message = "Zapisano ustawienia \(provider == .openAI ? "OpenAI" : "Anthropic")" } }
     func moveLibrary(to url: URL) async {
         isWorking = true; defer { isWorking = false }
@@ -275,6 +270,7 @@ struct ProjectsView: View {
     @State private var editing: Project?
     @State private var previewProject: Project?
     @State private var deleting: Project?
+    @State private var collapsedGroups = Set<String>()
 
     private struct ProjectGroup: Identifiable {
         let path: String
@@ -314,15 +310,21 @@ struct ProjectsView: View {
     private var projectList: some View {
         List {
             ForEach(groups) { group in
-                Section {
+                DisclosureGroup(isExpanded: groupExpansion(group.path)) {
                     ForEach(group.projects) { project in
                         ProjectRow(project: project, editing: $editing, previewProject: $previewProject, deleting: $deleting)
                     }
-                } header: {
+                } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Label(group.name, systemImage: "folder").font(.headline)
-                        Text(group.path).font(.caption).foregroundStyle(.secondary).textCase(nil)
+                        HStack(spacing: 6) {
+                            Image(systemName: "folder").foregroundStyle(.tint)
+                            Text(group.name).font(.subheadline.weight(.semibold))
+                            Text("\(group.projects.count)").font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Text(group.path).font(.caption2).foregroundStyle(.tertiary).lineLimit(1).help(group.path)
                     }
+                    .textCase(nil)
+                    .padding(.vertical, 2)
                 }
             }
         }
@@ -332,12 +334,21 @@ struct ProjectsView: View {
         HStack {
             Button { showProject = true } label: { Label("Dodaj projekt", systemImage: "plus") }
             Button { showBatch = true } label: { Label("Dodaj wiele", systemImage: "folder.badge.plus") }
+            Menu {
+                Button("Rozwiń wszystko") { collapsedGroups.removeAll() }
+                Button("Zwiń wszystko") { collapsedGroups = Set(groups.map(\.path)) }
+            } label: { Image(systemName: "rectangle.expand.vertical") }
+            .help("Rozwiń lub zwiń grupy")
             Spacer()
             Button { showAllSync = true } label: { Label("Synchronizuj wszystkie projekty", systemImage: "arrow.triangle.2.circlepath") }
                 .buttonStyle(.borderedProminent)
                 .disabled(model.projects.isEmpty || model.isWorking)
         }
         .padding(12)
+    }
+
+    private func groupExpansion(_ path: String) -> Binding<Bool> {
+        Binding(get: { !collapsedGroups.contains(path) }, set: { if $0 { collapsedGroups.remove(path) } else { collapsedGroups.insert(path) } })
     }
 }
 
@@ -351,8 +362,8 @@ private struct ProjectRow: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading) {
-                    Text(project.name).font(.headline)
-                    Text(project.path).font(.caption).foregroundStyle(.secondary)
+                    Text(project.name).fontWeight(.medium)
+                    Text(project.path).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(project.path)
                 }
                 Spacer()
                 Button("Edytuj") { editing = project }

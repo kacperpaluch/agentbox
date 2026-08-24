@@ -88,24 +88,9 @@ extension SkillboxService {
         try await store.save(config)
     }
 
-    public func deleteMCPPreset(id: UUID) async throws {
-        var config = try await store.mcpConfiguration()
-        config.presets.removeAll { $0.id == id }
-        for key in config.projectPresetIDs.keys { config.projectPresetIDs[key]?.removeAll { $0 == id } }
-        try await store.save(config)
-    }
-
     public func setMCPPresets(projectID: UUID, presetIDs: [UUID]) async throws {
         var config = try await store.mcpConfiguration()
         config.projectPresetIDs[projectID.uuidString] = presetIDs
-        try await store.save(config)
-    }
-
-    public func setMCPProfiles(projectID: UUID, selections: [String: UUID]) async throws {
-        var config = try await store.mcpConfiguration()
-        var all = config.projectProfileSelections ?? [:]
-        all[projectID.uuidString] = selections
-        config.projectProfileSelections = all
         try await store.save(config)
     }
 
@@ -118,10 +103,6 @@ extension SkillboxService {
         tagAssignments[projectID.uuidString] = Array(Set(tags.map { $0.lowercased() })).sorted()
         config.projectServerTags = tagAssignments
         try await store.save(config)
-    }
-
-    public func mcpPresetIDs(projectID: UUID) async throws -> [UUID] {
-        try await store.mcpConfiguration().projectPresetIDs[projectID.uuidString] ?? []
     }
 
     public func previewMCP(projectID: UUID) async throws -> [MCPPreview] {

@@ -10,7 +10,7 @@ extension SkillboxService {
         guard !servers.isEmpty else { throw SkillboxError.invalidSkill("nie wybrano serwerów MCP") }
         if let invalid = servers.first(where: { $0.name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) == nil }) { throw SkillboxError.invalidSkill("nazwa MCP \(invalid.name) może zawierać litery, cyfry, _ i -") }
         guard Set(servers.map(\.name)).count == servers.count else { throw SkillboxError.mcpConflict("import zawiera powtórzone nazwy serwerów") }
-        let summary = MCPImportSummary(servers: servers, secretCount: servers.reduce(0) { $0 + ($1.secretEnvironment?.count ?? 0) + ($1.secretHeaders?.count ?? 0) }, stdioCount: servers.filter { $0.transport == .stdio }.count, httpCount: servers.filter { $0.transport == .http }.count, profileGroups: Array(Set(servers.compactMap(\.group))).sorted(), fields: parsed.summary.fields.filter { chosen.contains($0.serverName) })
+        let summary = MCPImportSummary(servers: servers, secretCount: servers.reduce(0) { $0 + ($1.secretEnvironment?.count ?? 0) + ($1.secretHeaders?.count ?? 0) }, stdioCount: servers.filter { $0.transport == .stdio }.count, httpCount: servers.filter { $0.transport == .http }.count, fields: parsed.summary.fields.filter { chosen.contains($0.serverName) })
         let prefixes = servers.map { "mcp/\($0.name)/" }
         var config = try await store.mcpConfiguration()
         for server in servers {
@@ -67,8 +67,7 @@ extension SkillboxService {
             }
             servers.append(MCPServer(name: name, transport: transport, command: value["command"] as? String ?? "", arguments: value["args"] as? [String] ?? [], url: value["url"] as? String ?? "", environment: environmentRefs, headers: headerRefs, literalEnvironment: literalEnv.isEmpty ? nil : literalEnv, literalHeaders: literalHeaders.isEmpty ? nil : literalHeaders, secretEnvironment: secretEnv.isEmpty ? nil : secretEnv, secretHeaders: secretHeaders.isEmpty ? nil : secretHeaders))
         }
-        let grouped = Self.detectProfiles(&servers)
-        return (MCPImportSummary(servers: servers, secretCount: secretCount, stdioCount: servers.filter { $0.transport == .stdio }.count, httpCount: servers.filter { $0.transport == .http }.count, profileGroups: grouped, fields: fields), secrets)
+        return (MCPImportSummary(servers: servers, secretCount: secretCount, stdioCount: servers.filter { $0.transport == .stdio }.count, httpCount: servers.filter { $0.transport == .http }.count, fields: fields), secrets)
     }
 
     private static func looksSecret(_ value: String) -> Bool {
@@ -84,25 +83,5 @@ extension SkillboxService {
     private static func stringMap(_ raw: Any?) -> [String: String] {
         guard let values = raw as? [String: Any] else { return [:] }
         return values.reduce(into: [:]) { result, item in if !(item.value is NSNull) { result[item.key] = String(describing: item.value) } }
-    }
-
-    private static func detectProfiles(_ servers: inout [MCPServer]) -> [String] {
-        var signatures: [String: [Int]] = [:]
-        for index in servers.indices where servers[index].transport == .stdio {
-            let package = servers[index].arguments.drop(while: { $0.hasPrefix("-") }).first ?? ""
-            signatures[servers[index].command + "|" + package, default: []].append(index)
-        }
-        var groups: [String] = []
-        for indices in signatures.values where indices.count > 1 {
-            let firstParts = servers[indices[0]].name.split(separator: "-")
-            guard let first = firstParts.first.map(String.init), first.count >= 3, indices.allSatisfy({ servers[$0].name.hasPrefix(first) }) else { continue }
-            groups.append(first)
-            for index in indices {
-                let suffix = servers[index].name.replacingOccurrences(of: first + "-", with: "")
-                servers[index].group = first
-                servers[index].profile = suffix == "mcp" ? "Domyślny" : suffix.capitalized
-            }
-        }
-        return Array(Set(groups)).sorted()
     }
 }

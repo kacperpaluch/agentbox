@@ -6,6 +6,14 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-24
+
+### Zmieniono
+
+- Uporządkowano listę projektów: grupy folderów są lżejsze wizualnie, zwijane i mają licznik projektów oraz akcje rozwijania wszystkich grup.
+- Uproszczono import MCP przez usunięcie nieużywanego automatycznego wykrywania profili.
+- Usunięto martwe API i ujednolicono bezpieczny zapis lokalnych sekretów MCP.
+
 ## [0.5.0] - 2026-08-24
 
 ### Dodano

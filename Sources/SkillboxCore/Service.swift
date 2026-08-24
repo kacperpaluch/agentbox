@@ -30,10 +30,6 @@ public actor SkillboxService {
         return try String(contentsOf: url, encoding: .utf8)
     }
 
-    public func allTags() async throws -> [String] {
-        Array(Set(try await store.catalog().skills.flatMap(\.tags))).sorted()
-    }
-
     public func checkUpdates() async throws -> Set<String> {
         let skills = try await store.catalog().skills.filter { $0.source.kind == .git }
         var remoteRevisions: [String: String] = [:]
@@ -56,13 +52,6 @@ public actor SkillboxService {
     public func addLocal(path: String, id suppliedID: String? = nil) async throws -> Skill {
         let source = URL(fileURLWithPath: path).standardizedFileURL
         return try await importSkill(from: source, source: SkillSource(kind: .local, location: source.path), suppliedID: suppliedID)
-    }
-
-    @discardableResult
-    public func addGit(url: String, subpath: String? = nil, branch: String? = nil, id: String? = nil) async throws -> Skill {
-        let imported = try await addGitCollection(url: url, subpath: subpath, branch: branch, id: id)
-        guard let first = imported.first else { throw SkillboxError.invalidSkill("repozytorium nie zawiera SKILL.md") }
-        return first
     }
 
     public func addGitCollection(url: String, subpath: String? = nil, branch: String? = nil, id: String? = nil) async throws -> [Skill] {

@@ -33,8 +33,7 @@ public actor SkillboxStore {
         let oldSecrets = try? Data(contentsOf: secretsURL)
         try snapshotLibrary()
         do {
-            try atomicWrite(secrets, to: secretsURL)
-            try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: secretsURL.path)
+            try writeSecrets(secrets)
             try atomicWrite(config, to: mcpURL)
         } catch {
             if let oldSecrets { try? oldSecrets.write(to: secretsURL, options: .atomic) } else { try? fm.removeItem(at: secretsURL) }
@@ -46,16 +45,15 @@ public actor SkillboxStore {
     public func saveSecrets(_ additions: [String: String]) throws {
         var values: [String: String] = try read(secretsURL, fallback: [:])
         values.merge(additions) { _, new in new }
-        try atomicWrite(values, to: secretsURL)
-        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: secretsURL.path)
+        try writeSecrets(values)
     }
-    public func replaceSecrets(_ values: [String: String]) throws {
-        try atomicWrite(values, to: secretsURL)
-        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: secretsURL.path)
-    }
+    public func replaceSecrets(_ values: [String: String]) throws { try writeSecrets(values) }
     public func deleteSecrets(accounts: [String]) throws {
         var values: [String: String] = try read(secretsURL, fallback: [:])
         accounts.forEach { values.removeValue(forKey: $0) }
+        try writeSecrets(values)
+    }
+    private func writeSecrets(_ values: [String: String]) throws {
         try atomicWrite(values, to: secretsURL)
         try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: secretsURL.path)
     }

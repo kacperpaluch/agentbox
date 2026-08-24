@@ -6,6 +6,28 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.5.1</title>
+      <pubDate>Mon, 24 Aug 2026 08:22:48 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.5.1</link>
+      <sparkle:version>11</sparkle:version>
+      <sparkle:shortVersionString>0.5.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.5.1</h2>
+        <ul>
+          <li>Grupy projektów mają czytelniejszy, bardziej kompaktowy wygląd.</li>
+          <li>Foldery projektów można zwijać pojedynczo lub wszystkie naraz.</li>
+          <li>Uproszczono import MCP i usunięto nieużywany kod.</li>
+          <li>Ujednolicono bezpieczny zapis lokalnych sekretów MCP.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.5.1/Agentbox-0.5.1.dmg"
+        length="4617840"
+        type="application/octet-stream"
+        sparkle:edSignature="9U864WRdEZMzcHzbdfGHtmyZ54celrX5ENxNeV09rnmj2b8Vw/VJphggH3B8LwmLNkDeFNexvkuoJh6KpEKlDw==" />
+    </item>
+    <item>
       <title>Agentbox 0.5.0</title>
       <pubDate>Mon, 24 Aug 2026 08:13:07 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.5.0</link>

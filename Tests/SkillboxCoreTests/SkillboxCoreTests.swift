@@ -45,14 +45,14 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertTrue(projectsAfterDelete.isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: projectFolder.path))
     }
-    func testAnalyzesClaudeBackupSeparatesSecretsAndDetectsProfiles() async throws {
+    func testAnalyzesClaudeBackupSeparatesSecretsWithoutInventingProfiles() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let service = try SkillboxService(root: root)
         let json = #"{"n8n-mcp":{"type":"stdio","command":"npx","args":["-y","n8n-mcp"],"env":{"N8N_API_KEY":"secret-one","N8N_API_URL":"http://lan:5678"}},"n8n-tailscale":{"type":"stdio","command":"npx","args":["-y","n8n-mcp"],"env":{"N8N_API_KEY":"secret-two","N8N_API_URL":"http://tailnet:5678"}},"context7":{"type":"http","url":"https://mcp.context7.com/mcp","headers":{"CONTEXT7_API_KEY":"secret-three"}}}"#
         let summary = try await service.analyzeMCPJSON(json)
         XCTAssertEqual(summary.servers.count, 3)
         XCTAssertEqual(summary.secretCount, 3)
-        XCTAssertEqual(summary.profileGroups, ["n8n"])
+        XCTAssertNil(summary.servers.first(where: { $0.name == "n8n-mcp" })?.group)
         XCTAssertEqual(summary.servers.first(where: { $0.name == "n8n-mcp" })?.literalEnvironment?["N8N_API_URL"], "http://lan:5678")
         XCTAssertNotNil(summary.servers.first(where: { $0.name == "context7" })?.secretHeaders?["CONTEXT7_API_KEY"])
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appending(path: "mcp-secrets.json").path))

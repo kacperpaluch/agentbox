@@ -98,7 +98,7 @@ Projekt wskazuje istniejący folder na dysku oraz obsługiwane narzędzia. Możn
 
 Opcja `Dodaj wiele` przyjmuje folder nadrzędny, wykrywa jego bezpośrednie podfoldery i pozwala utworzyć z nich projekty z jednym wspólnym zestawem ustawień. Foldery już dodane do Agentbox są pomijane. Po imporcie każdy projekt ma niezależną kopię konfiguracji i może być edytowany osobno.
 
-Lista projektów jest grupowana według bezpośredniego folderu nadrzędnego, dzięki czemu projekty z jednego katalogu roboczego są widoczne razem.
+Lista projektów jest grupowana według bezpośredniego folderu nadrzędnego, dzięki czemu projekty z jednego katalogu roboczego są widoczne razem. Każdą grupę można zwinąć osobno albo rozwinąć i zwinąć wszystkie grupy z menu pod listą.
 
 `Synchronizuj wszystko` przy projekcie pokazuje podgląd i synchronizuje jego skille oraz konfiguracje MCP. `Synchronizuj wszystkie projekty` najpierw przygotowuje plan dla całej listy, a następnie wykonuje tę samą transakcyjną operację kolejno dla każdego projektu.
 

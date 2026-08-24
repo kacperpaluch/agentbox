@@ -51,7 +51,7 @@ W sekcji `Projekty` wybierz `Dodaj wiele`, a następnie wskaż folder nadrzędny
 
 Ustawienia są kopiowane w chwili importu. Późniejsza edycja jednego projektu nie zmienia pozostałych; folder nadrzędny nie jest trwałym szablonem ani źródłem dziedziczenia.
 
-Lista projektów automatycznie grupuje wpisy według ich bezpośredniego folderu nadrzędnego i pokazuje pełną ścieżkę grupy. Przycisk `Synchronizuj wszystkie projekty` tworzy wspólny podgląd całej listy przed pierwszym zapisem. Następnie synchronizuje projekty kolejno; każdy z nich zachowuje własny backup, transakcyjny zapis skilli i MCP oraz rollback w razie błędu.
+Lista projektów automatycznie grupuje wpisy według ich bezpośredniego folderu nadrzędnego i pokazuje pełną ścieżkę grupy. Nagłówek zwija pojedynczą grupę, a menu pod listą pozwala rozwinąć lub zwinąć wszystkie. Przycisk `Synchronizuj wszystkie projekty` tworzy wspólny podgląd całej listy przed pierwszym zapisem. Następnie synchronizuje projekty kolejno; każdy z nich zachowuje własny backup, transakcyjny zapis skilli i MCP oraz rollback w razie błędu.
 
 Podgląd projektu pokazuje osobno dla Claude, Codex i OpenCode:
 
