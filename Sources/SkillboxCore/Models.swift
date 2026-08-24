@@ -54,10 +54,17 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
     public var tools: [Tool]
     public var skillIDs: [String]
     public var tags: [String]
+    /// Skills excluded from this project even when a selected tag matches them.
+    /// Optional so projects saved before exclusions keep decoding.
+    public var excludedSkillIDs: [String]?
+    /// Whether Agentbox may add generated MCP files to the project's tracked `.gitignore`.
+    /// `nil` means no, so existing projects are never modified without an explicit choice.
+    public var manageGitignore: Bool?
 
-    public init(id: UUID = UUID(), name: String, path: String, tools: [Tool], skillIDs: [String] = [], tags: [String] = []) {
+    public init(id: UUID = UUID(), name: String, path: String, tools: [Tool], skillIDs: [String] = [], tags: [String] = [], excludedSkillIDs: [String]? = nil, manageGitignore: Bool? = nil) {
         self.id = id; self.name = name; self.path = path; self.tools = tools
         self.skillIDs = skillIDs; self.tags = tags
+        self.excludedSkillIDs = excludedSkillIDs; self.manageGitignore = manageGitignore
     }
 }
 
@@ -153,11 +160,16 @@ public struct MCPConfiguration: Codable, Sendable {
 
 public enum MCPAIProvider: String, Codable, CaseIterable, Sendable { case openAI, claude }
 
+public enum MCPAIDefaults {
+    public static let openAIModel = "gpt-5.6"
+    public static let claudeModel = "claude-sonnet-5"
+}
+
 public struct MCPAISettings: Codable, Sendable {
     public var provider: MCPAIProvider
     public var openAIModel: String
     public var claudeModel: String
-    public init(provider: MCPAIProvider = .openAI, openAIModel: String = "gpt-5.6", claudeModel: String = "claude-sonnet-5") {
+    public init(provider: MCPAIProvider = .openAI, openAIModel: String = MCPAIDefaults.openAIModel, claudeModel: String = MCPAIDefaults.claudeModel) {
         self.provider = provider; self.openAIModel = openAIModel; self.claudeModel = claudeModel
     }
 }
@@ -213,13 +225,22 @@ public struct MCPPreview: Sendable {
     public var content: String
     public var added: [String]
     public var removed: [String]
-    public init(tool: Tool, file: String, content: String, added: [String], removed: [String]) { self.tool = tool; self.file = file; self.content = content; self.added = added; self.removed = removed }
+    /// A previously managed file that this tool no longer writes to, for example `opencode.json`
+    /// after `opencode.jsonc` appeared. Its managed entries are stripped in the same transaction.
+    public var staleFile: String?
+    public var staleContent: String?
+    public init(tool: Tool, file: String, content: String, added: [String], removed: [String], staleFile: String? = nil, staleContent: String? = nil) {
+        self.tool = tool; self.file = file; self.content = content; self.added = added; self.removed = removed
+        self.staleFile = staleFile; self.staleContent = staleContent
+    }
 }
 
 public struct SkillSyncPreview: Sendable {
     public var tool: Tool
     public var target: String
     public var added: [String]
+    /// Managed skills whose library version is newer than the copy recorded in the manifest.
+    /// Skills that are already up to date appear in none of these lists.
     public var updated: [String]
     public var removed: [String]
     public init(tool: Tool, target: String, added: [String], updated: [String], removed: [String]) {
@@ -242,6 +263,38 @@ public struct ProjectSyncPlan: Identifiable, Sendable {
         self.project = project
         self.preview = preview
     }
+}
+
+/// Whether a project's files still match the library, without opening its full preview.
+public struct ProjectStatus: Identifiable, Sendable, Equatable {
+    public enum State: Sendable, Equatable {
+        case synced
+        case pending(added: Int, outdated: Int, removed: Int)
+        /// Synchronization would stop: an unmanaged skill or MCP entry blocks it.
+        case blocked(String)
+        /// The project folder is gone.
+        case missing
+    }
+    public var id: UUID { projectID }
+    public var projectID: UUID
+    public var state: State
+
+    public var changeCount: Int {
+        if case .pending(let added, let outdated, let removed) = state { return added + outdated + removed }
+        return 0
+    }
+
+    public init(projectID: UUID, state: State) { self.projectID = projectID; self.state = state }
+}
+
+/// A skill directory found inside a project that Agentbox does not manage and that is not yet
+/// in the library. Adopting it copies it into the library so it can be synchronized everywhere.
+public struct AdoptableSkill: Identifiable, Hashable, Sendable {
+    public var id: String { path }
+    public var suggestedID: String
+    public var path: String
+    public var tool: Tool
+    public init(suggestedID: String, path: String, tool: Tool) { self.suggestedID = suggestedID; self.path = path; self.tool = tool }
 }
 
 public struct ProjectSyncOutcome: Identifiable, Sendable {

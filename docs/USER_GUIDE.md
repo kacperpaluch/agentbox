@@ -39,6 +39,27 @@ Po imporcie klasyfikacją nadal można zarządzać w `MCP → Szczegóły`. Sekc
 
 ## Podgląd i synchronizacja
 
+### Stan projektów
+
+`Projekty → Sprawdź stan` sprawdza wszystkie projekty naraz i pokazuje odznakę przy każdym z nich:
+
+- **Aktualny** — pliki projektu odpowiadają bibliotece,
+- **Do synchronizacji +N ~N -N** — tyle skilli i wpisów MCP zostanie dodanych, odświeżonych i usuniętych,
+- **Zablokowany** — w projekcie leży katalog skilla albo wpis MCP, którego Agentbox nie zarządza; najedź kursorem, aby zobaczyć powód,
+- **Brak folderu** — katalog projektu zniknął z dysku.
+
+Skill liczy się jako nieaktualny, gdy jego wersja w bibliotece jest nowsza niż ta zapisana w manifeście projektu, albo gdy jego katalog zniknął z projektu. Skille, które są aktualne, nie pojawiają się w żadnym z liczników.
+
+### Edycja skilli
+
+Skille dodane z dysku można edytować bezpośrednio w aplikacji: wybierz skill i kliknij `Edytuj SKILL.md`. Zapis aktualizuje kopię w bibliotece i od razu oznacza wszystkie projekty z tym skillem jako nieaktualne, więc widać, gdzie trzeba uruchomić synchronizację.
+
+Skille pochodzące z Git są tylko do odczytu. `Aktualizuj` zastępuje taki skill zawartością repozytorium, więc zmiana zrobiona w aplikacji zniknęłaby przy najbliższej aktualizacji. Aby zmienić taki skill, zmodyfikuj repozytorium źródłowe.
+
+### Przejmowanie skilli z projektu
+
+Jeśli w projekcie leży ręcznie napisany katalog ze `SKILL.md`, którego nie ma w bibliotece, wybierz `⋯ → Przejmij skille z projektu…`. Agentbox skopiuje wskazane katalogi do biblioteki jako skille lokalne — nic nie znika z projektu. To jest sposób na odblokowanie projektu ze statusem `Zablokowany` bez kasowania własnej pracy.
+
 ### Skille, których Agentbox nie zarządza
 
 Agentbox usuwa i zastępuje wyłącznie katalogi wymienione w swoim manifeście `.skillbox.json`. Jeśli w katalogu docelowym leży katalog skilla o tej samej nazwie, którego w manifeście nie ma — na przykład skill napisany ręcznie w projekcie — synchronizacja zatrzymuje się z komunikatem `Konflikt skilla` i nie zapisuje niczego. Usuń ten katalog albo zmień nazwę skilla w bibliotece, jeśli ma go zastąpić. Ta sama zasada chroni ręcznie dodane serwery MCP.
@@ -52,6 +73,18 @@ Agentbox usuwa i zastępuje wyłącznie katalogi wymienione w swoim manifeście 
 Serwery MCP wybiera się tak samo jak skille: pojedynczo albo dynamicznie według tagów. Oba sposoby można łączyć, a projekt może korzystać równocześnie z dowolnej liczby serwerów, również takich, które wcześniej były traktowane jako wzajemnie wykluczające się warianty.
 
 Tagi dodaje się w szczegółach serwera MCP. Menu `Używane tagi` pokazuje istniejące wartości, co pomaga zachować jednolite nazwy. To samo menu jest dostępne podczas tagowania pojedynczych i wielu skilli. Stare przypisania presetów są zachowane przy odczycie i zamieniane na bezpośredni wybór serwerów przy następnym zapisie projektu.
+
+### Wykluczenia w projekcie
+
+Projekt może wciągać skille tagiem i jednocześnie pomijać wybrane pozycje. W edytorze projektu sekcja `Wykluczenia` pokazuje skille, które wchodzą przez zaznaczone tagi; zaznaczenie skilla pomija go w tym jednym projekcie. Skille wybrane pojedynczo usuwa się po prostu odznaczając je na liście.
+
+### Usuwanie projektu i sprzątanie plików
+
+Usunięcie projektu daje dwie możliwości. `Usuń tylko z Agentbox` zostawia folder projektu nietknięty. `Usuń i posprzątaj pliki w projekcie` dodatkowo kasuje katalogi skilli i wpisy MCP wymienione w manifestach Agentbox — wyłącznie je. Ręcznie dodane skille i serwery MCP zostają. Przed sprzątaniem powstaje backup, który można cofnąć w sekcji `Odzyskiwanie`.
+
+### Ochrona przez .gitignore projektu
+
+W edytorze projektu można włączyć `Dopisuj wygenerowane pliki MCP do .gitignore projektu`. `.git/info/exclude`, którego Agentbox używa domyślnie, chroni tylko ten jeden klon — kolega z zespołu, który sklonuje repozytorium, nie jest chroniony wcale. `.gitignore` jedzie z repozytorium, więc obejmuje wszystkich. Agentbox dopisuje wyłącznie własny, oznaczony blok i nigdy nie usuwa istniejących wpisów. Opcja jest domyślnie włączona dla nowych projektów i wyłączona dla tych utworzonych wcześniej.
 
 ### Skille globalne
 

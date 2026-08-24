@@ -39,6 +39,19 @@ agentbox project set sklep --skills seo-audit,docx --tags seo
 
 `project set` ustawia bezpośrednie skille i dynamiczne tagi. Pusta opcja usuwa wcześniejsze przypisania danego typu.
 
+```bash
+agentbox project status
+agentbox project adopt sklep
+agentbox project adopt sklep --yes
+agentbox project unsync sklep
+```
+
+`project status` pokazuje jednym rzutem, które projekty odstają od biblioteki: `✓` aktualny, `●` z liczbą zmian, `✗` zablokowany przez niezarządzany katalog lub wpis, `?` brak folderu projektu.
+
+`project adopt` wypisuje katalogi ze `SKILL.md`, które leżą w projekcie, nie są zarządzane przez Agentbox i nie mają odpowiednika w bibliotece. Bez `--yes` tylko je wylicza; z `--yes` kopiuje je do biblioteki jako skille lokalne.
+
+`project unsync` usuwa z folderu projektu wyłącznie to, co Agentbox ma w swoich manifestach. Ręcznie dodane skille i serwery MCP zostają nietknięte, a przed zmianą powstaje backup.
+
 ## Synchronizacja skilli
 
 ```bash

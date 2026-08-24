@@ -29,7 +29,7 @@ extension SkillboxService {
 
     public func previewGlobalSync(home: URL = FileManager.default.homeDirectoryForCurrentUser) async throws -> [SkillSyncPreview] {
         let selection = try await globalSelection()
-        let current = Set(try await selectedSkills(ids: selection.skillIDs, tags: selection.tags).map(\.id))
+        let current = try await selectedSkills(ids: selection.skillIDs, tags: selection.tags)
         return try selection.tools.map { try Self.skillPreview(tool: $0, target: $0.globalSkillsURL(home: home), current: current) }
     }
 

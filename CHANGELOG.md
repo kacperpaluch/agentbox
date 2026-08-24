@@ -6,6 +6,32 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-24
+
+### Dodano
+
+- Status każdego projektu na liście: aktualny, liczba zmian do synchronizacji, zablokowany albo brak folderu. `Sprawdź stan` w aplikacji, `agentbox project status` w terminalu.
+- Edycję `SKILL.md` w aplikacji dla skilli dodanych z dysku. Zapis oznacza projekty z tym skillem jako nieaktualne. Skille z Git pozostają tylko do odczytu, bo aktualizacja zastąpiłaby zmiany.
+- Przejmowanie skilli z projektu do biblioteki — katalogi ze `SKILL.md`, które blokowały synchronizację, można teraz dodać jednym kliknięciem zamiast je kasować. W terminalu `agentbox project adopt <nazwa> [--yes]`.
+- Sprzątanie plików przy usuwaniu projektu: `Usuń i posprzątaj pliki` oraz `agentbox project unsync <nazwa>` usuwają wyłącznie to, co Agentbox ma w swoich manifestach.
+- Wykluczenia skilli per projekt — skill wciągnięty przez tag można pominąć w jednym projekcie.
+- Opcjonalne dopisywanie wygenerowanych plików MCP do `.gitignore` projektu, dla ochrony całego zespołu, a nie tylko lokalnego klona.
+
+### Naprawiono
+
+- Ponowny import serwera MCP nie zostawia już osieroconych sekretów w `mcp-secrets.json` ani w pełnych backupach.
+- Konflikt w `config.toml` Codeksa jest wykrywany również dla `[mcp_servers."nazwa"]` w cudzysłowie; wcześniej powstawał duplikat tabeli, którego Codex nie parsował.
+- Serwer MCP w Codeksie może mieć inną nazwę zmiennej po stronie serwera i hosta — Agentbox generuje `env_vars = [{ name = "...", source = "..." }]` zamiast zgłaszać błąd.
+- Pojawienie się `opencode.jsonc` nie zostawia już osieroconych wpisów w `opencode.json`; stary plik jest sprzątany w tej samej transakcji.
+- Usunięcie skilla lub projektu zapisuje wszystkie pliki pod jednym snapshotem i wycofuje się w całości przy błędzie. Wcześniej jedna operacja zużywała 2–3 z 10 slotów odzyskiwania.
+- Backupy synchronizacji mają budżet rozmiaru, nie tylko limit dziesięciu kopii.
+
+### Zmieniono
+
+- Przyciski akcji przeniesione z dołu na górę każdej sekcji i ujednolicone: jedna akcja główna, reszta w tym samym stylu.
+- Podgląd pokazuje w `Aktualizacje` tylko skille, które faktycznie się zmieniły, zamiast wszystkich obecnych w projekcie.
+- `agentbox` ma nowe polecenia `project status`, `project adopt`, `project unsync` i `sync all`, a jego logika jest pokryta testami.
+
 ## [0.6.0] - 2026-08-24
 
 ### Dodano

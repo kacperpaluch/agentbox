@@ -69,6 +69,8 @@ struct OperationLogEntry: Identifiable {
     @Published var librarySnapshots: [LibrarySnapshot] = []
     @Published var projectBackups: [ProjectSyncBackup] = []
     @Published var fullBackups: [FullBackupInfo] = []
+    @Published var statuses: [UUID: ProjectStatus] = [:]
+    @Published var isCheckingStatuses = false
     private var automaticBackupTask: Task<Void, Never>?
     var service: SkillboxService?
     init() {
@@ -85,14 +87,52 @@ struct OperationLogEntry: Identifiable {
     func addGit(_ url: String, subpath: String) async { await perform(autoBackup: true) { let urls = url.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }; var count = 0; for item in urls { count += try await self.service?.addGitCollection(url: item, subpath: subpath.isEmpty ? nil : subpath).count ?? 0 }; self.message = "Zaimportowano \(count) skilli" } }
     func checkUpdates() async { isWorking = true; defer { isWorking = false }; do { updateAvailable = try await service?.checkUpdates() ?? []; hasCheckedUpdates = true; message = updateAvailable.isEmpty ? "Wszystkie skille są aktualne" : "Dostępne aktualizacje: \(updateAvailable.count)" } catch { message = error.localizedDescription } }
     func update(_ id: String) async { await perform(autoBackup: true) { _ = try await self.service?.update(skillID: id); self.updateAvailable.remove(id); self.message = "Zaktualizowano \(id)" } }
+    func saveSkillMarkdown(_ id: String, content: String) async -> Bool {
+        isWorking = true; defer { isWorking = false }
+        do {
+            try await service?.saveSkillMarkdown(skillID: id, content: content)
+            message = "Zapisano \(id)"; record(.success, message)
+            await reload(); await loadStatuses(); scheduleAutomaticBackup(); return true
+        } catch { message = error.localizedDescription; record(.error, message); return false }
+    }
     func saveTags(_ id: String, text: String) async { await perform(autoBackup: true) { try await self.service?.setTags(skillID: id, tags: Self.csv(text)); self.message = "Zapisano tagi" } }
     func addTags(_ ids: Set<String>, text: String) async { await perform(autoBackup: true) { try await self.service?.addTags(skillIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) skilli" } }
     func deleteSkill(_ id: String) async { await perform(autoBackup: true) { try await self.service?.deleteSkill(skillID: id); if self.selection == id { self.selection = nil; self.markdown = "" }; self.updateAvailable.remove(id); self.message = "Usunięto skill \(id)" } }
-    func addProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async { await perform { if let created = try await self.service?.addProject(name: project.name, path: project.path, tools: project.tools) { try await self.service?.configureProject(id: created.id, skillIDs: project.skillIDs, tags: project.tags); try await self.service?.setMCPServers(projectID: created.id, serverIDs: serverIDs, tags: serverTags) }; self.message = "Dodano projekt \(project.name)" } }
-    func addProjects(_ projects: [Project], serverIDs: [UUID], serverTags: [String]) async { await perform { for project in projects { if let created = try await self.service?.addProject(name: project.name, path: project.path, tools: project.tools) { try await self.service?.configureProject(id: created.id, skillIDs: project.skillIDs, tags: project.tags); try await self.service?.setMCPServers(projectID: created.id, serverIDs: serverIDs, tags: serverTags) } }; self.message = "Dodano projekty: \(projects.count)" } }
-    func updateProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async { await perform { try await self.service?.updateProject(project); try await self.service?.setMCPServers(projectID: project.id, serverIDs: serverIDs, tags: serverTags); try await self.service?.setMCPPresets(projectID: project.id, presetIDs: []); self.message = "Zapisano projekt" } }
+    func addProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async { await perform { _ = try await self.service?.addProject(project, serverIDs: serverIDs, serverTags: serverTags); self.message = "Dodano projekt" }; await loadStatuses() }
+    func addProjects(_ projects: [Project], serverIDs: [UUID], serverTags: [String]) async { await perform { for project in projects { _ = try await self.service?.addProject(project, serverIDs: serverIDs, serverTags: serverTags) }; self.message = "Dodano \(projects.count) projektów" }; await loadStatuses() }
+    func updateProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async { await perform { try await self.service?.updateProject(project, serverIDs: serverIDs, serverTags: serverTags); self.message = "Zapisano projekt" }; await loadStatuses() }
     func selectedMCPServerIDs(for project: Project) -> [UUID] { let direct = mcp.projectServerIDs?[project.id.uuidString] ?? []; let legacyPresetIDs = Set(mcp.projectPresetIDs[project.id.uuidString] ?? []); let legacy = mcp.presets.filter { legacyPresetIDs.contains($0.id) }.flatMap(\.serverIDs); return Array(Set(direct + legacy)) }
-    func deleteProject(_ project: Project) async { await perform { try await self.service?.deleteProject(id: project.id); self.message = "Usunięto projekt \(project.name) z Agentbox" } }
+    func deleteProject(_ project: Project, removingFiles: Bool) async {
+        await perform {
+            if removingFiles {
+                let removed = try await self.service?.unsyncProject(id: project.id) ?? []
+                try await self.service?.deleteProject(id: project.id)
+                self.message = "Usunięto projekt \(project.name) i \(removed.count) elementów z jego folderu"
+            } else {
+                try await self.service?.deleteProject(id: project.id)
+                self.message = "Usunięto projekt \(project.name) z Agentbox; pliki w jego folderze zostały bez zmian"
+            }
+        }
+        await loadStatuses()
+    }
+    func loadStatuses() async {
+        isCheckingStatuses = true; defer { isCheckingStatuses = false }
+        guard let service else { return }
+        do { statuses = Dictionary(uniqueKeysWithValues: try await service.projectStatuses().map { ($0.projectID, $0) }) }
+        catch { reportError(error) }
+    }
+    func unsyncProject(_ project: Project) async {
+        await perform { let removed = try await self.service?.unsyncProject(id: project.id) ?? []; self.message = "Usunięto \(removed.count) elementów z \(project.name)" }
+        await loadStatuses()
+    }
+    func adoptableSkills(_ project: Project) async throws -> [AdoptableSkill] {
+        guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
+        return try await service.adoptableSkills(projectID: project.id)
+    }
+    func adoptSkills(_ items: [AdoptableSkill]) async {
+        await perform { let adopted = try await self.service?.adoptSkills(items) ?? []; self.message = "Przejęto \(adopted.count) skilli do biblioteki" }
+        await loadStatuses()
+    }
     func loadBackupStatus() async { backupStatus = (try? await service?.backupStatus()) ?? "Nie można odczytać statusu." }
     func backup(remote: String) async { await perform { self.message = try await self.service?.backup(remote: remote.isEmpty ? nil : remote) ?? "Gotowe" }; await loadBackupStatus() }
     func loadFullBackups() async { do { fullBackups = try await service?.fullBackups() ?? [] } catch { reportError(error) } }
@@ -113,7 +153,7 @@ struct OperationLogEntry: Identifiable {
     func deleteMCPServer(_ id: UUID) async { await perform(autoBackup: true) { try await self.service?.deleteMCPServer(id: id); self.message = "Usunięto serwer MCP" } }
     func previewMCP(_ project: Project) async throws -> [MCPPreview] { try await service?.previewMCP(projectID: project.id) ?? [] }
     func previewProjectSync(_ project: Project) async throws -> ProjectSyncPreview { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewProjectSync(projectID: project.id) }
-    func syncEverything(_ project: Project) async { await perform { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille i MCP dla \(project.name)" } }
+    func syncEverything(_ project: Project) async { await perform { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille i MCP dla \(project.name)" }; await loadStatuses() }
     func previewAllProjectsSync() async throws -> [ProjectSyncPlan] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewAllProjectsSync() }
     func syncAllProjects() async -> [ProjectSyncOutcome] {
         isWorking = true
@@ -262,9 +302,19 @@ struct LibraryView: View {
     }
     var body: some View { HSplitView {
         VStack(spacing: 0) {
+            ActionBar {
+                Button { showGit = true } label: { Label("Z Git", systemImage: "arrow.down.circle") }.buttonStyle(.borderedProminent)
+                Button { chooseSkill() } label: { Label("Z dysku", systemImage: "folder.badge.plus") }.buttonStyle(.bordered)
+                if !checked.isEmpty {
+                    Button { showBatchTags = true } label: { Label("Dodaj tagi (\(checked.count))", systemImage: "tag") }.buttonStyle(.bordered)
+                    Button("Wyczyść") { checked.removeAll() }.buttonStyle(.bordered)
+                }
+                Spacer()
+                Text("\(filtered.count) z \(model.skills.count)").font(.caption).foregroundStyle(.secondary)
+            }
             HStack { Picker("Tag", selection: $selectedTag) { Text("Wszystkie tagi").tag(""); ForEach(tags, id: \.self) { Text("#\($0)").tag($0) } }.labelsHidden().frame(maxWidth: 165); Picker("Grupowanie", selection: $grouping) { ForEach(SkillGrouping.allCases) { Text($0.rawValue).tag($0) } }.labelsHidden().frame(maxWidth: 145); Picker("Sortowanie", selection: $sort) { ForEach(SkillSort.allCases) { Text($0.rawValue).tag($0) } }.labelsHidden().frame(maxWidth: 115); Menu { Button("Rozwiń wszystko") { expanded = Set(groups.map(\.name)) }; Button("Zwiń wszystko") { expanded.removeAll() } } label: { Image(systemName: "rectangle.expand.vertical") }; Button { Task { await model.checkUpdates() } } label: { Image(systemName: "arrow.triangle.2.circlepath") }.help("Sprawdź aktualizacje"); Spacer(); if !checked.isEmpty { Text("Wybrano: \(checked.count)").font(.caption).foregroundStyle(.secondary) } }.padding(10).background(.bar)
             List { ForEach(groups, id: \.name) { group in DisclosureGroup(isExpanded: groupExpansion(group.name)) { ForEach(group.skills) { skill in HStack(alignment: .top, spacing: 9) { Toggle("", isOn: checkBinding(skill.id)).labelsHidden().toggleStyle(.checkbox).padding(.top, 5); SkillRow(skill: skill, updateAvailable: model.updateAvailable.contains(skill.id)) }.contentShape(Rectangle()).onTapGesture { model.selection = skill.id; Task { await model.loadMarkdown() } }.listRowBackground(model.selection == skill.id ? Color.accentColor.opacity(0.13) : Color.clear) } } label: { HStack { Toggle("", isOn: groupCheckBinding(group.skills)).labelsHidden().toggleStyle(.checkbox); Image(systemName: grouping == .repository ? "shippingbox" : grouping == .tag ? "tag" : grouping == .source ? "tray.full" : "square.grid.2x2").foregroundStyle(.tint); Text(group.name).fontWeight(.semibold); Text("\(group.skills.count)").font(.caption).foregroundStyle(.secondary); Spacer(); let updates = group.skills.filter { model.updateAvailable.contains($0.id) }.count; if updates > 0 { Label("\(updates)", systemImage: "arrow.down.circle.fill").font(.caption).foregroundStyle(.orange) } } } } }.searchable(text: $search, prompt: "Nazwa lub tag")
-            Divider(); HStack { Button { chooseSkill() } label: { Label("Z dysku", systemImage: "folder.badge.plus") }; Button { showGit = true } label: { Label("Z Git", systemImage: "arrow.down.circle") }; if !checked.isEmpty { Button { showBatchTags = true } label: { Label("Dodaj tagi", systemImage: "tag") }.buttonStyle(.borderedProminent); Button("Wyczyść") { checked.removeAll() } }; Spacer(); Text("\(filtered.count) z \(model.skills.count)").foregroundStyle(.secondary) }.padding(12)
+
         }.frame(minWidth: 410, idealWidth: 480)
         if let id = model.selection, let skill = model.skills.first(where: { $0.id == id }) { SkillDetail(model: model, skill: skill) } else { ContentUnavailableView("Wybierz skill", systemImage: "text.book.closed") }
     }.navigationTitle("Biblioteka").sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: tags) { text in Task { await model.addTags(checked, text: text); checked.removeAll() } } } }
@@ -274,6 +324,18 @@ struct LibraryView: View {
     private func chooseSkill() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; if panel.runModal() == .OK, let url = panel.url { Task { await model.addLocal(url) } } }
 }
 
+/// Shared section header. Every list section puts its actions here, at the top, in the same order:
+/// the primary action first and prominent, secondary actions bordered beside it.
+struct ActionBar<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) { content }.padding(.horizontal, 12).padding(.vertical, 10)
+            Divider()
+        }
+    }
+}
+
 struct SkillRow: View { let skill: Skill; let updateAvailable: Bool; var body: some View { VStack(alignment: .leading, spacing: 7) { HStack { Image(systemName: skill.source.kind == .git ? "network" : "internaldrive").foregroundStyle(.tint); Text(skill.name).fontWeight(.medium); Spacer(); if updateAvailable { Label("Aktualizacja", systemImage: "arrow.down.circle.fill").font(.caption2.weight(.semibold)).foregroundStyle(.orange) } }; if skill.tags.isEmpty { Text("bez tagów").font(.caption).foregroundStyle(.tertiary) } else { FlowTags(tags: skill.tags) } }.padding(.vertical, 4).frame(maxWidth: .infinity, alignment: .leading) } }
 
 struct FlowTags: View { let tags: [String]; var body: some View { HStack(spacing: 5) { ForEach(tags.prefix(4), id: \.self) { TagPill(tag: $0) }; if tags.count > 4 { Text("+\(tags.count - 4)").font(.caption2).foregroundStyle(.secondary) } } } }
@@ -281,7 +343,38 @@ struct TagPill: View { let tag: String; private var color: Color { let colors: [
 
 struct SkillDetail: View {
     @ObservedObject var model: AppModel; let skill: Skill; @State private var tags = ""; @State private var confirmDelete = false
-    var body: some View { VStack(alignment: .leading, spacing: 0) { VStack(alignment: .leading, spacing: 10) { HStack { VStack(alignment: .leading) { Text(skill.name).font(.title2.bold()); Text(skill.source.location).font(.caption).foregroundStyle(.secondary).lineLimit(1) }; Spacer(); if model.updateAvailable.contains(skill.id) { Button("Aktualizuj") { Task { await model.update(skill.id) } }.buttonStyle(.borderedProminent).tint(.orange) } else if model.hasCheckedUpdates && skill.source.kind == .git { Label("Aktualny", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green) }; Button("Usuń", role: .destructive) { confirmDelete = true } }; HStack { TextField("tagi, oddzielone przecinkami", text: $tags).textFieldStyle(.roundedBorder); ExistingTagMenu(tags: Array(Set(model.skills.flatMap(\.tags))).sorted(), text: $tags); Button("Zapisz tagi") { Task { await model.saveTags(skill.id, text: tags) } } }.padding(.top, 2) }.padding(); Divider(); ScrollView { Text(model.markdown).font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding() } }.onAppear { tags = skill.tags.joined(separator: ", ") }.onChange(of: skill.id) { tags = skill.tags.joined(separator: ", ") }.confirmationDialog("Usunąć skill \(skill.name)?", isPresented: $confirmDelete) { Button("Usuń skill", role: .destructive) { Task { await model.deleteSkill(skill.id) } }; Button("Anuluj", role: .cancel) {} } message: { Text("Skill zostanie usunięty z biblioteki i przypisań projektów. Zniknie z folderów projektów przy kolejnej synchronizacji.") } }
+    @State private var isEditing = false
+    @State private var draft = ""
+    private var isEditable: Bool { skill.source.kind == .local }
+    var body: some View { VStack(alignment: .leading, spacing: 0) { VStack(alignment: .leading, spacing: 10) { HStack { VStack(alignment: .leading) { Text(skill.name).font(.title2.bold()); Text(skill.source.location).font(.caption).foregroundStyle(.secondary).lineLimit(1) }; Spacer(); if model.updateAvailable.contains(skill.id) { Button("Aktualizuj") { Task { await model.update(skill.id) } }.buttonStyle(.borderedProminent).tint(.orange) } else if model.hasCheckedUpdates && skill.source.kind == .git { Label("Aktualny", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green) }; Button("Usuń", role: .destructive) { confirmDelete = true }.buttonStyle(.bordered) }; HStack { TextField("tagi, oddzielone przecinkami", text: $tags).textFieldStyle(.roundedBorder); ExistingTagMenu(tags: Array(Set(model.skills.flatMap(\.tags))).sorted(), text: $tags); Button("Zapisz tagi") { Task { await model.saveTags(skill.id, text: tags) } }.buttonStyle(.bordered) }.padding(.top, 2) }.padding(); Divider(); editorBar; Divider(); content }.onAppear { tags = skill.tags.joined(separator: ", ") }.onChange(of: skill.id) { tags = skill.tags.joined(separator: ", "); isEditing = false; draft = "" }.confirmationDialog("Usunąć skill \(skill.name)?", isPresented: $confirmDelete) { Button("Usuń skill", role: .destructive) { Task { await model.deleteSkill(skill.id) } }; Button("Anuluj", role: .cancel) {} } message: { Text("Skill zostanie usunięty z biblioteki i przypisań projektów. Zniknie z folderów projektów przy kolejnej synchronizacji.") } }
+
+    @ViewBuilder private var editorBar: some View {
+        HStack(spacing: 8) {
+            if isEditing {
+                Button("Zapisz zmiany") { Task { if await model.saveSkillMarkdown(skill.id, content: draft) { isEditing = false } } }
+                    .buttonStyle(.borderedProminent).disabled(model.isWorking)
+                Button("Anuluj") { isEditing = false; draft = model.markdown }.buttonStyle(.bordered)
+                Spacer()
+                Text("Zapis oznacza projekty z tym skillem jako nieaktualne.").font(.caption).foregroundStyle(.secondary)
+            } else if isEditable {
+                Button { draft = model.markdown; isEditing = true } label: { Label("Edytuj SKILL.md", systemImage: "square.and.pencil") }.buttonStyle(.bordered)
+                Spacer()
+            } else {
+                Label("Skill z Git — edycja w aplikacji jest wyłączona, bo aktualizacja zastąpiłaby zmiany.", systemImage: "lock")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+    }
+
+    @ViewBuilder private var content: some View {
+        if isEditing {
+            TextEditor(text: $draft).font(.system(.body, design: .monospaced)).padding(6)
+        } else {
+            ScrollView { Text(model.markdown).font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding() }
+        }
+    }
 }
 
 struct ProjectsView: View {
@@ -292,6 +385,8 @@ struct ProjectsView: View {
     @State private var editing: Project?
     @State private var previewProject: Project?
     @State private var deleting: Project?
+    @State private var adopting: Project?
+    @State private var deleteFiles = false
     @State private var collapsedGroups = Set<String>()
 
     private struct ProjectGroup: Identifiable {
@@ -313,20 +408,24 @@ struct ProjectsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            actionBar
             if model.projects.isEmpty {
                 ContentUnavailableView("Brak projektów", systemImage: "folder.badge.plus", description: Text("Dodaj folder i wybierz skille dla Claude, Codex lub OpenCode."))
             } else {
                 projectList
             }
-            Divider()
-            actionBar
         }
         .navigationTitle("Projekty")
         .sheet(isPresented: $showBatch) { BatchProjectView(skills: model.skills, servers: model.mcp.servers, existingProjects: model.projects) { projects, servers, tags in Task { await model.addProjects(projects, serverIDs: servers, serverTags: tags) } } }
         .sheet(item: $editing) { project in ProjectEditor(skills: model.skills, servers: model.mcp.servers, project: project, selectedServerIDs: model.selectedMCPServerIDs(for: project), selectedServerTags: model.mcp.projectServerTags?[project.id.uuidString] ?? []) { updated, servers, tags in Task { await model.updateProject(updated, serverIDs: servers, serverTags: tags) } } }
         .sheet(item: $previewProject) { project in MCPPreviewView(model: model, project: project) }
         .sheet(isPresented: $showAllSync) { AllProjectsSyncPreviewView(model: model) }
-        .confirmationDialog("Usunąć projekt \(deleting?.name ?? "") z Agentbox?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) { Button("Usuń projekt", role: .destructive) { if let deleting { Task { await model.deleteProject(deleting) } }; deleting = nil }; Button("Anuluj", role: .cancel) { deleting = nil } } message: { Text("Folder projektu i jego pliki pozostaną na dysku.") }
+        .confirmationDialog("Usunąć projekt \(deleting?.name ?? "") z Agentbox?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+            Button("Usuń tylko z Agentbox", role: .destructive) { if let deleting { Task { await model.deleteProject(deleting, removingFiles: false) } }; deleting = nil }
+            Button("Usuń i posprzątaj pliki w projekcie", role: .destructive) { if let deleting { Task { await model.deleteProject(deleting, removingFiles: true) } }; deleting = nil }
+            Button("Anuluj", role: .cancel) { deleting = nil }
+        } message: { Text("Sprzątanie usuwa z folderu projektu wyłącznie katalogi skilli i wpisy MCP wymienione w manifestach Agentbox. Przed zmianą powstaje backup, który można cofnąć w sekcji Odzyskiwanie.") }
+        .sheet(item: $adopting) { project in AdoptSkillsView(model: model, project: project) }
     }
 
     private var projectList: some View {
@@ -334,7 +433,7 @@ struct ProjectsView: View {
             ForEach(groups) { group in
                 DisclosureGroup(isExpanded: groupExpansion(group.path)) {
                     ForEach(group.projects) { project in
-                        ProjectRow(project: project, editing: $editing, previewProject: $previewProject, deleting: $deleting)
+                        ProjectRow(project: project, status: model.statuses[project.id], editing: $editing, previewProject: $previewProject, deleting: $deleting, adopting: $adopting)
                     }
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
@@ -353,20 +452,24 @@ struct ProjectsView: View {
     }
 
     private var actionBar: some View {
-        HStack {
-            Button { showProject = true } label: { Label("Dodaj projekt", systemImage: "plus") }
-            Button { showBatch = true } label: { Label("Dodaj wiele", systemImage: "folder.badge.plus") }
+        ActionBar {
+            Button { showAllSync = true } label: { Label("Synchronizuj wszystkie", systemImage: "arrow.triangle.2.circlepath") }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.projects.isEmpty || model.isWorking)
+            Button { Task { await model.loadStatuses() } } label: { Label("Sprawdź stan", systemImage: "arrow.clockwise") }
+                .buttonStyle(.bordered)
+                .disabled(model.projects.isEmpty || model.isCheckingStatuses)
+            Button { showProject = true } label: { Label("Dodaj projekt", systemImage: "plus") }.buttonStyle(.bordered)
+            Button { showBatch = true } label: { Label("Dodaj wiele", systemImage: "folder.badge.plus") }.buttonStyle(.bordered)
             Menu {
                 Button("Rozwiń wszystko") { collapsedGroups.removeAll() }
                 Button("Zwiń wszystko") { collapsedGroups = Set(groups.map(\.path)) }
             } label: { Image(systemName: "rectangle.expand.vertical") }
+            .menuStyle(.borderlessButton).frame(width: 42)
             .help("Rozwiń lub zwiń grupy")
             Spacer()
-            Button { showAllSync = true } label: { Label("Synchronizuj wszystkie projekty", systemImage: "arrow.triangle.2.circlepath") }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.projects.isEmpty || model.isWorking)
+            if model.isCheckingStatuses { ProgressView().controlSize(.small) }
         }
-        .padding(12)
     }
 
     private func groupExpansion(_ path: String) -> Binding<Bool> {
@@ -374,22 +477,54 @@ struct ProjectsView: View {
     }
 }
 
+struct ProjectStatusBadge: View {
+    let status: ProjectStatus?
+    var body: some View {
+        switch status?.state {
+        case .synced:
+            Label("Aktualny", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
+        case .pending(let added, let outdated, let removed):
+            Label(summary(added, outdated, removed), systemImage: "arrow.triangle.2.circlepath").font(.caption).foregroundStyle(.orange)
+        case .blocked(let reason):
+            Label("Zablokowany", systemImage: "exclamationmark.octagon.fill").font(.caption).foregroundStyle(.red).help(reason)
+        case .missing:
+            Label("Brak folderu", systemImage: "questionmark.folder").font(.caption).foregroundStyle(.red)
+        case nil:
+            Label("Nieznany", systemImage: "clock").font(.caption).foregroundStyle(.tertiary)
+        }
+    }
+    private func summary(_ added: Int, _ outdated: Int, _ removed: Int) -> String {
+        var parts: [String] = []
+        if added > 0 { parts.append("+\(added)") }
+        if outdated > 0 { parts.append("~\(outdated)") }
+        if removed > 0 { parts.append("-\(removed)") }
+        return "Do synchronizacji " + parts.joined(separator: " ")
+    }
+}
+
 private struct ProjectRow: View {
     let project: Project
+    let status: ProjectStatus?
     @Binding var editing: Project?
     @Binding var previewProject: Project?
     @Binding var deleting: Project?
+    @Binding var adopting: Project?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading) {
-                    Text(project.name).fontWeight(.medium)
+                    HStack(spacing: 8) { Text(project.name).fontWeight(.medium); ProjectStatusBadge(status: status) }
                     Text(project.path).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(project.path)
                 }
                 Spacer()
-                Button("Edytuj") { editing = project }
-                Button("Usuń", role: .destructive) { deleting = project }
+                Menu {
+                    Button("Edytuj…") { editing = project }
+                    Button("Przejmij skille z projektu…") { adopting = project }
+                    Divider()
+                    Button("Usuń projekt…", role: .destructive) { deleting = project }
+                } label: { Image(systemName: "ellipsis.circle") }
+                .menuStyle(.borderlessButton).frame(width: 42)
                 Button("Synchronizuj wszystko") { previewProject = project }.buttonStyle(.borderedProminent)
             }
             HStack {
@@ -490,6 +625,50 @@ private struct AllProjectsSyncPlanRow: View {
     }
 }
 
+struct AdoptSkillsView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var model: AppModel
+    let project: Project
+    @State private var candidates: [AdoptableSkill]?
+    @State private var selected = Set<String>()
+    @State private var error = ""
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Przejmij skille z projektu").font(.title2.bold())
+            Text("Katalogi ze `SKILL.md`, które leżą w \(project.name), nie są zarządzane przez Agentbox i nie mają jeszcze odpowiednika w bibliotece. Przejęcie kopiuje je do biblioteki jako skille lokalne — nic nie znika z projektu.").font(.caption).foregroundStyle(.secondary)
+            if !error.isEmpty { Text(error).foregroundStyle(.red) }
+            else if candidates == nil { ProgressView() }
+            else if candidates?.isEmpty == true { ContentUnavailableView("Brak kandydatów", systemImage: "checkmark.circle", description: Text("Wszystkie skille w tym projekcie są już zarządzane albo znane bibliotece.")) }
+            else if let candidates {
+                List {
+                    ForEach(candidates) { item in
+                        Toggle(isOn: Binding(get: { selected.contains(item.id) }, set: { if $0 { selected.insert(item.id) } else { selected.remove(item.id) } })) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.suggestedID).fontWeight(.medium)
+                                Text(item.path).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }.toggleStyle(.checkbox)
+                    }
+                }
+            }
+            HStack {
+                if let candidates, !candidates.isEmpty {
+                    Button("Zaznacz wszystkie") { selected = Set(candidates.map(\.id)) }
+                    Button("Wyczyść") { selected.removeAll() }
+                }
+                Spacer()
+                Button("Zamknij") { dismiss() }
+                Button("Przejmij \(selected.count)") {
+                    let items = (candidates ?? []).filter { selected.contains($0.id) }
+                    Task { await model.adoptSkills(items); dismiss() }
+                }.buttonStyle(.borderedProminent).disabled(selected.isEmpty || model.isWorking)
+            }
+        }
+        .padding(24).frame(width: 640, height: 520)
+        .task { do { candidates = try await model.adoptableSkills(project) } catch { self.error = error.localizedDescription } }
+    }
+}
+
 struct GlobalSyncView: View {
     @ObservedObject var model: AppModel
     @State private var tools = Set<Tool>()
@@ -529,15 +708,16 @@ struct GlobalSyncView: View {
                     }
                 } }.padding(6) }
             }
-            HStack {
-                Button("Zapisz wybór") { Task { await model.saveGlobalSelection(selection); await refresh() } }
-                Button("Odśwież podgląd") { Task { await refresh() } }
-                Spacer()
-                Button("Synchronizuj globalnie") {
-                    Task { await model.saveGlobalSelection(selection); if await model.syncGlobal() { await refresh() } }
-                }.buttonStyle(.borderedProminent).disabled(tools.isEmpty || model.isWorking)
-            }
         }.padding(28) }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            ActionBar {
+                Button { Task { await model.saveGlobalSelection(selection); if await model.syncGlobal() { await refresh() } } } label: { Label("Synchronizuj globalnie", systemImage: "arrow.triangle.2.circlepath") }
+                    .buttonStyle(.borderedProminent).disabled(tools.isEmpty || model.isWorking)
+                Button { Task { await model.saveGlobalSelection(selection); await refresh() } } label: { Label("Zapisz wybór", systemImage: "tray.and.arrow.down") }.buttonStyle(.bordered)
+                Button { Task { await refresh() } } label: { Label("Odśwież podgląd", systemImage: "arrow.clockwise") }.buttonStyle(.bordered)
+                Spacer()
+            }.background(.bar)
+        }
         .navigationTitle("Globalne")
         .task { guard !loaded else { return }; loaded = true; let saved = await model.globalSelection(); tools = Set(saved.tools); skillIDs = Set(saved.skillIDs); tags = Set(saved.tags); await refresh() }
     }
@@ -556,9 +736,14 @@ struct MCPView: View {
     @State private var editingServer: MCPServer?
     @State private var serverToDelete: MCPServer?
     @State private var showImport = false
-    var body: some View { VStack(spacing: 0) { List {
+    var body: some View { VStack(spacing: 0) { ActionBar {
+        Button { showImport = true } label: { Label("Importuj lub użyj AI", systemImage: "sparkles") }.buttonStyle(.borderedProminent)
+        Button { editingServer = MCPServer(name: "", transport: .stdio) } label: { Label("Nowy serwer", systemImage: "plus") }.buttonStyle(.bordered)
+        Spacer()
+        Text("\(model.mcp.servers.count) serwerów").font(.caption).foregroundStyle(.secondary)
+    }; List {
         Section("Serwery") { ForEach(model.mcp.servers) { server in HStack { Image(systemName: server.transport == .stdio ? "terminal" : "globe").foregroundStyle(.tint); VStack(alignment: .leading, spacing: 5) { HStack { Text(server.name).fontWeight(.medium); Text(server.transport == .stdio ? "Lokalny" : "HTTP").font(.caption2.weight(.semibold)).padding(.horizontal, 7).padding(.vertical, 2).background((server.transport == .stdio ? Color.blue : Color.green).opacity(0.14), in: Capsule()); ForEach(server.tags ?? [], id: \.self) { TagPill(tag: $0) } }; let secretCount = (server.secretEnvironment?.count ?? 0) + (server.secretHeaders?.count ?? 0); Text("\(server.arguments.count) argumentów · \((server.environment.count) + (server.literalEnvironment?.count ?? 0) + (server.secretEnvironment?.count ?? 0)) zmiennych\(secretCount > 0 ? " · \(secretCount) sekretów lokalnych" : "")").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Szczegóły") { editingServer = server }; Button(role: .destructive) { serverToDelete = server } label: { Image(systemName: "trash") } } } }
-    }; Divider(); HStack { Button { showImport = true } label: { Label("Importuj lub użyj AI", systemImage: "sparkles") }.buttonStyle(.borderedProminent); Button { editingServer = MCPServer(name: "", transport: .stdio) } label: { Label("Nowy serwer", systemImage: "plus") }; Spacer() }.padding(12) }.navigationTitle("MCP")
+    } }.navigationTitle("MCP")
         .sheet(isPresented: $showImport) { MCPImportView(model: model) }
         .sheet(item: $editingServer) { server in MCPServerEditor(model: model, server: server, existingTags: Array(Set(model.mcp.servers.flatMap { $0.tags ?? [] })).sorted()) }
         .confirmationDialog("Usunąć serwer \(serverToDelete?.name ?? "")?", isPresented: Binding(get: { serverToDelete != nil }, set: { if !$0 { serverToDelete = nil } })) { Button("Usuń", role: .destructive) { if let serverToDelete { Task { await model.deleteMCPServer(serverToDelete.id) } }; serverToDelete = nil }; Button("Anuluj", role: .cancel) { serverToDelete = nil } } message: { Text("Serwer zostanie usunięty także z bezpośrednich przypisań projektów.") }
@@ -590,8 +775,8 @@ struct MCPImportView: View {
     @State private var error = ""
     @State private var useAI = false
     @State private var provider: MCPAIProvider = .openAI
-    @State private var openAIModel = "gpt-5.6"
-    @State private var claudeModel = "claude-sonnet-5"
+    @State private var openAIModel = MCPAIDefaults.openAIModel
+    @State private var claudeModel = MCPAIDefaults.claudeModel
     @State private var apiKey = ""
     @State private var working = false
     @State private var selected = Set<String>()
@@ -668,18 +853,18 @@ struct BackupView: View {
         Text("Do Git trafiają skille, tagi i konfiguracja MCP bez sekretów. Lokalne ścieżki projektów pozostają tylko na tym Macu.").foregroundStyle(.secondary)
         GroupBox("Automatyzacja") { VStack(alignment: .leading, spacing: 10) { Toggle("Automatycznie twórz lokalne commity", isOn: $autoBackup); Toggle("Automatycznie wysyłaj do origin", isOn: $autoPush).disabled(!autoBackup); Text("Zmiany skilli, tagów i serwerów są łączone przez 5 sekund w jeden commit. Pierwszy backup i konfigurację origin wykonaj ręcznie.").font(.caption).foregroundStyle(.secondary) }.padding(8) }
         TextField("Git remote, np. git@github.com:user/agentbox-backup.git", text: $remote).textFieldStyle(.roundedBorder)
-        HStack { Button("Odśwież status") { Task { await model.loadBackupStatus() } }; Button("Wykonaj backup teraz") { Task { await model.backup(remote: remote) } }.buttonStyle(.borderedProminent) }
+        HStack { Button("Wykonaj backup teraz") { Task { await model.backup(remote: remote) } }.buttonStyle(.borderedProminent); Button("Odśwież status") { Task { await model.loadBackupStatus() } }.buttonStyle(.bordered); Spacer() }
         GroupBox("Status") { Text(model.backupStatus.isEmpty ? "Kliknij „Odśwież status”." : model.backupStatus).font(.system(.body, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading).padding(6) }
         Divider().padding(.vertical, 4)
         Label("Odtworzenie biblioteki ze zdalnego repozytorium", systemImage: "arrow.down.circle").font(.title2.bold())
         Text("Pobiera skille, katalog i konfigurację MCP z repozytorium backupu — na przykład przy konfiguracji nowego Maca. Projekty, lokalne ścieżki i sekrety na tym Macu pozostają bez zmian. Przed zapisem powstaje pełny backup lokalny.").foregroundStyle(.secondary)
         TextField("Adres repozytorium do odtworzenia", text: $restoreRemote).textFieldStyle(.roundedBorder)
-        HStack { Spacer(); Button("Odtwórz bibliotekę") { showRestoreConfirmation = true }.disabled(restoreRemote.trimmingCharacters(in: .whitespaces).isEmpty || model.isWorking) }
+        HStack { Button("Odtwórz bibliotekę") { showRestoreConfirmation = true }.buttonStyle(.bordered).disabled(restoreRemote.trimmingCharacters(in: .whitespaces).isEmpty || model.isWorking); Spacer() }
         Divider().padding(.vertical, 4)
         Label("Pełny backup lokalny", systemImage: "externaldrive.fill.badge.plus").font(.title2.bold())
         Label("Zawiera również projekty, lokalne ścieżki, wszystkie skille, MCP, sekrety i klucze AI. Pliki są czytelne i niezaszyfrowane — nie udostępniaj folderu backups.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-        HStack { Button("Utwórz pełny backup") { Task { await model.createFullBackup() } }.buttonStyle(.borderedProminent); Button("Odśwież listę") { Task { await model.loadFullBackups() } }; Spacer(); Text("\(model.rootPath)/backups/full").font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
-        GroupBox("Dostępne pełne backupy") { VStack(spacing: 8) { if model.fullBackups.isEmpty { Text("Brak pełnych backupów.").foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }; ForEach(model.fullBackups) { backup in HStack { Image(systemName: "archivebox.fill").foregroundStyle(.blue); VStack(alignment: .leading) { Text(formatter.string(from: backup.createdAt)); Text("Agentbox \(backup.applicationVersion) · \(backup.name)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Przywróć") { fullBackupToRestore = backup }; Button("Usuń", role: .destructive) { fullBackupToDelete = backup } } } }.padding(8) }
+        HStack { Button("Utwórz pełny backup") { Task { await model.createFullBackup() } }.buttonStyle(.borderedProminent); Button("Odśwież listę") { Task { await model.loadFullBackups() } }.buttonStyle(.bordered); Spacer(); Text("\(model.rootPath)/backups/full").font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
+        GroupBox("Dostępne pełne backupy") { VStack(spacing: 8) { if model.fullBackups.isEmpty { Text("Brak pełnych backupów.").foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }; ForEach(model.fullBackups) { backup in HStack { Image(systemName: "archivebox.fill").foregroundStyle(.blue); VStack(alignment: .leading) { Text(formatter.string(from: backup.createdAt)); Text("Agentbox \(backup.applicationVersion) · \(backup.name)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Przywróć") { fullBackupToRestore = backup }.buttonStyle(.bordered); Button("Usuń", role: .destructive) { fullBackupToDelete = backup }.buttonStyle(.bordered) } } }.padding(8) }
     }.padding(28) }.navigationTitle("Backup").task { await model.loadBackupStatus(); await model.loadFullBackups() }
         .confirmationDialog("Przywrócić pełny backup?", isPresented: Binding(get: { fullBackupToRestore != nil }, set: { if !$0 { fullBackupToRestore = nil } })) { Button("Przywróć wszystkie dane", role: .destructive) { if let backup = fullBackupToRestore { Task { await model.restoreFullBackup(backup) } }; fullBackupToRestore = nil }; Button("Anuluj", role: .cancel) { fullBackupToRestore = nil } } message: { Text("Aktualna biblioteka, projekty, skille, MCP i sekrety zostaną zastąpione. Agentbox najpierw zachowa pełną kopię aktualnego stanu w backups/restore-rollbacks.") }
         .confirmationDialog("Usunąć pełny backup?", isPresented: Binding(get: { fullBackupToDelete != nil }, set: { if !$0 { fullBackupToDelete = nil } })) { Button("Usuń backup", role: .destructive) { if let backup = fullBackupToDelete { Task { await model.deleteFullBackup(backup) } }; fullBackupToDelete = nil }; Button("Anuluj", role: .cancel) { fullBackupToDelete = nil } } message: { Text("Ta kopia zawierająca również sekrety zostanie trwale usunięta z lokalnego folderu backups/full.") }
@@ -698,7 +883,7 @@ struct RecoveryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Label("Odzyskiwanie", systemImage: "clock.arrow.circlepath").font(.largeTitle.bold()); Spacer(); Button("Odśwież") { Task { await model.loadRecovery() } } }
+            HStack { Label("Odzyskiwanie", systemImage: "clock.arrow.circlepath").font(.largeTitle.bold()); Spacer(); Button("Odśwież") { Task { await model.loadRecovery() } }.buttonStyle(.bordered) }
             Text("Przywrócenie tworzy najpierw kopię aktualnego stanu, więc można cofnąć również samą operację odzyskiwania.").foregroundStyle(.secondary)
             List {
                 Section("Snapshoty biblioteki") {
@@ -826,8 +1011,8 @@ struct CLISettingsCard: View {
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     let updater: SPUUpdater
-    @State private var openAIModel = "gpt-5.6"
-    @State private var anthropicModel = "claude-sonnet-5"
+    @State private var openAIModel = MCPAIDefaults.openAIModel
+    @State private var anthropicModel = MCPAIDefaults.claudeModel
     @State private var openAIKey = ""
     @State private var anthropicKey = ""
     var body: some View {
@@ -894,9 +1079,30 @@ struct ProjectEditor: View {
     @State private var selectedTags = Set<String>()
     @State private var selectedServers = Set<UUID>()
     @State private var selectedMCPtags = Set<String>()
+    @State private var excluded = Set<String>()
+    @State private var manageGitignore = false
     private var availableTags: [String] { Array(Set(skills.flatMap(\.tags))).sorted() }
     private var mcpTags: [String] { Array(Set(servers.flatMap { $0.tags ?? [] })).sorted() }
-    var body: some View { ScrollView { VStack(alignment: .leading, spacing: 14) { Text(project == nil ? "Nowy projekt" : "Edytuj projekt").font(.title2.bold()); TextField("Nazwa", text: $name); HStack { TextField("Folder projektu", text: $path); Button("Wybierz…") { chooseFolder() } }; GroupBox("Narzędzia") { HStack { ForEach(Tool.allCases, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: toolBinding(tool)).toggleStyle(.checkbox) } }.padding(6) }; GroupBox("Pojedyncze skille") { ScrollView { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(skills) { skill in Toggle(skill.name, isOn: skillBinding(skill.id)).toggleStyle(.checkbox) } }.padding(6) }.frame(height: 150) }; GroupBox("Tagi skilli") { tagGrid(availableTags, selection: $selectedTags) }; GroupBox("Pojedyncze serwery MCP") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(servers) { server in Toggle(server.name, isOn: serverBinding(server.id)).toggleStyle(.checkbox) } }.padding(6) }; GroupBox("Tagi MCP") { tagGrid(mcpTags, selection: $selectedMCPtags) }; HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { onSave(Project(id: project?.id ?? UUID(), name: name, path: path, tools: Array(tools), skillIDs: Array(selected), tags: Array(selectedTags).sorted()), Array(selectedServers), Array(selectedMCPtags).sorted()); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || path.isEmpty || tools.isEmpty) } }.padding(24) }.frame(width: 700, height: 820).onAppear { selectedServers = Set(selectedServerIDs); selectedMCPtags = Set(selectedServerTags); if let project { name = project.name; path = project.path; tools = Set(project.tools); selected = Set(project.skillIDs); selectedTags = Set(project.tags) } } }
+    var body: some View { ScrollView { VStack(alignment: .leading, spacing: 14) { Text(project == nil ? "Nowy projekt" : "Edytuj projekt").font(.title2.bold()); TextField("Nazwa", text: $name); HStack { TextField("Folder projektu", text: $path); Button("Wybierz…") { chooseFolder() } }; GroupBox("Narzędzia") { HStack { ForEach(Tool.allCases, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: toolBinding(tool)).toggleStyle(.checkbox) } }.padding(6) }; GroupBox("Pojedyncze skille") { ScrollView { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(skills) { skill in Toggle(skill.name, isOn: skillBinding(skill.id)).toggleStyle(.checkbox) } }.padding(6) }.frame(height: 150) }; GroupBox("Tagi skilli") { tagGrid(availableTags, selection: $selectedTags) }; GroupBox("Pojedyncze serwery MCP") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(servers) { server in Toggle(server.name, isOn: serverBinding(server.id)).toggleStyle(.checkbox) } }.padding(6) }; GroupBox("Tagi MCP") { tagGrid(mcpTags, selection: $selectedMCPtags) }; exclusionsBox; GroupBox("Git") { VStack(alignment: .leading, spacing: 6) { Toggle("Dopisuj wygenerowane pliki MCP do .gitignore projektu", isOn: $manageGitignore).toggleStyle(.checkbox); Text(".gitignore jedzie z repozytorium, więc chroni też zespół. Agentbox dopisuje tylko własny blok i nigdy nie usuwa istniejących wpisów.").font(.caption).foregroundStyle(.secondary) }.padding(6) }; HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { onSave(Project(id: project?.id ?? UUID(), name: name, path: path, tools: Array(tools), skillIDs: Array(selected), tags: Array(selectedTags).sorted(), excludedSkillIDs: excluded.isEmpty ? nil : Array(excluded).sorted(), manageGitignore: manageGitignore), Array(selectedServers), Array(selectedMCPtags).sorted()); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || path.isEmpty || tools.isEmpty) } }.padding(24) }.frame(width: 700, height: 880).onAppear { selectedServers = Set(selectedServerIDs); selectedMCPtags = Set(selectedServerTags); if let project { name = project.name; path = project.path; tools = Set(project.tools); selected = Set(project.skillIDs); selectedTags = Set(project.tags); excluded = Set(project.excludedSkillIDs ?? []); manageGitignore = project.manageGitignore ?? false } else { manageGitignore = true } } }
+
+    /// Only skills that a tag pulls in can be excluded — an individually selected skill is removed
+    /// by unchecking it, so listing it here would be a second way to do the same thing.
+    private var tagMatched: [Skill] { skills.filter { !$0.tags.filter(selectedTags.contains).isEmpty && !selected.contains($0.id) }.sorted { $0.name < $1.name } }
+    @ViewBuilder private var exclusionsBox: some View {
+        GroupBox("Wykluczenia") {
+            VStack(alignment: .leading, spacing: 6) {
+                if tagMatched.isEmpty { Text("Wybierz tagi skilli, aby móc wykluczyć pojedyncze pozycje.").font(.caption).foregroundStyle(.secondary) }
+                else {
+                    Text("Te skille wchodzą przez tagi. Zaznaczone zostaną pominięte w tym projekcie.").font(.caption).foregroundStyle(.secondary)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) {
+                        ForEach(tagMatched) { skill in
+                            Toggle(skill.name, isOn: Binding(get: { excluded.contains(skill.id) }, set: { if $0 { excluded.insert(skill.id) } else { excluded.remove(skill.id) } })).toggleStyle(.checkbox)
+                        }
+                    }
+                }
+            }.padding(6)
+        }
+    }
     private func toolBinding(_ tool: Tool) -> Binding<Bool> { Binding(get: { tools.contains(tool) }, set: { if $0 { tools.insert(tool) } else { tools.remove(tool) } }) }
     private func skillBinding(_ id: String) -> Binding<Bool> { Binding(get: { selected.contains(id) }, set: { if $0 { selected.insert(id) } else { selected.remove(id) } }) }
     private func serverBinding(_ id: UUID) -> Binding<Bool> { Binding(get: { selectedServers.contains(id) }, set: { if $0 { selectedServers.insert(id) } else { selectedServers.remove(id) } }) }

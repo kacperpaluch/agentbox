@@ -115,6 +115,25 @@ public actor SkillboxService {
         return skill
     }
 
+    /// Saves edited `SKILL.md` content back into the library copy and bumps `updatedAt`, so every
+    /// project that already has this skill immediately reports as outdated.
+    ///
+    /// Only local skills are editable. A Git-backed skill is replaced wholesale by `update`, so an
+    /// in-app edit would be silently thrown away the next time the user pulls a new revision.
+    public func saveSkillMarkdown(skillID: String, content: String) async throws {
+        var catalog = try await store.catalog()
+        guard let index = catalog.skills.firstIndex(where: { $0.id == skillID }) else { throw SkillboxError.skillNotFound(skillID) }
+        guard catalog.skills[index].source.kind == .local else {
+            throw SkillboxError.invalidSkill("skille z Git są zastępowane przy aktualizacji, więc nie można ich edytować w aplikacji")
+        }
+        let directory = await store.skillsDirectory.appending(path: skillID).standardizedFileURL
+        guard directory.deletingLastPathComponent() == (await store.skillsDirectory.standardizedFileURL) else { throw SkillboxError.unsafePath(directory.path) }
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        try content.write(to: directory.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        catalog.skills[index].updatedAt = .now
+        try await store.save(catalog)
+    }
+
     public func setTags(skillID: String, tags: [String]) async throws {
         var catalog = try await store.catalog()
         guard let index = catalog.skills.firstIndex(where: { $0.id == skillID }) else { throw SkillboxError.skillNotFound(skillID) }
@@ -142,10 +161,12 @@ public actor SkillboxService {
         guard directory.deletingLastPathComponent() == skillsRoot else { throw SkillboxError.unsafePath(directory.path) }
         if fm.fileExists(atPath: directory.path) { try fm.removeItem(at: directory) }
         catalog.skills.removeAll { $0.id == skillID }
-        try await store.save(catalog)
         var projects = try await store.configuration()
-        for index in projects.projects.indices { projects.projects[index].skillIDs.removeAll { $0 == skillID } }
-        try await store.save(projects)
+        for index in projects.projects.indices {
+            projects.projects[index].skillIDs.removeAll { $0 == skillID }
+            projects.projects[index].excludedSkillIDs?.removeAll { $0 == skillID }
+        }
+        try await store.save(catalog, projects)
     }
 
     @discardableResult
@@ -183,6 +204,46 @@ public actor SkillboxService {
         config.projects.append(project); try await store.save(config); return project
     }
 
+    /// Creates a project and its skill and MCP assignments in one operation. The GUI used to call
+    /// three separate methods, which took three snapshots for a single user action.
+    @discardableResult
+    public func addProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async throws -> Project {
+        let url = URL(fileURLWithPath: project.path).standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
+        var config = try await store.configuration()
+        guard !config.projects.contains(where: { $0.name.caseInsensitiveCompare(project.name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(project.name) już istnieje") }
+        var stored = project; stored.path = url.path
+        config.projects.append(stored)
+        var mcp = try await store.mcpConfiguration()
+        Self.assign(&mcp, projectID: stored.id, serverIDs: serverIDs, tags: serverTags)
+        try await store.save(config, mcp)
+        return stored
+    }
+
+    public func updateProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async throws {
+        var config = try await store.configuration()
+        guard let index = config.projects.firstIndex(where: { $0.id == project.id }) else { throw SkillboxError.projectNotFound(project.name) }
+        guard !config.projects.contains(where: { $0.id != project.id && $0.name.caseInsensitiveCompare(project.name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(project.name) już istnieje") }
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
+        config.projects[index] = project
+        var mcp = try await store.mcpConfiguration()
+        Self.assign(&mcp, projectID: project.id, serverIDs: serverIDs, tags: serverTags)
+        try await store.save(config, mcp)
+    }
+
+    private static func assign(_ mcp: inout MCPConfiguration, projectID: UUID, serverIDs: [UUID], tags: [String]) {
+        var assignments = mcp.projectServerIDs ?? [:]
+        assignments[projectID.uuidString] = Array(Set(serverIDs))
+        mcp.projectServerIDs = assignments
+        var tagAssignments = mcp.projectServerTags ?? [:]
+        tagAssignments[projectID.uuidString] = Array(Set(tags.map { $0.lowercased() })).sorted()
+        mcp.projectServerTags = tagAssignments
+        // Legacy presets are replaced by the direct selection saved here.
+        mcp.projectPresetIDs[projectID.uuidString] = []
+    }
+
     public func configureProject(name: String, skillIDs: [String], tags: [String]) async throws {
         var config = try await store.configuration()
         guard let index = config.projects.firstIndex(where: { $0.name == name }) else { throw SkillboxError.projectNotFound(name) }
@@ -211,7 +272,6 @@ public actor SkillboxService {
         var config = try await store.configuration()
         guard config.projects.contains(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
         config.projects.removeAll { $0.id == id }
-        try await store.save(config)
         var mcp = try await store.mcpConfiguration()
         mcp.projectPresetIDs.removeValue(forKey: id.uuidString)
         var profiles = mcp.projectProfileSelections ?? [:]
@@ -219,7 +279,39 @@ public actor SkillboxService {
         mcp.projectProfileSelections = profiles
         var servers = mcp.projectServerIDs ?? [:]; servers.removeValue(forKey: id.uuidString); mcp.projectServerIDs = servers
         var tags = mcp.projectServerTags ?? [:]; tags.removeValue(forKey: id.uuidString); mcp.projectServerTags = tags
-        try await store.save(mcp)
+        try await store.save(config, mcp)
+    }
+
+    /// Skill directories sitting in a project that Agentbox does not manage and that the library
+    /// does not have yet. These are exactly the directories that block synchronization, so adopting
+    /// one turns a conflict into a shared skill instead of forcing the user to delete their work.
+    public func adoptableSkills(projectID: UUID) async throws -> [AdoptableSkill] {
+        let config = try await store.configuration()
+        guard let project = config.projects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
+        let known = Set(try await store.catalog().skills.map(\.id))
+        var found: [AdoptableSkill] = []
+        for tool in project.tools {
+            let target = URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath)
+            let managed = Self.managedSkillIDs(at: target)
+            let entries = (try? fm.contentsOfDirectory(at: target, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+            for entry in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+                let id = entry.lastPathComponent
+                guard !managed.contains(id), !known.contains(id) else { continue }
+                guard fm.fileExists(atPath: entry.appending(path: "SKILL.md").path) else { continue }
+                found.append(AdoptableSkill(suggestedID: id, path: entry.path, tool: tool))
+            }
+        }
+        // The same skill can sit in .claude/skills and .codex/skills; adopt it once.
+        var unique: [AdoptableSkill] = []
+        for item in found where !unique.contains(where: { $0.suggestedID == item.suggestedID }) { unique.append(item) }
+        return unique
+    }
+
+    @discardableResult
+    public func adoptSkills(_ items: [AdoptableSkill]) async throws -> [Skill] {
+        var adopted: [Skill] = []
+        for item in items { adopted.append(try await addLocal(path: item.path, id: item.suggestedID)) }
+        return adopted
     }
 
     public func backupStatus() async throws -> String {
@@ -256,7 +348,7 @@ public actor SkillboxService {
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
         let catalog = try await store.catalog()
-        let selected = catalog.skills.filter { project.skillIDs.contains($0.id) || !$0.tags.filter(project.tags.contains).isEmpty }
+        let selected = Self.selectedSkills(in: catalog, for: project)
         var results: [Tool: SyncResult] = [:]
         for tool in project.tools {
             let target = URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath)
@@ -266,13 +358,35 @@ public actor SkillboxService {
     }
 
     public func syncGlobal(tool: Tool, skillIDs: [String], tags: [String] = [], dryRun: Bool = false, home: URL = FileManager.default.homeDirectoryForCurrentUser) async throws -> SyncResult {
-        let selected = try await selectedSkills(ids: skillIDs, tags: tags)
+        let selected = try await selectedSkills(ids: skillIDs, tags: tags, excluding: [])
         return try await sync(skills: selected, to: tool.globalSkillsURL(home: home), dryRun: dryRun)
     }
 
-    static func managedSkillIDs(at target: URL) -> Set<String> {
-        Set((try? JSONDecoder().decode([String].self, from: Data(contentsOf: target.appending(path: ".skillbox.json")))) ?? [])
+    /// Manifest of skills Agentbox owns inside one target directory.
+    ///
+    /// Version 2 records when each skill was last written so drift can be detected without
+    /// hashing files. Version 1 was a bare `["id", ...]` array and still decodes; its entries get
+    /// `distantPast`, so the first sync after upgrading reports them as outdated once.
+    struct SkillManifest: Codable {
+        var version = 2
+        var skills: [String: Date] = [:]
     }
+
+    static func skillManifest(at target: URL) -> SkillManifest {
+        guard let data = try? Data(contentsOf: target.appending(path: ".skillbox.json")) else { return SkillManifest(version: 2, skills: [:]) }
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        if let manifest = try? decoder.decode(SkillManifest.self, from: data) { return manifest }
+        let legacy = (try? JSONDecoder().decode([String].self, from: data)) ?? []
+        return SkillManifest(version: 1, skills: Dictionary(uniqueKeysWithValues: legacy.map { ($0, Date.distantPast) }))
+    }
+
+    static func writeSkillManifest(_ skills: [Skill], to target: URL) throws {
+        let manifest = SkillManifest(version: 2, skills: Dictionary(uniqueKeysWithValues: skills.map { ($0.id, $0.updatedAt) }))
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(manifest).write(to: target.appending(path: ".skillbox.json"), options: .atomic)
+    }
+
+    static func managedSkillIDs(at target: URL) -> Set<String> { Set(skillManifest(at: target).skills.keys) }
 
     /// A directory that exists in the target but is not listed in the Agentbox manifest belongs
     /// to the user. Replacing it would destroy hand-written skills, so synchronization stops
@@ -284,31 +398,50 @@ public actor SkillboxService {
         }
     }
 
-    static func skillPreview(tool: Tool, target: URL, current: Set<String>) throws -> SkillSyncPreview {
-        let previous = managedSkillIDs(at: target)
-        try assertNoUnmanagedSkillConflict(ids: Array(current), target: target, managed: previous)
+    static func skillPreview(tool: Tool, target: URL, current: [Skill]) throws -> SkillSyncPreview {
+        let manifest = skillManifest(at: target)
+        let previous = Set(manifest.skills.keys)
+        let ids = Set(current.map(\.id))
+        try assertNoUnmanagedSkillConflict(ids: Array(ids), target: target, managed: previous)
         let fm = FileManager.default
+        // Outdated means the library copy moved on, or the directory disappeared from the project.
+        // Both timestamps originate from the same `Skill.updatedAt` and are stored with ISO8601
+        // second granularity, so an up-to-date skill compares exactly equal.
+        let outdated = current.filter { skill in
+            guard let written = manifest.skills[skill.id] else { return false }
+            if !fm.fileExists(atPath: target.appending(path: skill.id).path) { return true }
+            return skill.updatedAt > written
+        }
         return SkillSyncPreview(
             tool: tool,
             target: target.path,
-            added: Array(current.subtracting(previous)).sorted(),
-            updated: Array(current.intersection(previous)).filter { fm.fileExists(atPath: target.appending(path: $0).path) }.sorted(),
-            removed: Array(previous.subtracting(current)).sorted()
+            added: Array(ids.subtracting(previous)).sorted(),
+            updated: outdated.map(\.id).sorted(),
+            removed: Array(previous.subtracting(ids)).sorted()
         )
     }
 
-    func selectedSkills(ids: [String], tags: [String]) async throws -> [Skill] {
-        try await store.catalog().skills.filter { ids.contains($0.id) || !$0.tags.filter(tags.contains).isEmpty }
+    func selectedSkills(ids: [String], tags: [String], excluding excluded: [String] = []) async throws -> [Skill] {
+        let excludedIDs = Set(excluded)
+        return try await store.catalog().skills
+            .filter { ids.contains($0.id) || !$0.tags.filter(tags.contains).isEmpty }
+            .filter { !excludedIDs.contains($0.id) }
+    }
+
+    static func selectedSkills(in catalog: Catalog, for project: Project) -> [Skill] {
+        let excluded = Set(project.excludedSkillIDs ?? [])
+        return catalog.skills
+            .filter { project.skillIDs.contains($0.id) || !$0.tags.filter(project.tags.contains).isEmpty }
+            .filter { !excluded.contains($0.id) }
     }
 
     private func sync(skills: [Skill], to target: URL, dryRun: Bool) async throws -> SyncResult {
         guard target.pathComponents.contains("skills"), target.path != "/" else { throw SkillboxError.unsafePath(target.path) }
-        let manifest = target.appending(path: ".skillbox.json")
-        let previous: [String] = (try? JSONDecoder().decode([String].self, from: Data(contentsOf: manifest))) ?? []
+        let previous = Self.managedSkillIDs(at: target)
         let current = skills.map(\.id).sorted(); var result = SyncResult()
         // Checked before the first removal so a conflict never leaves a half-synchronized target.
-        try Self.assertNoUnmanagedSkillConflict(ids: current, target: target, managed: Set(previous))
-        for stale in Set(previous).subtracting(current) {
+        try Self.assertNoUnmanagedSkillConflict(ids: current, target: target, managed: previous)
+        for stale in previous.subtracting(current) {
             result.removed.append(stale)
             let staleURL = target.appending(path: stale)
             if !dryRun, fm.fileExists(atPath: staleURL.path) { try fm.removeItem(at: staleURL) }
@@ -317,7 +450,10 @@ public actor SkillboxService {
             result.copied.append(skill.id)
             if !dryRun { try fm.createDirectory(at: target, withIntermediateDirectories: true); try copyReplacing(from: await store.skillsDirectory.appending(path: skill.id), to: target.appending(path: skill.id)) }
         }
-        if !dryRun { try JSONEncoder().encode(current).write(to: manifest, options: .atomic) }
+        if !dryRun {
+            try fm.createDirectory(at: target, withIntermediateDirectories: true)
+            try Self.writeSkillManifest(skills, to: target)
+        }
         return result
     }
 

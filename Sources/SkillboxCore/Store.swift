@@ -28,6 +28,34 @@ public actor SkillboxStore {
     public func save(_ catalog: Catalog) throws { try snapshotLibrary(); try atomicWrite(catalog, to: catalogURL) }
     public func save(_ config: LocalConfiguration) throws { try snapshotLibrary(); try atomicWrite(config, to: localURL) }
     public func save(_ config: MCPConfiguration) throws { try snapshotLibrary(); try atomicWrite(config, to: mcpURL) }
+
+    /// One user action that touches two files takes one snapshot and either applies both writes
+    /// or neither. Saving them separately burned two of the ten snapshot slots and could leave the
+    /// catalog and the project list disagreeing when the second write failed.
+    public func save(_ catalog: Catalog, _ config: LocalConfiguration) throws {
+        try snapshotLibrary()
+        try writeTogether([(try encoder.encode(catalog), catalogURL), (try encoder.encode(config), localURL)])
+    }
+
+    public func save(_ config: LocalConfiguration, _ mcp: MCPConfiguration) throws {
+        try snapshotLibrary()
+        try writeTogether([(try encoder.encode(config), localURL), (try encoder.encode(mcp), mcpURL)])
+    }
+
+    private func writeTogether(_ writes: [(data: Data, url: URL)]) throws {
+        var restore: [(url: URL, data: Data?)] = []
+        do {
+            for write in writes {
+                restore.append((write.url, try? Data(contentsOf: write.url)))
+                try write.data.write(to: write.url, options: .atomic)
+            }
+        } catch {
+            for item in restore.reversed() {
+                if let data = item.data { try? data.write(to: item.url, options: .atomic) } else { try? fm.removeItem(at: item.url) }
+            }
+            throw error
+        }
+    }
     public func save(_ config: MCPConfiguration, replacingSecrets secrets: [String: String]) throws {
         let oldMCP = try? Data(contentsOf: mcpURL)
         let oldSecrets = try? Data(contentsOf: secretsURL)

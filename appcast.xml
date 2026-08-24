@@ -6,6 +6,31 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.7.0</title>
+      <pubDate>Mon, 24 Aug 2026 12:05:00 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.7.0</link>
+      <sparkle:version>13</sparkle:version>
+      <sparkle:shortVersionString>0.7.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.7.0</h2>
+        <ul>
+          <li>Status każdego projektu na liście: aktualny, liczba zmian, zablokowany albo brak folderu.</li>
+          <li>Edycja <code>SKILL.md</code> w aplikacji dla skilli dodanych z dysku.</li>
+          <li>Przejmowanie ręcznie napisanych skilli z projektu do biblioteki.</li>
+          <li>Usuwanie projektu może posprzątać pliki, które Agentbox tam zapisał.</li>
+          <li>Wykluczenia skilli per projekt i opcjonalny wpis do <code>.gitignore</code> projektu.</li>
+          <li>Przyciski akcji przeniesione na górę sekcji i ujednolicone kolorystycznie.</li>
+          <li>Poprawki MCP: osierocone sekrety, konflikty Codeksa w cudzysłowie, zmienne o różnych nazwach, sprzątanie <code>opencode.json</code>.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.7.0/Agentbox-0.7.0.dmg"
+        length="4933236"
+        type="application/octet-stream"
+        sparkle:edSignature="52VdTYKCmYSFzN2QAvkFLno9akdOxRBA9J5Ku3YTZiBFAeh+qdcLeI0hxy6qK+49mFhkFSqIoyBVrzaT5fetAA==" />
+    </item>
+    <item>
       <title>Agentbox 0.6.0</title>
       <pubDate>Mon, 24 Aug 2026 11:25:00 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.6.0</link>

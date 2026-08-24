@@ -69,6 +69,12 @@ swift run agentbox add https://github.com/user/repo.git --path skills
 swift run agentbox add https://github.com/user/repo.git --path skills/seo --branch main
 ```
 
+### Edycja i przejmowanie
+
+Skille dodane z dysku można edytować w aplikacji przyciskiem `Edytuj SKILL.md`; zapis oznacza projekty z tym skillem jako nieaktualne. Skille z Git są tylko do odczytu, bo `Aktualizuj` zastąpiłoby zmiany zawartością repozytorium.
+
+Ręcznie napisany katalog ze `SKILL.md`, który leży w projekcie i blokuje synchronizację, można przejąć do biblioteki przez `⋯ → Przejmij skille z projektu…` albo `agentbox project adopt <nazwa> --yes`.
+
 ### Tagi, filtrowanie i aktualizacje
 
 - tagi można edytować w szczegółach skilla,
@@ -144,6 +150,8 @@ Agentbox zachowuje niezależne, ręczne ustawienia w plikach projektu. Konflikt 
 Agentbox zachowuje maksymalnie 10 ostatnich katalogów kopii MCP. Jeśli źródłem jest `opencode.jsonc`, podgląd ostrzega, że komentarze i formatowanie zostaną utracone podczas przepisania pliku.
 
 GUI pokazuje również pełny plan zmian skilli dla każdego narzędzia. Synchronizacja skilli i MCP działa jako jedna transakcja: błąd na dowolnym etapie przywraca zarządzane katalogi i pliki do stanu sprzed operacji. Ostatnie kopie znajdują się w `.skillbox/sync-backups/`. To samo dotyczy CLI — `agentbox sync project` i `agentbox sync all` używają tej samej ścieżki transakcyjnej.
+
+`Sprawdź stan` sprawdza wszystkie projekty naraz i oznacza każdy z nich: aktualny, liczba zmian do synchronizacji, zablokowany albo brak folderu. To samo w terminalu daje `agentbox project status`.
 
 Agentbox zastępuje wyłącznie katalogi skilli wymienione w swoim manifeście `.skillbox.json`. Katalog o tej samej nazwie, który nie pochodzi z Agentbox, zatrzymuje synchronizację zamiast zostać nadpisany — tak samo jak ręcznie dodany serwer MCP.
 
@@ -225,7 +233,8 @@ W `Backup → Pełny backup lokalny` można utworzyć, przywrócić lub usunąć
 - Podgląd oraz wynikowe pliki MCP mogą zawierać jawne sekrety.
 - Agentbox nie uruchamia ani nie testuje serwerów MCP.
 - Agentbox nie przeprowadza OAuth i nie zarządza sesją klienta.
-- Usunięcie projektu nigdy nie usuwa folderu projektu.
+- Usunięcie projektu nigdy nie usuwa folderu projektu; sprzątanie plików obejmuje wyłącznie pozycje z manifestów Agentbox.
+- Skille pochodzące z Git są w aplikacji tylko do odczytu.
 - Odtworzenie biblioteki nie przywraca projektów ani sekretów — te dane nie trafiają do backupu Git.
 - Aktualizacje Git są wykonywane wyłącznie na żądanie.
 - Konfigurację wygenerowaną przez AI należy sprawdzić przed importem.

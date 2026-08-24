@@ -139,6 +139,7 @@ enum MCPRenderer {
         let previous = try manifest(project)[tool.rawValue] ?? []
         let file: URL
         let content: String
+        var stale: (path: String, content: String)?
         switch tool {
         case .claude:
             file = project.appending(path: ".mcp.json")
@@ -148,10 +149,17 @@ enum MCPRenderer {
             content = try codexMerged(file: file, servers: servers, previouslyManaged: Set(previous), secrets: secrets)
         case .opencode:
             let jsonc = project.appending(path: "opencode.jsonc")
-            file = FileManager.default.fileExists(atPath: jsonc.path) ? jsonc : project.appending(path: "opencode.json")
+            let json = project.appending(path: "opencode.json")
+            file = FileManager.default.fileExists(atPath: jsonc.path) ? jsonc : json
             content = try jsonMerged(file: file, path: ["mcp"], servers: servers, tool: tool, previouslyManaged: Set(previous), secrets: secrets)
+            // Adding opencode.jsonc later moves the target file. Without this, every entry
+            // Agentbox had written to opencode.json would stay there forever, unmanaged.
+            if file == jsonc, !previous.isEmpty, FileManager.default.fileExists(atPath: json.path) {
+                let cleaned = try jsonMerged(file: json, path: ["mcp"], servers: [], tool: tool, previouslyManaged: Set(previous), secrets: secrets)
+                if cleaned != (try? String(contentsOf: json, encoding: .utf8)) { stale = (json.path, cleaned) }
+            }
         }
-        return MCPPreview(tool: tool, file: file.path, content: content, added: Array(Set(names).subtracting(previous)).sorted(), removed: Array(Set(previous).subtracting(names)).sorted())
+        return MCPPreview(tool: tool, file: file.path, content: content, added: Array(Set(names).subtracting(previous)).sorted(), removed: Array(Set(previous).subtracting(names)).sorted(), staleFile: stale?.path, staleContent: stale?.content)
     }
 
     static func apply(previews: [MCPPreview], project: URL) throws {
@@ -174,6 +182,15 @@ enum MCPRenderer {
                 originals.append((file, backupFile, existed))
                 guard let data = preview.content.data(using: .utf8) else { throw SkillboxError.mcpConflict("nie można zakodować \(file.lastPathComponent)") }
                 try data.write(to: file, options: .atomic)
+                if let stalePath = preview.staleFile, let staleContent = preview.staleContent {
+                    let staleURL = URL(fileURLWithPath: stalePath)
+                    try fm.createDirectory(at: backup, withIntermediateDirectories: true)
+                    let copy = backup.appending(path: preview.tool.rawValue + "-stale-" + staleURL.lastPathComponent)
+                    try fm.copyItem(at: staleURL, to: copy)
+                    originals.append((staleURL, copy, true))
+                    guard let staleData = staleContent.data(using: .utf8) else { throw SkillboxError.mcpConflict("nie można zakodować \(staleURL.lastPathComponent)") }
+                    try staleData.write(to: staleURL, options: .atomic)
+                }
                 let names = Set(state[preview.tool.rawValue] ?? []).subtracting(preview.removed).union(preview.added)
                 state[preview.tool.rawValue] = Array(names).sorted()
             }
@@ -258,15 +275,19 @@ enum MCPRenderer {
     private static func codexMerged(file: URL, servers: [MCPServer], previouslyManaged: Set<String>, secrets: [String: String]) throws -> String {
         var existing = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
         if let startRange = existing.range(of: start), let endRange = existing.range(of: end), startRange.lowerBound < endRange.upperBound { existing.removeSubrange(startRange.lowerBound..<endRange.upperBound); existing = existing.trimmingCharacters(in: .whitespacesAndNewlines) }
-        for server in servers where !previouslyManaged.contains(server.name) && existing.range(of: "[mcp_servers.\(server.name)]", options: .literal) != nil { throw SkillboxError.mcpConflict("\(server.name) istnieje w config.toml poza blokiem Skillbox") }
+        for server in servers where !previouslyManaged.contains(server.name) && declaresCodexServer(existing, name: server.name) { throw SkillboxError.mcpConflict("\(server.name) istnieje w config.toml poza blokiem Skillbox") }
         var block = [start]
         for server in servers {
             block.append("[mcp_servers.\(tomlKey(server.name))]")
             if server.transport == .stdio {
-                if server.environment.contains(where: { $0.key != $0.value }) { throw SkillboxError.mcpConflict("Codex wymaga tej samej nazwy zmiennej po obu stronach, np. TOKEN=TOKEN (serwer: \(server.name))") }
                 block.append("command = \(toml(server.command))")
                 if !server.arguments.isEmpty { block.append("args = [\(server.arguments.map(toml).joined(separator: ", "))]") }
-                let vars = Array(Set(server.environment.values)).sorted(); if !vars.isEmpty { block.append("env_vars = [\(vars.map(toml).joined(separator: ", "))]") }
+                // Codex accepts a bare name to forward a same-named variable, or
+                // { name = "...", source = "..." } to read it from a differently named one.
+                let entries = server.environment.sorted { $0.key < $1.key }.map { key, source in
+                    key == source ? toml(key) : "{ name = \(toml(key)), source = \(toml(source)) }"
+                }
+                if !entries.isEmpty { block.append("env_vars = [\(entries.joined(separator: ", "))]") }
                 let env = try resolved(server.literalEnvironment, secretRefs: server.secretEnvironment, secrets: secrets, server: server.name)
                 if !env.isEmpty { block.append("env = { \(env.sorted { $0.key < $1.key }.map { "\(tomlKey($0.key)) = \(toml($0.value))" }.joined(separator: ", ")) }") }
             } else {
@@ -282,6 +303,15 @@ enum MCPRenderer {
         }
         block.append(end)
         return ([existing, block.joined(separator: "\n")].filter { !$0.isEmpty }.joined(separator: "\n\n")) + "\n"
+    }
+
+    /// Matches `[mcp_servers.name]` and `[mcp_servers."name"]`, with or without surrounding spaces.
+    /// A literal string search missed the quoted form and produced a duplicate table that Codex
+    /// then refused to parse.
+    private static func declaresCodexServer(_ text: String, name: String) -> Bool {
+        let escaped = NSRegularExpression.escapedPattern(for: name)
+        let pattern = "(?m)^[ \t]*\\[[ \t]*mcp_servers[ \t]*\\.[ \t]*(\(escaped)|\"\(escaped)\")[ \t]*\\]"
+        return text.range(of: pattern, options: .regularExpression) != nil
     }
 
     private static func toml(_ value: String) -> String { "\"" + value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\"" }

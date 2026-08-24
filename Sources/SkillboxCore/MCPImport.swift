@@ -13,18 +13,22 @@ extension SkillboxService {
         let summary = MCPImportSummary(servers: servers, secretCount: servers.reduce(0) { $0 + ($1.secretEnvironment?.count ?? 0) + ($1.secretHeaders?.count ?? 0) }, stdioCount: servers.filter { $0.transport == .stdio }.count, httpCount: servers.filter { $0.transport == .http }.count, fields: parsed.summary.fields.filter { chosen.contains($0.serverName) })
         let prefixes = servers.map { "mcp/\($0.name)/" }
         var config = try await store.mcpConfiguration()
+        var secrets = try await store.secrets()
         for server in servers {
-            if let index = config.servers.firstIndex(where: { $0.name == server.name }) { var updated = server; updated.id = config.servers[index].id; config.servers[index] = updated }
+            if let index = config.servers.firstIndex(where: { $0.name == server.name }) {
+                let replaced = config.servers[index]
+                // The replaced definition may have used different account names — for example
+                // mcp/<uuid>/environment/KEY written by the editor. Drop them, or their plaintext
+                // values linger in mcp-secrets.json and in every full backup taken afterwards.
+                for account in Array((replaced.secretEnvironment ?? [:]).values) + Array((replaced.secretHeaders ?? [:]).values) {
+                    secrets.removeValue(forKey: account)
+                }
+                var updated = server; updated.id = replaced.id; config.servers[index] = updated
+            }
             else { config.servers.append(server) }
         }
-        let oldSecrets = try await store.secrets()
-        do {
-            try await store.saveSecrets(parsed.secrets.filter { key, _ in prefixes.contains { key.hasPrefix($0) } })
-            try await store.save(config)
-        } catch {
-            try? await store.replaceSecrets(oldSecrets)
-            throw error
-        }
+        secrets.merge(parsed.secrets.filter { key, _ in prefixes.contains { key.hasPrefix($0) } }) { _, new in new }
+        try await store.save(config, replacingSecrets: secrets)
         return summary
     }
 
