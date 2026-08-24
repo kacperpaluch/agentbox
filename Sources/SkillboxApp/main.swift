@@ -1,5 +1,7 @@
 import SwiftUI
 import AppKit
+import Combine
+import Sparkle
 import SkillboxCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -8,13 +10,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 @main struct AgentboxApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    var body: some Scene { WindowGroup { ContentView() }.defaultSize(width: 1100, height: 720) }
+    private let updaterController: SPUStandardUpdaterController
+    init() { updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil) }
+    var body: some Scene {
+        WindowGroup { ContentView(updater: updaterController.updater) }.defaultSize(width: 1100, height: 720)
+            .commands { CommandGroup(after: .appInfo) { CheckForUpdatesView(updater: updaterController.updater) } }
+    }
 }
 
 enum SectionKind: String, CaseIterable, Identifiable {
-    case library = "Biblioteka", projects = "Projekty", mcp = "MCP", backup = "Backup", settings = "Ustawienia"
+    case library = "Biblioteka", projects = "Projekty", mcp = "MCP", backup = "Backup", recovery = "Odzyskiwanie", settings = "Ustawienia"
     var id: String { rawValue }
-    var icon: String { switch self { case .library: "square.grid.2x2"; case .projects: "folder"; case .mcp: "network"; case .backup: "externaldrive.badge.timemachine"; case .settings: "gearshape" } }
+    var icon: String { switch self { case .library: "square.grid.2x2"; case .projects: "folder"; case .mcp: "network"; case .backup: "externaldrive.badge.timemachine"; case .recovery: "clock.arrow.circlepath"; case .settings: "gearshape" } }
 }
 
 struct OperationLogEntry: Identifiable {
@@ -37,6 +44,8 @@ struct OperationLogEntry: Identifiable {
     @Published var hasOpenAIKey = false
     @Published var hasAnthropicKey = false
     @Published var operationLog: [OperationLogEntry] = []
+    @Published var librarySnapshots: [LibrarySnapshot] = []
+    @Published var projectBackups: [ProjectSyncBackup] = []
     private var automaticBackupTask: Task<Void, Never>?
     var service: SkillboxService?
     init() {
@@ -57,11 +66,15 @@ struct OperationLogEntry: Identifiable {
     func addTags(_ ids: Set<String>, text: String) async { await perform(autoBackup: true) { try await self.service?.addTags(skillIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) skilli" } }
     func deleteSkill(_ id: String) async { await perform(autoBackup: true) { try await self.service?.deleteSkill(skillID: id); if self.selection == id { self.selection = nil; self.markdown = "" }; self.updateAvailable.remove(id); self.message = "Usunięto skill \(id)" } }
     func addProject(_ project: Project, presetIDs: [UUID], profiles: [String: UUID]) async { await perform { if let created = try await self.service?.addProject(name: project.name, path: project.path, tools: project.tools) { try await self.service?.configureProject(id: created.id, skillIDs: project.skillIDs, tags: project.tags); try await self.service?.setMCPPresets(projectID: created.id, presetIDs: presetIDs); try await self.service?.setMCPProfiles(projectID: created.id, selections: profiles) }; self.message = "Dodano projekt \(project.name)" } }
+    func addProjects(_ projects: [Project], presetIDs: [UUID], profiles: [String: UUID]) async { await perform { for project in projects { if let created = try await self.service?.addProject(name: project.name, path: project.path, tools: project.tools) { try await self.service?.configureProject(id: created.id, skillIDs: project.skillIDs, tags: project.tags); try await self.service?.setMCPPresets(projectID: created.id, presetIDs: presetIDs); try await self.service?.setMCPProfiles(projectID: created.id, selections: profiles) } }; self.message = "Dodano projekty: \(projects.count)" } }
     func updateProject(_ project: Project, presetIDs: [UUID], profiles: [String: UUID]) async { await perform { try await self.service?.updateProject(project); try await self.service?.setMCPPresets(projectID: project.id, presetIDs: presetIDs); try await self.service?.setMCPProfiles(projectID: project.id, selections: profiles); self.message = "Zapisano projekt" } }
     func deleteProject(_ project: Project) async { await perform { try await self.service?.deleteProject(id: project.id); self.message = "Usunięto projekt \(project.name) z Agentbox" } }
     func sync(_ project: Project) async { await perform { _ = try await self.service?.syncProject(id: project.id); self.message = "Zsynchronizowano \(project.name)" } }
     func loadBackupStatus() async { backupStatus = (try? await service?.backupStatus()) ?? "Nie można odczytać statusu." }
     func backup(remote: String) async { await perform { self.message = try await self.service?.backup(remote: remote.isEmpty ? nil : remote) ?? "Gotowe" }; await loadBackupStatus() }
+    func loadRecovery() async { do { librarySnapshots = try await service?.librarySnapshots() ?? []; projectBackups = try await service?.projectSyncBackups() ?? [] } catch { reportError(error) } }
+    func restoreLibrary(_ snapshot: LibrarySnapshot) async { await perform { let files = try await self.service?.restoreLibrarySnapshot(named: snapshot.name) ?? []; self.message = "Przywrócono snapshot biblioteki: \(files.joined(separator: ", "))" }; await loadRecovery() }
+    func restoreProject(_ backup: ProjectSyncBackup) async { await perform { let targets = try await self.service?.restoreProjectSyncBackup(projectID: backup.projectID, named: backup.name) ?? []; self.message = "Przywrócono \(targets.count) elementów projektu \(backup.projectName)" }; await loadRecovery() }
     func saveMCPServer(_ server: MCPServer) async { await perform(autoBackup: true) { try await self.service?.saveMCPServer(server); self.message = "Zapisano serwer MCP" } }
     func saveMCPPreset(_ preset: MCPPreset) async { await perform(autoBackup: true) { try await self.service?.saveMCPPreset(preset); self.message = "Zapisano preset MCP" } }
     func deleteMCPServer(_ id: UUID) async { await perform(autoBackup: true) { try await self.service?.deleteMCPServer(id: id); self.message = "Usunięto serwer MCP" } }
@@ -113,13 +126,16 @@ struct OperationLogEntry: Identifiable {
 }
 
 struct ContentView: View {
-    @StateObject private var model = AppModel(); @State private var section: SectionKind? = .library
+    @StateObject private var model: AppModel
+    let updater: SPUUpdater
+    @State private var section: SectionKind? = .library
     @State private var showGit = false
     @State private var showProject = false
     @State private var showHistory = false
+    init(updater: SPUUpdater) { self.updater = updater; _model = StateObject(wrappedValue: AppModel()) }
     var body: some View {
         NavigationSplitView { List(SectionKind.allCases, selection: $section) { item in Label(item.rawValue, systemImage: item.icon).tag(item) }.navigationTitle("Agentbox").navigationSplitViewColumnWidth(min: 180, ideal: 210) } detail: {
-            Group { switch section ?? .library { case .library: LibraryView(model: model, showGit: $showGit); case .projects: ProjectsView(model: model, showProject: $showProject); case .mcp: MCPView(model: model); case .backup: BackupView(model: model); case .settings: SettingsView(model: model) } }
+            Group { switch section ?? .library { case .library: LibraryView(model: model, showGit: $showGit); case .projects: ProjectsView(model: model, showProject: $showProject); case .mcp: MCPView(model: model); case .backup: BackupView(model: model); case .recovery: RecoveryView(model: model); case .settings: SettingsView(model: model, updater: updater) } }
         }
         .overlay(alignment: .bottom) { if !model.message.isEmpty { StatusToast(text: model.message) { model.message = "" } } }
         .task(id: model.message) { let current = model.message; guard !current.isEmpty else { return }; try? await Task.sleep(for: .seconds(4)); guard !Task.isCancelled, model.message == current else { return }; withAnimation { model.message = "" } }
@@ -199,8 +215,9 @@ struct SkillDetail: View {
 }
 
 struct ProjectsView: View {
-    @ObservedObject var model: AppModel; @Binding var showProject: Bool; @State private var editing: Project?; @State private var previewProject: Project?; @State private var deleting: Project?
-    var body: some View { VStack(spacing: 0) { if model.projects.isEmpty { ContentUnavailableView("Brak projektów", systemImage: "folder.badge.plus", description: Text("Dodaj folder i wybierz skille dla Claude, Codex lub OpenCode.")) } else { List(model.projects) { project in VStack(alignment: .leading, spacing: 10) { HStack { VStack(alignment: .leading) { Text(project.name).font(.headline); Text(project.path).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Edytuj") { editing = project }; Button("Usuń", role: .destructive) { deleting = project }; Button("Synchronizuj wszystko") { previewProject = project }.buttonStyle(.borderedProminent) }; HStack { ForEach(project.tools, id: \.self) { Text($0.rawValue).font(.caption).padding(.horizontal, 8).padding(.vertical, 3).background(.quaternary, in: Capsule()) }; ForEach(project.tags, id: \.self) { TagPill(tag: $0) } } }.padding(.vertical, 7) } }; Divider(); HStack { Button { showProject = true } label: { Label("Dodaj projekt", systemImage: "plus") }; Spacer() }.padding(12) }.navigationTitle("Projekty")
+    @ObservedObject var model: AppModel; @Binding var showProject: Bool; @State private var showBatch = false; @State private var editing: Project?; @State private var previewProject: Project?; @State private var deleting: Project?
+    var body: some View { VStack(spacing: 0) { if model.projects.isEmpty { ContentUnavailableView("Brak projektów", systemImage: "folder.badge.plus", description: Text("Dodaj folder i wybierz skille dla Claude, Codex lub OpenCode.")) } else { List(model.projects) { project in VStack(alignment: .leading, spacing: 10) { HStack { VStack(alignment: .leading) { Text(project.name).font(.headline); Text(project.path).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Edytuj") { editing = project }; Button("Usuń", role: .destructive) { deleting = project }; Button("Synchronizuj wszystko") { previewProject = project }.buttonStyle(.borderedProminent) }; HStack { ForEach(project.tools, id: \.self) { Text($0.rawValue).font(.caption).padding(.horizontal, 8).padding(.vertical, 3).background(.quaternary, in: Capsule()) }; ForEach(project.tags, id: \.self) { TagPill(tag: $0) } } }.padding(.vertical, 7) } }; Divider(); HStack { Button { showProject = true } label: { Label("Dodaj projekt", systemImage: "plus") }; Button { showBatch = true } label: { Label("Dodaj wiele", systemImage: "folder.badge.plus") }; Spacer() }.padding(12) }.navigationTitle("Projekty")
+        .sheet(isPresented: $showBatch) { BatchProjectView(skills: model.skills, presets: model.mcp.presets, servers: model.mcp.servers, existingProjects: model.projects) { projects, presets, profiles in Task { await model.addProjects(projects, presetIDs: presets, profiles: profiles) } } }
         .sheet(item: $editing) { project in ProjectEditor(skills: model.skills, presets: model.mcp.presets, servers: model.mcp.servers, project: project, selectedPresetIDs: model.mcp.projectPresetIDs[project.id.uuidString] ?? [], selectedProfiles: model.mcp.projectProfileSelections?[project.id.uuidString] ?? [:]) { updated, presets, profiles in Task { await model.updateProject(updated, presetIDs: presets, profiles: profiles) } } }
         .sheet(item: $previewProject) { project in MCPPreviewView(model: model, project: project) }
         .confirmationDialog("Usunąć projekt \(deleting?.name ?? "") z Agentbox?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) { Button("Usuń projekt", role: .destructive) { if let deleting { Task { await model.deleteProject(deleting) } }; deleting = nil }; Button("Anuluj", role: .cancel) { deleting = nil } } message: { Text("Folder projektu i jego pliki pozostaną na dysku.") }
@@ -333,8 +350,87 @@ struct BackupView: View {
     }.padding(28).navigationTitle("Backup").task { await model.loadBackupStatus() } }
 }
 
+struct RecoveryView: View {
+    @ObservedObject var model: AppModel
+    @State private var snapshotToRestore: LibrarySnapshot?
+    @State private var projectBackupToRestore: ProjectSyncBackup?
+    private let formatter: DateFormatter = { let value = DateFormatter(); value.dateStyle = .medium; value.timeStyle = .medium; return value }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack { Label("Odzyskiwanie", systemImage: "clock.arrow.circlepath").font(.largeTitle.bold()); Spacer(); Button("Odśwież") { Task { await model.loadRecovery() } } }
+            Text("Przywrócenie tworzy najpierw kopię aktualnego stanu, więc można cofnąć również samą operację odzyskiwania.").foregroundStyle(.secondary)
+            List {
+                Section("Snapshoty biblioteki") {
+                    if model.librarySnapshots.isEmpty { Text("Brak snapshotów biblioteki.").foregroundStyle(.secondary) }
+                    ForEach(model.librarySnapshots) { snapshot in HStack { Image(systemName: "externaldrive").foregroundStyle(.blue); VStack(alignment: .leading, spacing: 3) { Text(formatter.string(from: snapshot.date)).fontWeight(.medium); Text(snapshot.files.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Przywróć") { snapshotToRestore = snapshot }.buttonStyle(.bordered) } }
+                }
+                Section("Backupy synchronizacji projektów") {
+                    if model.projectBackups.isEmpty { Text("Brak backupów z metadanymi. Pojawią się po kolejnej synchronizacji projektu.").foregroundStyle(.secondary) }
+                    ForEach(model.projectBackups) { backup in HStack(alignment: .top) { Image(systemName: "folder.badge.clock").foregroundStyle(.purple); VStack(alignment: .leading, spacing: 3) { Text(backup.projectName).fontWeight(.medium); Text(formatter.string(from: backup.date)).font(.caption).foregroundStyle(.secondary); DisclosureGroup("\(backup.targets.count) elementów") { ForEach(backup.targets, id: \.self) { Text($0).font(.system(.caption, design: .monospaced)).textSelection(.enabled) } } }; Spacer(); Button("Przywróć") { projectBackupToRestore = backup }.buttonStyle(.bordered) } }
+                }
+            }
+        }
+        .padding(24).navigationTitle("Odzyskiwanie").task { await model.loadRecovery() }
+        .confirmationDialog("Przywrócić snapshot biblioteki?", isPresented: Binding(get: { snapshotToRestore != nil }, set: { if !$0 { snapshotToRestore = nil } })) {
+            Button("Przywróć bibliotekę", role: .destructive) { if let snapshotToRestore { Task { await model.restoreLibrary(snapshotToRestore) } }; snapshotToRestore = nil }
+            Button("Anuluj", role: .cancel) { snapshotToRestore = nil }
+        } message: { Text("Aktualny stan zostanie zachowany jako nowy snapshot. Sekrety i katalog skills nie zostaną zmienione.") }
+        .confirmationDialog("Cofnąć synchronizację projektu?", isPresented: Binding(get: { projectBackupToRestore != nil }, set: { if !$0 { projectBackupToRestore = nil } })) {
+            Button("Przywróć projekt", role: .destructive) { if let projectBackupToRestore { Task { await model.restoreProject(projectBackupToRestore) } }; projectBackupToRestore = nil }
+            Button("Anuluj", role: .cancel) { projectBackupToRestore = nil }
+        } message: { Text("Zarządzane katalogi skilli, pliki MCP i manifest zostaną przywrócone. Przed zmianą powstanie backup aktualnego stanu.") }
+    }
+}
+
+@MainActor final class UpdateSettingsModel: ObservableObject {
+    @Published var canCheckForUpdates: Bool
+    @Published var automaticallyChecks: Bool
+    @Published var automaticallyDownloads: Bool
+    private let updater: SPUUpdater
+    private var cancellables = Set<AnyCancellable>()
+
+    init(updater: SPUUpdater) {
+        self.updater = updater
+        canCheckForUpdates = updater.canCheckForUpdates
+        automaticallyChecks = updater.automaticallyChecksForUpdates
+        automaticallyDownloads = updater.automaticallyDownloadsUpdates
+        updater.publisher(for: \.canCheckForUpdates).sink { [weak self] in self?.canCheckForUpdates = $0 }.store(in: &cancellables)
+        updater.publisher(for: \.automaticallyChecksForUpdates).sink { [weak self] in self?.automaticallyChecks = $0 }.store(in: &cancellables)
+        updater.publisher(for: \.automaticallyDownloadsUpdates).sink { [weak self] in self?.automaticallyDownloads = $0 }.store(in: &cancellables)
+    }
+
+    func setAutomaticallyChecks(_ value: Bool) { updater.automaticallyChecksForUpdates = value }
+    func setAutomaticallyDownloads(_ value: Bool) { updater.automaticallyDownloadsUpdates = value }
+    func check() { updater.checkForUpdates() }
+}
+
+struct CheckForUpdatesView: View {
+    @StateObject private var model: UpdateSettingsModel
+    init(updater: SPUUpdater) { _model = StateObject(wrappedValue: UpdateSettingsModel(updater: updater)) }
+    var body: some View { Button("Sprawdź aktualizacje…") { model.check() }.disabled(!model.canCheckForUpdates) }
+}
+
+struct UpdateSettingsCard: View {
+    @StateObject private var model: UpdateSettingsModel
+    init(updater: SPUUpdater) { _model = StateObject(wrappedValue: UpdateSettingsModel(updater: updater)) }
+    var body: some View { GroupBox("Aktualizacje Agentbox") { VStack(alignment: .leading, spacing: 10) {
+        Toggle("Automatycznie sprawdzaj aktualizacje", isOn: Binding(
+            get: { model.automaticallyChecks },
+            set: { value in model.setAutomaticallyChecks(value) }
+        ))
+        Toggle("Automatycznie pobieraj i instaluj", isOn: Binding(
+            get: { model.automaticallyDownloads },
+            set: { value in model.setAutomaticallyDownloads(value) }
+        )).disabled(!model.automaticallyChecks)
+        HStack { Text("Wersja \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Sprawdź teraz") { model.check() }.disabled(!model.canCheckForUpdates) }
+        Text("Aktualizacje są pobierane z GitHub Releases i weryfikowane podpisem EdDSA przed instalacją.").font(.caption).foregroundStyle(.secondary)
+    }.padding(8) } }
+}
+
 struct SettingsView: View {
     @ObservedObject var model: AppModel
+    let updater: SPUUpdater
     @State private var openAIModel = "gpt-5.6"
     @State private var anthropicModel = "claude-sonnet-5"
     @State private var openAIKey = ""
@@ -342,6 +438,7 @@ struct SettingsView: View {
     var body: some View {
         ScrollView { VStack(alignment: .leading, spacing: 20) {
             Label("Ustawienia", systemImage: "gearshape").font(.largeTitle.bold())
+            UpdateSettingsCard(updater: updater)
             GroupBox("Folder biblioteki") { VStack(alignment: .leading, spacing: 12) { Text(model.rootPath).font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading); Text("Tutaj Agentbox przechowuje skille, katalog, konfigurację projektów i repozytorium backupu Git.").font(.caption).foregroundStyle(.secondary); Button("Wybierz nowy folder…") { chooseFolder() } }.padding(8) }
             Text("Istniejąca biblioteka Agentbox/Skillbox zostanie podłączona bez kopiowania. Jeśli wskażesz pusty folder, obecna biblioteka zostanie do niego skopiowana.").foregroundStyle(.secondary)
             Text("Asystent AI do konfiguracji MCP").font(.title2.bold())
@@ -405,6 +502,39 @@ struct ProjectEditor: View {
     private func presetBinding(_ id: UUID) -> Binding<Bool> { Binding(get: { selectedPresets.contains(id) }, set: { if $0 { selectedPresets.insert(id) } else { selectedPresets.remove(id) } }) }
     private func profileBinding(_ group: String) -> Binding<UUID> { Binding(get: { profiles[group] ?? profileGroups[group]!.first!.id }, set: { profiles[group] = $0 }) }
     private func chooseFolder() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; if panel.runModal() == .OK { path = panel.url?.path ?? path } }
+}
+
+struct BatchProjectView: View {
+    @Environment(\.dismiss) private var dismiss
+    let skills: [Skill]; let presets: [MCPPreset]; let servers: [MCPServer]; let existingProjects: [Project]
+    let onSave: ([Project], [UUID], [String: UUID]) -> Void
+    @State private var root = ""; @State private var folders: [URL] = []; @State private var selectedFolders = Set<String>()
+    @State private var tools = Set(Tool.allCases); @State private var selectedSkills = Set<String>(); @State private var selectedTags = Set<String>(); @State private var selectedPresets = Set<UUID>(); @State private var profiles: [String: UUID] = [:]; @State private var scanError = ""
+    private var existingPaths: Set<String> { Set(existingProjects.map { URL(fileURLWithPath: $0.path).standardizedFileURL.path }) }
+    private var availableFolders: [URL] { folders.filter { !existingPaths.contains($0.standardizedFileURL.path) } }
+    private var availableTags: [String] { Array(Set(skills.flatMap(\.tags))).sorted() }
+    private var profileGroups: [String: [MCPServer]] { Dictionary(grouping: servers.filter { $0.group != nil }, by: { $0.group! }) }
+    var body: some View { ScrollView { VStack(alignment: .leading, spacing: 14) {
+        Text("Dodaj wiele projektów").font(.title2.bold())
+        Text("Każdy zaznaczony podfolder otrzyma kopię tych samych ustawień początkowych.").foregroundStyle(.secondary)
+        HStack { TextField("Folder nadrzędny", text: $root); Button("Wybierz…") { chooseRoot() } }
+        if !scanError.isEmpty { Label(scanError, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
+        GroupBox("Podfoldery") { VStack(alignment: .leading, spacing: 7) {
+            if folders.isEmpty { Text("Wybierz folder, aby znaleźć projekty.").foregroundStyle(.secondary) }
+            else { HStack { Button("Zaznacz dostępne") { selectedFolders = Set(availableFolders.map(\.path)) }; Button("Wyczyść") { selectedFolders.removeAll() }; Spacer(); Text("Wybrano \(selectedFolders.count)").foregroundStyle(.secondary) }; ForEach(folders, id: \.path) { folder in let exists = existingPaths.contains(folder.standardizedFileURL.path); Toggle(isOn: folderBinding(folder)) { HStack { Image(systemName: "folder"); Text(folder.lastPathComponent); Spacer(); if exists { Text("już dodany").font(.caption).foregroundStyle(.secondary) } } }.toggleStyle(.checkbox).disabled(exists) } }
+        }.padding(6) }.frame(maxHeight: 230)
+        GroupBox("Narzędzia") { HStack { ForEach(Tool.allCases, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: setBinding(tool, in: $tools)).toggleStyle(.checkbox) } }.padding(6) }
+        GroupBox("Pojedyncze skille") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 180))], alignment: .leading) { ForEach(skills) { skill in Toggle(skill.name, isOn: setBinding(skill.id, in: $selectedSkills)).toggleStyle(.checkbox) } }.padding(6) }
+        GroupBox("Tagi dynamiczne") { if availableTags.isEmpty { Text("Brak tagów.").foregroundStyle(.secondary).padding(6) } else { LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], alignment: .leading) { ForEach(availableTags, id: \.self) { tag in Toggle("#\(tag)", isOn: setBinding(tag, in: $selectedTags)).toggleStyle(.checkbox) } }.padding(6) } }
+        GroupBox("Presety MCP") { if presets.isEmpty { Text("Brak presetów MCP.").foregroundStyle(.secondary).padding(6) } else { HStack { ForEach(presets) { preset in Toggle(preset.name, isOn: setBinding(preset.id, in: $selectedPresets)).toggleStyle(.checkbox) } }.padding(6) } }
+        if !profileGroups.isEmpty { GroupBox("Warianty MCP") { VStack { ForEach(profileGroups.keys.sorted(), id: \.self) { group in Picker(group, selection: profileBinding(group)) { ForEach(profileGroups[group] ?? []) { Text($0.profile ?? $0.name).tag($0.id) } } } }.padding(6) } }
+        HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Dodaj \(selectedFolders.count) projektów") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(selectedFolders.isEmpty || tools.isEmpty) }
+    }.padding(24) }.frame(width: 760, height: 820).onAppear { for (group, values) in profileGroups { profiles[group] = values.first?.id } } }
+    private func chooseRoot() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; guard panel.runModal() == .OK, let url = panel.url else { return }; root = url.path; do { folders = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]).filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }.sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }; selectedFolders = Set(availableFolders.map(\.path)); scanError = "" } catch { folders = []; selectedFolders = []; scanError = error.localizedDescription } }
+    private func folderBinding(_ folder: URL) -> Binding<Bool> { Binding(get: { selectedFolders.contains(folder.path) }, set: { if $0 { selectedFolders.insert(folder.path) } else { selectedFolders.remove(folder.path) } }) }
+    private func setBinding<T: Hashable>(_ value: T, in set: Binding<Set<T>>) -> Binding<Bool> { Binding(get: { set.wrappedValue.contains(value) }, set: { enabled in if enabled { set.wrappedValue.insert(value) } else { set.wrappedValue.remove(value) } }) }
+    private func profileBinding(_ group: String) -> Binding<UUID> { Binding(get: { profiles[group] ?? profileGroups[group]!.first!.id }, set: { profiles[group] = $0 }) }
+    private func save() { let projects = availableFolders.filter { selectedFolders.contains($0.path) }.map { Project(name: $0.lastPathComponent, path: $0.path, tools: Array(tools), skillIDs: Array(selectedSkills), tags: Array(selectedTags).sorted()) }; onSave(projects, Array(selectedPresets), profiles) }
 }
 
 struct StatusToast: View { let text: String; let onClose: () -> Void; var body: some View { HStack(spacing: 10) { Label(text, systemImage: "info.circle.fill"); Button(action: onClose) { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain).help("Zamknij") }.font(.callout).padding(.horizontal, 16).padding(.vertical, 10).background(.regularMaterial, in: Capsule()).shadow(radius: 8).padding(.bottom, 14) } }

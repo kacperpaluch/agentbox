@@ -31,6 +31,8 @@ open dist/Agentbox.app
 
 Skrypty wykonują build release, tworzą `dist/Agentbox.app` oraz wersjonowany obraz `dist/Agentbox-<wersja>.dmg` i podpisują aplikację lokalnym podpisem ad-hoc. W DMG znajduje się także skrót do `Applications`. Taki bundle działa na bieżącym Macu, ale nie jest jeszcze podpisany certyfikatem Apple Developer ani notarized do publicznej dystrybucji, dlatego macOS może przy pierwszym uruchomieniu wymagać użycia `Otwórz` z menu kontekstowego.
 
+Od wersji 0.3.0 Agentbox sprawdza raz dziennie podpisany kanał aktualizacji Sparkle. Zachowanie można zmienić w `Ustawienia → Aktualizacje`, a ręczne sprawdzenie uruchomić z menu aplikacji. Wersję 0.3.0 trzeba jeszcze zainstalować ręcznie; kolejne wydania będą już dostępne z poziomu aplikacji. Brak Developer ID oznacza, że przy pierwszym uruchomieniu nowo zainstalowanej wersji macOS może nadal wyświetlić ostrzeżenie Gatekeepera.
+
 ## Folder biblioteki
 
 Domyślna lokalizacja to `~/Library/Application Support/Skillbox`. Stara nazwa została zachowana, aby aktualizacja aplikacji nie odcięła danych utworzonych podczas testów MVP. W `Ustawienia → Folder biblioteki` można podłączyć istniejącą bibliotekę bez kopiowania albo wskazać pusty katalog, do którego zostaną skopiowane aktualne dane.
@@ -87,6 +89,8 @@ swift run agentbox update my-skill
 
 Projekt wskazuje istniejący folder na dysku oraz obsługiwane narzędzia. Można mu przypisać pojedyncze skille, tagi dynamiczne, presety MCP i warianty serwerów, np. `n8n: Domyślny` albo `n8n: Tailscale`.
 
+Opcja `Dodaj wiele` przyjmuje folder nadrzędny, wykrywa jego bezpośrednie podfoldery i pozwala utworzyć z nich projekty z jednym wspólnym zestawem ustawień. Foldery już dodane do Agentbox są pomijane. Po imporcie każdy projekt ma niezależną kopię konfiguracji i może być edytowany osobno.
+
 `Synchronizuj wszystko` pokazuje podgląd MCP, a po zatwierdzeniu synchronizuje skille i konfiguracje MCP.
 
 | Narzędzie | Skille w projekcie | MCP w projekcie |
@@ -131,6 +135,8 @@ Agentbox zachowuje niezależne, ręczne ustawienia w plikach projektu. Konflikt 
 Agentbox zachowuje maksymalnie 10 ostatnich katalogów kopii MCP. Jeśli źródłem jest `opencode.jsonc`, podgląd ostrzega, że komentarze i formatowanie zostaną utracone podczas przepisania pliku.
 
 GUI pokazuje również pełny plan zmian skilli dla każdego narzędzia. Synchronizacja skilli i MCP działa jako jedna transakcja: błąd na dowolnym etapie przywraca zarządzane katalogi i pliki do stanu sprzed operacji. Ostatnie kopie znajdują się w `.skillbox/sync-backups/`.
+
+Sekcja `Odzyskiwanie` pozwala przywrócić snapshot metadanych biblioteki albo cofnąć zarządzane pliki projektu do stanu sprzed wybranej synchronizacji. Przed przywróceniem Agentbox automatycznie zachowuje aktualny stan.
 
 ### Sekrety
 

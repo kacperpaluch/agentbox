@@ -9,10 +9,13 @@ let package = Package(
         .executable(name: "agentbox", targets: ["AgentboxCLI"]),
         .executable(name: "AgentboxApp", targets: ["AgentboxApp"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.2")
+    ],
     targets: [
         .target(name: "SkillboxCore"),
         .executableTarget(name: "AgentboxCLI", dependencies: ["SkillboxCore"], path: "Sources/SkillboxCLI"),
-        .executableTarget(name: "AgentboxApp", dependencies: ["SkillboxCore"], path: "Sources/SkillboxApp"),
+        .executableTarget(name: "AgentboxApp", dependencies: ["SkillboxCore", .product(name: "Sparkle", package: "Sparkle")], path: "Sources/SkillboxApp"),
         .testTarget(name: "SkillboxCoreTests", dependencies: ["SkillboxCore"], resources: [.copy("Fixtures")])
     ]
 )

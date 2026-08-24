@@ -324,6 +324,45 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.appending(path: "data/.agentbox-snapshots").path))
     }
 
+    func testLibrarySnapshotCanRestorePreviousMetadata() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/demo")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try "demo".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        try await service.setTags(skillID: "demo", tags: ["changed"])
+        let snapshots = try await service.librarySnapshots()
+        let snapshot = try XCTUnwrap(snapshots.first)
+        _ = try await service.restoreLibrarySnapshot(named: snapshot.name)
+        let restoredSkills = try await service.listSkills()
+        let snapshotsAfterRestore = try await service.librarySnapshots()
+        XCTAssertEqual(restoredSkills.first?.tags, [])
+        XCTAssertGreaterThanOrEqual(snapshotsAfterRestore.count, 1)
+    }
+
+    func testProjectSyncBackupCanBeRestoredFromMetadata() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/demo")
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        try "version one".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        let project = try await service.addProject(name: "history", path: projectURL.path, tools: [.claude])
+        try await service.configureProject(id: project.id, skillIDs: ["demo"], tags: [])
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        try "version two".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        _ = try await service.update(skillID: "demo")
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        XCTAssertEqual(try String(contentsOf: projectURL.appending(path: ".claude/skills/demo/SKILL.md"), encoding: .utf8), "version two")
+        let backups = try await service.projectSyncBackups()
+        let backup = try XCTUnwrap(backups.first)
+        _ = try await service.restoreProjectSyncBackup(projectID: project.id, named: backup.name)
+        XCTAssertEqual(try String(contentsOf: projectURL.appending(path: ".claude/skills/demo/SKILL.md"), encoding: .utf8), "version one")
+    }
+
     private func runGit(_ arguments: [String], in directory: URL) throws {
         let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = arguments; process.currentDirectoryURL = directory

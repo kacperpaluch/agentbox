@@ -196,6 +196,26 @@ public struct ProjectSyncPreview: Sendable {
     public init(skills: [SkillSyncPreview], mcp: [MCPPreview]) { self.skills = skills; self.mcp = mcp }
 }
 
+public struct LibrarySnapshot: Identifiable, Hashable, Sendable {
+    public var id: String { name }
+    public var name: String
+    public var date: Date
+    public var files: [String]
+    public init(name: String, date: Date, files: [String]) { self.name = name; self.date = date; self.files = files }
+}
+
+public struct ProjectSyncBackup: Identifiable, Hashable, Sendable {
+    public var id: String { "\(projectID.uuidString)/\(name)" }
+    public var projectID: UUID
+    public var projectName: String
+    public var name: String
+    public var date: Date
+    public var targets: [String]
+    public init(projectID: UUID, projectName: String, name: String, date: Date, targets: [String]) {
+        self.projectID = projectID; self.projectName = projectName; self.name = name; self.date = date; self.targets = targets
+    }
+}
+
 public enum SkillboxError: LocalizedError {
     case invalidSkill(String), duplicateSkill(String), skillNotFound(String)
     case projectNotFound(String), commandFailed(String), unsafePath(String)

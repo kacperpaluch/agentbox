@@ -6,6 +6,22 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-24
+
+### Dodano
+
+- Sekcję `Odzyskiwanie` w GUI z listą i przywracaniem snapshotów biblioteki.
+- Metadane backupów synchronizacji oraz możliwość cofnięcia projektu do stanu sprzed wybranej synchronizacji.
+- Automatyczną kopię aktualnego stanu przed każdą operacją przywracania.
+- Testy przywracania metadanych biblioteki i plików projektu.
+- Automatyczne, podpisane kryptograficznie aktualizacje aplikacji przez Sparkle i GitHub Releases.
+- Ręczne sprawdzanie aktualizacji z menu aplikacji i ustawienia automatycznego pobierania.
+- Dodawanie wielu projektów z podfolderów jednego katalogu ze wspólnym zestawem narzędzi, skilli, tagów i MCP.
+
+### Zmieniono
+
+- Budowanie DMG usuwa wcześniejsze lokalne obrazy `Agentbox-*.dmg` i `.DS_Store` z `dist/`.
+
 ## [0.2.0] - 2026-08-24
 
 ### Dodano
@@ -50,6 +66,7 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 - Lokalny i zdalny backup Git biblioteki bez sekretów i ścieżek projektów.
 - Obraz instalacyjny DMG podpisany ad-hoc.
 
-[Unreleased]: https://github.com/kacperpaluch/agentbox/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kacperpaluch/agentbox/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kacperpaluch/agentbox/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kacperpaluch/agentbox/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/kacperpaluch/agentbox/releases/tag/v0.1.1

@@ -12,11 +12,13 @@ mkdir -p "$CLANG_MODULE_CACHE_PATH"
 swift build -c release --product AgentboxApp --disable-sandbox
 
 rm -rf "$bundle_dir"
-mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources"
+mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources" "$contents_dir/Frameworks"
 cp "$project_dir/.build/release/AgentboxApp" "$contents_dir/MacOS/Agentbox"
+cp -R "$project_dir/.build/release/Sparkle.framework" "$contents_dir/Frameworks/Sparkle.framework"
 cp "$project_dir/Resources/Info.plist" "$contents_dir/Info.plist"
 cp "$project_dir/Resources/AppIcon.icns" "$contents_dir/Resources/AppIcon.icns"
 chmod 755 "$contents_dir/MacOS/Agentbox"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$contents_dir/MacOS/Agentbox"
 codesign --force --deep --sign - "$bundle_dir"
 
 echo "$bundle_dir"

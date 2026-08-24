@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Agentbox</title>
+    <link>https://github.com/kacperpaluch/agentbox</link>
+    <description>Aktualizacje Agentbox</description>
+    <language>pl</language>
+    <item>
+      <title>Agentbox 0.3.0</title>
+      <pubDate>Mon, 24 Aug 2026 04:50:00 +0000</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.3.0</link>
+      <sparkle:version>4</sparkle:version>
+      <sparkle:shortVersionString>0.3.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.3.0</h2>
+        <ul>
+          <li>Automatyczne, podpisane aktualizacje przez Sparkle.</li>
+          <li>Zbiorcze dodawanie projektów z jednego folderu nadrzędnego.</li>
+          <li>Przywracanie snapshotów biblioteki i backupów synchronizacji.</li>
+          <li>Pełny podgląd i transakcyjna synchronizacja skilli oraz MCP.</li>
+          <li>Jawna klasyfikacja sekretów i historia operacji.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.3.0/Agentbox-0.3.0.dmg"
+        length="4100425"
+        type="application/octet-stream"
+        sparkle:edSignature="GTVmJoJFM3DEzkN1cks4tnS0Npnu9tUMgR2ljorb0FtBFhe3RQg58kXQDwXU1Sf/h1SSQC1lfV7P4YlCsSH4Cg==" />
+    </item>
+  </channel>
+</rss>

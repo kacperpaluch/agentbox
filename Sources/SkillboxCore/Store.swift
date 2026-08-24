@@ -46,6 +46,52 @@ public actor SkillboxStore {
         try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: secretsURL.path)
     }
 
+    public func snapshots() throws -> [LibrarySnapshot] {
+        guard fm.fileExists(atPath: snapshotsDirectory.path) else { return [] }
+        return try fm.contentsOfDirectory(at: snapshotsDirectory, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles])
+            .compactMap { directory in
+                var isDirectory: ObjCBool = false
+                guard fm.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
+                let files = ((try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [])
+                    .map(\.lastPathComponent).filter { ["catalog.json", "projects.local.json", "mcp.json"].contains($0) }.sorted()
+                guard !files.isEmpty else { return nil }
+                let date = (try? directory.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return LibrarySnapshot(name: directory.lastPathComponent, date: date, files: files)
+            }
+            .sorted { $0.date > $1.date }
+    }
+
+    @discardableResult
+    public func restoreSnapshot(named name: String) throws -> [String] {
+        guard name == URL(fileURLWithPath: name).lastPathComponent, !name.contains("..") else { throw SkillboxError.unsafePath(name) }
+        let directory = snapshotsDirectory.appending(path: name).standardizedFileURL
+        guard directory.deletingLastPathComponent() == snapshotsDirectory.standardizedFileURL else { throw SkillboxError.unsafePath(directory.path) }
+        let targets = ["catalog.json": catalogURL, "projects.local.json": localURL, "mcp.json": mcpURL]
+        var replacements: [URL: Data] = [:]
+        for (filename, target) in targets {
+            let source = directory.appending(path: filename)
+            guard fm.fileExists(atPath: source.path) else { continue }
+            let data = try Data(contentsOf: source)
+            switch filename {
+            case "catalog.json": _ = try decoder.decode(Catalog.self, from: data)
+            case "projects.local.json": _ = try decoder.decode(LocalConfiguration.self, from: data)
+            case "mcp.json": _ = try decoder.decode(MCPConfiguration.self, from: data)
+            default: break
+            }
+            replacements[target] = data
+        }
+        guard !replacements.isEmpty else { throw SkillboxError.invalidSkill("snapshot nie zawiera danych do przywrócenia") }
+        let originals = Dictionary(uniqueKeysWithValues: replacements.keys.compactMap { target in (try? Data(contentsOf: target)).map { (target, $0) } })
+        try snapshotLibrary()
+        do {
+            for (target, data) in replacements { try data.write(to: target, options: .atomic) }
+        } catch {
+            for (target, data) in originals { try? data.write(to: target, options: .atomic) }
+            throw error
+        }
+        return replacements.keys.map(\.lastPathComponent).sorted()
+    }
+
     private func read<T: Decodable>(_ url: URL, fallback: T) throws -> T {
         guard fm.fileExists(atPath: url.path) else { return fallback }
         return try decoder.decode(T.self, from: Data(contentsOf: url))

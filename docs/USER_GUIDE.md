@@ -9,6 +9,12 @@
 5. W projekcie wybierz `Synchronizuj wszystko`, sprawdź plan zmian i zatwierdź.
 6. Skonfiguruj lokalny lub zdalny backup Git biblioteki.
 
+## Aktualizacje aplikacji
+
+Od wersji 0.3.0 Agentbox używa Sparkle i raz dziennie sprawdza podpisany kanał aktualizacji. W `Ustawienia → Aktualizacje` można osobno włączyć automatyczne sprawdzanie oraz pobieranie, a przycisk `Sprawdź teraz` uruchamia kontrolę ręcznie. To samo polecenie jest dostępne w menu aplikacji.
+
+Każdy obraz aktualizacji jest weryfikowany kluczem EdDSA osadzonym w aplikacji. Prywatny klucz wydawcy pozostaje w macOS Keychain i nie jest przechowywany w repozytorium. Ponieważ wydanie nie ma jeszcze podpisu Developer ID ani notaryzacji Apple, Gatekeeper może wymagać zatwierdzenia aplikacji przez `Otwórz` z menu kontekstowego. Wersję 0.3.0 należy zainstalować ręcznie; mechanizm automatyczny obsłuży następne wydania.
+
 ## Klasyfikacja wartości MCP
 
 Podczas analizy JSON Agentbox proponuje typ każdej zmiennej środowiskowej i każdego nagłówka. Przed importem można zmienić propozycję.
@@ -22,6 +28,12 @@ Automatyczne rozpoznawanie jest tylko sugestią. Agentbox uznaje za podejrzane n
 Sekret przechowywany poza backupem biblioteki może zostać zapisany jawnie w wynikowym pliku MCP projektu, jeśli format klienta tego wymaga. Przed synchronizacją Agentbox pokazuje pełną treść wynikowych konfiguracji. Preferuj zmienne systemowe, jeśli klient je obsługuje.
 
 ## Podgląd i synchronizacja
+
+### Dodawanie wielu projektów
+
+W sekcji `Projekty` wybierz `Dodaj wiele`, a następnie wskaż folder nadrzędny. Agentbox pokaże jego bezpośrednie, nieukryte podfoldery. Zaznacz projekty i ustaw wspólne narzędzia, pojedyncze skille, tagi dynamiczne, presety oraz warianty MCP. Podfolder zapisany już jako projekt jest oznaczony i nie można dodać go ponownie.
+
+Ustawienia są kopiowane w chwili importu. Późniejsza edycja jednego projektu nie zmienia pozostałych; folder nadrzędny nie jest trwałym szablonem ani źródłem dziedziczenia.
 
 Podgląd projektu pokazuje osobno dla Claude, Codex i OpenCode:
 
@@ -45,7 +57,7 @@ W przypadku błędu synchronizacji:
 3. usuń konflikt ręcznego wpisu MCP albo zmień nazwę serwera;
 4. ponownie otwórz podgląd — Agentbox nie zapisuje planu, który nie przechodzi walidacji.
 
-## Snapshoty biblioteki i backup Git
+## Odzyskiwanie
 
 Przed zmianą plików danych Agentbox zachowuje rotacyjne snapshoty w:
 
@@ -55,9 +67,15 @@ Przed zmianą plików danych Agentbox zachowuje rotacyjne snapshoty w:
 
 Snapshot zawiera bieżące wersje `catalog.json`, `projects.local.json` i `mcp.json`. Zachowywanych jest 10 ostatnich snapshotów. Sekrety nie są do nich kopiowane. Folder snapshotów jest wyłączony z backupu Git.
 
+W sekcji `Odzyskiwanie → Snapshoty biblioteki` można wybrać kopię na podstawie daty i przywrócić zapisane w niej pliki. Katalog `skills/` i `mcp-secrets.json` nie są zmieniane. Przed przywróceniem Agentbox tworzy snapshot aktualnego stanu.
+
+Sekcja `Odzyskiwanie → Backupy synchronizacji projektów` pokazuje zarządzane ścieżki zapisane przed synchronizacją. Przywrócenie cofa katalogi skilli, pliki MCP i manifest do wybranego stanu. Najpierw tworzony jest nowy backup aktualnego projektu, dzięki czemu można cofnąć również operację odzyskiwania.
+
+Backupy utworzone przez wersję 0.2.0 przed dodaniem metadanych pozostają na dysku, ale nie pojawiają się w GUI, ponieważ nie da się bezpiecznie przypisać plików `item-*` do oryginalnych ścieżek.
+
 Backup Git obejmuje `catalog.json`, `mcp.json` i `skills/`. Nie obejmuje lokalnych ścieżek projektów ani sekretów. Git zapewnia długoterminową historię biblioteki, natomiast snapshoty chronią ostatni stan przed przypadkowym lub uszkodzonym zapisem.
 
-Przed ręcznym przywracaniem zamknij Agentbox. Skopiuj potrzebne pliki z jednego, kompletnego katalogu snapshotu do katalogu biblioteki. Jeśli problem dotyczy skilli lub historii konfiguracji, można również przywrócić odpowiedni commit Git.
+Jeśli problem dotyczy katalogu skilli lub długoterminowej historii konfiguracji, można również przywrócić odpowiedni commit Git. Ta operacja nie jest jeszcze dostępna w GUI.
 
 ## Pliki projektu i Git
 
@@ -69,4 +87,3 @@ git ls-files .mcp.json .codex/config.toml opencode.json opencode.jsonc
 ```
 
 Jeżeli któreś z tych poleceń pokaże plik zawierający sekret, usuń go z indeksu i sprawdź historię repozytorium.
-
