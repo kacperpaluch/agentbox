@@ -45,6 +45,9 @@ struct AgentboxCLI {
         case "backup":
             let output = try await service.backup(remote: option("--remote", in: args), message: option("--message", in: args) ?? "Skillbox backup")
             print(output)
+        case "restore":
+            guard let remote = option("--remote", in: args) else { throw SkillboxError.invalidSkill("podaj --remote <adres-repozytorium>") }
+            print(try await service.restoreLibraryFromRemote(remote, applicationVersion: "CLI"))
         case "mcp": try await mcpCommand(service, Array(args.dropFirst()))
         default: printHelp()
         }
@@ -88,14 +91,39 @@ struct AgentboxCLI {
     }
 
     static func syncCommand(_ service: SkillboxService, _ args: [String]) async throws {
-        guard args.count >= 2 else { print("Użycie: agentbox sync project <nazwa> | global <tool> --skills a,b [--tags x]"); return }
+        guard let mode = args.first else { print("Użycie: agentbox sync project <nazwa> | global [--skills a,b] [--tags x] | all"); return }
         let dry = args.contains("--dry-run")
-        if args[0] == "project" {
-            for (tool, result) in try await service.syncProject(name: args[1], dryRun: dry) { print("\(tool.rawValue): +\(result.copied.count) -\(result.removed.count)") }
-        } else if args[0] == "global", let tool = Tool(rawValue: args[1]) {
-            let result = try await service.syncGlobal(tool: tool, skillIDs: csvOption("--skills", in: args), tags: csvOption("--tags", in: args), dryRun: dry)
-            print("\(tool.rawValue): +\(result.copied.count) -\(result.removed.count)")
+        switch mode {
+        case "project" where args.count >= 2:
+            guard let project = try await service.listProjects().first(where: { $0.name == args[1] }) else { throw SkillboxError.projectNotFound(args[1]) }
+            // Same transactional path as the GUI: backup, skills, MCP, rollback on failure.
+            let preview = dry ? try await service.previewProjectSync(projectID: project.id) : try await service.syncProjectTransaction(projectID: project.id)
+            printPreview(preview)
+        case "global":
+            let ids = csvOption("--skills", in: args), tags = csvOption("--tags", in: args)
+            if !ids.isEmpty || !tags.isEmpty {
+                let tools = (option("--tools", in: args) ?? "claude,codex,opencode").split(separator: ",").compactMap { Tool(rawValue: String($0)) }
+                try await service.setGlobalSelection(GlobalSkillSelection(tools: tools, skillIDs: ids, tags: tags))
+            }
+            let previews = dry ? try await service.previewGlobalSync() : try await service.syncGlobalSelection()
+            if previews.isEmpty { print("Nie wybrano narzędzi dla synchronizacji globalnej") }
+            for item in previews { print("\(item.tool.rawValue): +\(item.added.count) ~\(item.updated.count) -\(item.removed.count) → \(item.target)") }
+        case "all":
+            guard !dry else { for plan in try await service.previewAllProjectsSync() { print("\(plan.project.name):"); printPreview(plan.preview) }; return }
+            for outcome in try await service.syncAllProjectsTransactions() {
+                switch outcome.state {
+                case .synced: print("✓ \(outcome.plan.project.name)")
+                case .failed(let reason): print("✗ \(outcome.plan.project.name) — cofnięto: \(reason)")
+                case .skipped: print("– \(outcome.plan.project.name) — pominięto po wcześniejszym błędzie")
+                }
+            }
+        default: print("Użycie: agentbox sync project <nazwa> | global [--skills a,b] [--tags x] [--tools claude,codex] | all [--dry-run]")
         }
+    }
+
+    static func printPreview(_ preview: ProjectSyncPreview) {
+        for item in preview.skills { print("  \(item.tool.rawValue): +\(item.added.count) ~\(item.updated.count) -\(item.removed.count) → \(item.target)") }
+        for item in preview.mcp { print("  \(item.tool.rawValue) MCP: +\(item.added.count) -\(item.removed.count) → \(item.file)") }
     }
 
     static func mcpCommand(_ service: SkillboxService, _ args: [String]) async throws {

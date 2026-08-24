@@ -44,11 +44,18 @@ agentbox project set sklep --skills seo-audit,docx --tags seo
 ```bash
 agentbox sync project sklep
 agentbox sync project sklep --dry-run
-agentbox sync global claude --skills seo-audit,docx --tags seo
-agentbox sync global codex --skills docx --dry-run
+agentbox sync all
+agentbox sync global --skills seo-audit,docx --tags seo --tools claude,opencode
+agentbox sync global --dry-run
 ```
 
-`--dry-run` pokazuje liczbę planowanych kopii i usunięć bez zapisu. CLI rozdziela synchronizację skilli i MCP; GUI wykonuje je razem jako transakcję.
+`sync project` i `sync all` synchronizują skille i MCP razem, tą samą ścieżką transakcyjną co GUI: przed zapisem powstaje backup projektu, a błąd cofa zmiany. `sync all` zatrzymuje serię na pierwszym błędzie i wypisuje wynik dla każdego projektu — `✓` zsynchronizowany, `✗` cofnięty, `–` pominięty.
+
+`sync global` zapisuje wybór skilli, tagów i narzędzi, a następnie kopiuje je do katalogów użytkownika (`~/.claude/skills`, `~/.codex/skills`, `~/.config/opencode/skills`). Wywołany bez `--skills` i `--tags` używa wyboru zapisanego wcześniej w aplikacji.
+
+`--dry-run` pokazuje planowane zmiany bez zapisu.
+
+Synchronizacja zatrzymuje się, jeśli w katalogu docelowym istnieje katalog skilla o tej samej nazwie, którego Agentbox nie ma w swoim manifeście. Ręcznie napisany skill nie zostanie nadpisany — usuń go lub zmień nazwę, jeśli ma go zastąpić wersja z biblioteki.
 
 ## Pełny workflow
 
@@ -81,6 +88,14 @@ agentbox mcp sync sklep
 ```
 
 `mcp assign` zastępuje bezpośrednie serwery i tagi MCP projektu. Wartości `--env` i `--headers` są odwołaniami do zmiennych systemowych, nie lokalnymi sekretami. Pełną klasyfikacją sekretów istniejącego MCP zarządza obecnie interfejs aplikacji.
+
+## Odtworzenie biblioteki
+
+```bash
+agentbox restore --remote git@github.com:user/agentbox-backup.git
+```
+
+Pobiera skille, `catalog.json` i `mcp.json` z repozytorium backupu — na przykład przy konfiguracji nowego Maca. Projekty, lokalne ścieżki i sekrety tego Maca pozostają bez zmian. Przed zapisem powstaje pełny backup lokalny, a `.git` klona jest przejmowany, więc kolejne `agentbox backup` wypychają do tego samego repozytorium.
 
 ## Backup Git
 

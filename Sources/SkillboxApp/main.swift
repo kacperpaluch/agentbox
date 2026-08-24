@@ -41,9 +41,9 @@ enum AppVersion {
 }
 
 enum SectionKind: String, CaseIterable, Identifiable {
-    case library = "Biblioteka", projects = "Projekty", mcp = "MCP", backup = "Backup", recovery = "Odzyskiwanie", settings = "Ustawienia"
+    case library = "Biblioteka", projects = "Projekty", global = "Globalne", mcp = "MCP", backup = "Backup", recovery = "Odzyskiwanie", settings = "Ustawienia"
     var id: String { rawValue }
-    var icon: String { switch self { case .library: "square.grid.2x2"; case .projects: "folder"; case .mcp: "network"; case .backup: "externaldrive.badge.timemachine"; case .recovery: "clock.arrow.circlepath"; case .settings: "gearshape" } }
+    var icon: String { switch self { case .library: "square.grid.2x2"; case .projects: "folder"; case .global: "person.crop.circle"; case .mcp: "network"; case .backup: "externaldrive.badge.timemachine"; case .recovery: "clock.arrow.circlepath"; case .settings: "gearshape" } }
 }
 
 struct OperationLogEntry: Identifiable {
@@ -115,22 +115,44 @@ struct OperationLogEntry: Identifiable {
     func previewProjectSync(_ project: Project) async throws -> ProjectSyncPreview { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewProjectSync(projectID: project.id) }
     func syncEverything(_ project: Project) async { await perform { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille i MCP dla \(project.name)" } }
     func previewAllProjectsSync() async throws -> [ProjectSyncPlan] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewAllProjectsSync() }
-    func syncAllProjects() async -> Bool {
+    func syncAllProjects() async -> [ProjectSyncOutcome] {
         isWorking = true
         defer { isWorking = false }
         do {
             guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
-            let plans = try await service.syncAllProjectsTransactions()
-            message = "Zsynchronizowano wszystkie projekty: \(plans.count)"
-            record(.success, message)
+            let outcomes = try await service.syncAllProjectsTransactions()
+            let synced = outcomes.filter { $0.state == .synced }.count
+            if synced == outcomes.count { message = "Zsynchronizowano wszystkie projekty: \(synced)"; record(.success, message) }
+            else {
+                message = "Zsynchronizowano \(synced) z \(outcomes.count) projektów"
+                record(.error, message)
+                for outcome in outcomes { if case .failed(let reason) = outcome.state { record(.error, "\(outcome.plan.project.name): \(reason)") } }
+            }
             await reload()
-            return true
+            return outcomes
         } catch {
             await reload()
             message = error.localizedDescription
             record(.error, message)
-            return false
+            return []
         }
+    }
+    func syncGlobal() async -> Bool {
+        isWorking = true; defer { isWorking = false }
+        do {
+            guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
+            let previews = try await service.syncGlobalSelection()
+            message = "Zsynchronizowano skille globalne: \(previews.count) narzędzi"
+            record(.success, message); return true
+        } catch { message = error.localizedDescription; record(.error, message); return false }
+    }
+    func globalSelection() async -> GlobalSkillSelection { (try? await service?.globalSelection()) ?? GlobalSkillSelection() }
+    func previewGlobalSync() async throws -> [SkillSyncPreview] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewGlobalSync() }
+    func saveGlobalSelection(_ selection: GlobalSkillSelection) async { await perform { try await self.service?.setGlobalSelection(selection); self.message = "Zapisano wybór globalny" } }
+    func restoreLibraryFromRemote(_ remote: String) async {
+        await perform { self.message = try await self.service?.restoreLibraryFromRemote(remote, applicationVersion: AppVersion.short) ?? "Gotowe" }
+        selection = nil
+        await reload(); await loadBackupStatus(); await loadFullBackups()
     }
     func analyzeMCP(_ text: String) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.analyzeMCPJSON(text) }
     func importMCP(_ text: String, serverNames: Set<String>, classifications: [String: MCPValueClassification]) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text, serverNames: serverNames, classifications: classifications); await reload(); scheduleAutomaticBackup(); message = "Zaimportowano \(result.servers.count) serwerów MCP"; record(.success, message); return result }
@@ -183,7 +205,7 @@ struct ContentView: View {
     init(updater: SPUUpdater) { self.updater = updater; _model = StateObject(wrappedValue: AppModel()) }
     var body: some View {
         NavigationSplitView { VStack(spacing: 0) { List(SectionKind.allCases, selection: $section) { item in Label(item.rawValue, systemImage: item.icon).tag(item) }.navigationTitle("Agentbox"); Divider(); Text(AppVersion.display).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(12) }.navigationSplitViewColumnWidth(min: 180, ideal: 210) } detail: {
-            Group { switch section ?? .library { case .library: LibraryView(model: model, showGit: $showGit); case .projects: ProjectsView(model: model, showProject: $showProject); case .mcp: MCPView(model: model); case .backup: BackupView(model: model); case .recovery: RecoveryView(model: model); case .settings: SettingsView(model: model, updater: updater) } }
+            Group { switch section ?? .library { case .library: LibraryView(model: model, showGit: $showGit); case .projects: ProjectsView(model: model, showProject: $showProject); case .global: GlobalSyncView(model: model); case .mcp: MCPView(model: model); case .backup: BackupView(model: model); case .recovery: RecoveryView(model: model); case .settings: SettingsView(model: model, updater: updater) } }
         }
         .overlay(alignment: .bottom) { if !model.message.isEmpty { StatusToast(text: model.message) { model.message = "" } } }
         .task(id: model.message) { let current = model.message; guard !current.isEmpty else { return }; try? await Task.sleep(for: .seconds(4)); guard !Task.isCancelled, model.message == current else { return }; withAnimation { model.message = "" } }
@@ -385,16 +407,56 @@ struct AllProjectsSyncPreviewView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var model: AppModel
     @State private var plans: [ProjectSyncPlan]?; @State private var error = ""
+    @State private var outcomes: [ProjectSyncOutcome] = []
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Synchronizacja wszystkich projektów").font(.title2.bold())
-            Text("Agentbox najpierw sprawdza plan dla wszystkich projektów. Każdy projekt jest synchronizowany transakcyjnie ze swoim backupem i rollbackiem.").font(.caption).foregroundStyle(.secondary)
+            Text("Agentbox najpierw sprawdza plan dla wszystkich projektów. Każdy projekt jest synchronizowany transakcyjnie ze swoim backupem i rollbackiem. Błąd zatrzymuje serię, a projekt, który go zgłosił, wraca do stanu sprzed zmiany.").font(.caption).foregroundStyle(.secondary)
             Label("Wynikowe pliki MCP mogą zawierać jawne sekrety, dlatego pozostają wykluczone lokalnie z Git.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
             if !error.isEmpty { Text(error).foregroundStyle(.red) }
             else if plans == nil { ProgressView() }
+            else if !outcomes.isEmpty { ScrollView { LazyVStack(alignment: .leading, spacing: 8) { ForEach(outcomes) { ProjectSyncOutcomeRow(outcome: $0) } } } }
             else if let plans { ScrollView { LazyVStack(alignment: .leading, spacing: 12) { ForEach(plans) { AllProjectsSyncPlanRow(plan: $0) } } } }
-            HStack { Spacer(); Button("Zamknij") { dismiss() }; Button("Synchronizuj \(plans?.count ?? 0) projektów") { Task { if await model.syncAllProjects() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || plans == nil || model.isWorking) }
+            HStack {
+                Spacer()
+                Button(outcomes.isEmpty ? "Zamknij" : "Gotowe") { dismiss() }
+                if outcomes.isEmpty {
+                    Button("Synchronizuj \(plans?.count ?? 0) projektów") {
+                        Task {
+                            let result = await model.syncAllProjects()
+                            if result.allSatisfy({ $0.state == .synced }) { dismiss() } else { outcomes = result }
+                        }
+                    }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || plans == nil || model.isWorking)
+                }
+            }
         }.padding(24).frame(width: 820, height: 700).task { do { plans = try await model.previewAllProjectsSync() } catch { self.error = error.localizedDescription; model.reportError(error) } }
+    }
+}
+
+private struct ProjectSyncOutcomeRow: View {
+    let outcome: ProjectSyncOutcome
+    private var icon: (String, Color) {
+        switch outcome.state {
+        case .synced: ("checkmark.circle.fill", .green)
+        case .failed: ("xmark.octagon.fill", .red)
+        case .skipped: ("minus.circle.fill", .secondary)
+        }
+    }
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon.0).foregroundStyle(icon.1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(outcome.plan.project.name).fontWeight(.medium)
+                switch outcome.state {
+                case .synced: Text("Zsynchronizowano").font(.caption).foregroundStyle(.secondary)
+                case .failed(let reason): Text("Cofnięto do stanu sprzed synchronizacji — \(reason)").font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                case .skipped: Text("Pominięto po wcześniejszym błędzie; pliki projektu nie zostały zmienione.").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -425,6 +487,67 @@ private struct AllProjectsSyncPlanRow: View {
         }
         .padding(12)
         .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+struct GlobalSyncView: View {
+    @ObservedObject var model: AppModel
+    @State private var tools = Set<Tool>()
+    @State private var skillIDs = Set<String>()
+    @State private var tags = Set<String>()
+    @State private var previews: [SkillSyncPreview] = []
+    @State private var error = ""
+    @State private var loaded = false
+    private var availableTags: [String] { Array(Set(model.skills.flatMap(\.tags))).sorted() }
+    private var selection: GlobalSkillSelection { GlobalSkillSelection(tools: Array(tools), skillIDs: Array(skillIDs), tags: Array(tags)) }
+
+    var body: some View {
+        ScrollView { VStack(alignment: .leading, spacing: 18) {
+            Label("Skille globalne", systemImage: "person.crop.circle").font(.largeTitle.bold())
+            Text("Te skille trafiają do katalogu użytkownika i są widoczne we wszystkich sesjach wybranego klienta, niezależnie od projektu.").foregroundStyle(.secondary)
+            GroupBox("Narzędzia") { VStack(alignment: .leading, spacing: 6) {
+                ForEach(Tool.allCases, id: \.self) { tool in
+                    Toggle(isOn: binding(tool, in: $tools)) {
+                        HStack { Text(tool.rawValue.capitalized); Text(tool.globalSkillsURL().path).font(.caption).foregroundStyle(.secondary) }
+                    }.toggleStyle(.checkbox)
+                }
+            }.padding(6) }
+            GroupBox("Pojedyncze skille") {
+                if model.skills.isEmpty { Text("Biblioteka jest pusta.").foregroundStyle(.secondary).padding(6) }
+                else { LazyVGrid(columns: [GridItem(.adaptive(minimum: 180))], alignment: .leading) { ForEach(model.skills) { skill in Toggle(skill.name, isOn: binding(skill.id, in: $skillIDs)).toggleStyle(.checkbox) } }.padding(6) }
+            }
+            GroupBox("Tagi dynamiczne") {
+                if availableTags.isEmpty { Text("Brak tagów.").foregroundStyle(.secondary).padding(6) }
+                else { LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], alignment: .leading) { ForEach(availableTags, id: \.self) { tag in Toggle("#\(tag)", isOn: binding(tag, in: $tags)).toggleStyle(.checkbox) } }.padding(6) }
+            }
+            if !error.isEmpty { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).textSelection(.enabled) }
+            if !previews.isEmpty {
+                GroupBox("Podgląd") { VStack(alignment: .leading, spacing: 10) { ForEach(previews, id: \.tool) { item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.target).font(.caption).foregroundStyle(.secondary)
+                        SyncChangeRows(added: item.added, updated: item.updated, removed: item.removed)
+                    }
+                } }.padding(6) }
+            }
+            HStack {
+                Button("Zapisz wybór") { Task { await model.saveGlobalSelection(selection); await refresh() } }
+                Button("Odśwież podgląd") { Task { await refresh() } }
+                Spacer()
+                Button("Synchronizuj globalnie") {
+                    Task { await model.saveGlobalSelection(selection); if await model.syncGlobal() { await refresh() } }
+                }.buttonStyle(.borderedProminent).disabled(tools.isEmpty || model.isWorking)
+            }
+        }.padding(28) }
+        .navigationTitle("Globalne")
+        .task { guard !loaded else { return }; loaded = true; let saved = await model.globalSelection(); tools = Set(saved.tools); skillIDs = Set(saved.skillIDs); tags = Set(saved.tags); await refresh() }
+    }
+
+    private func refresh() async {
+        do { previews = try await model.previewGlobalSync(); error = "" }
+        catch { previews = []; self.error = error.localizedDescription }
+    }
+    private func binding<T: Hashable>(_ value: T, in set: Binding<Set<T>>) -> Binding<Bool> {
+        Binding(get: { set.wrappedValue.contains(value) }, set: { if $0 { set.wrappedValue.insert(value) } else { set.wrappedValue.remove(value) } })
     }
 }
 
@@ -535,6 +658,8 @@ struct BackupView: View {
     @State private var remote = ""
     @State private var fullBackupToRestore: FullBackupInfo?
     @State private var fullBackupToDelete: FullBackupInfo?
+    @State private var restoreRemote = ""
+    @State private var showRestoreConfirmation = false
     @AppStorage("AgentboxAutoBackup") private var autoBackup = true
     @AppStorage("AgentboxAutoPush") private var autoPush = false
     private let formatter: DateFormatter = { let value = DateFormatter(); value.dateStyle = .medium; value.timeStyle = .medium; return value }()
@@ -546,6 +671,11 @@ struct BackupView: View {
         HStack { Button("Odśwież status") { Task { await model.loadBackupStatus() } }; Button("Wykonaj backup teraz") { Task { await model.backup(remote: remote) } }.buttonStyle(.borderedProminent) }
         GroupBox("Status") { Text(model.backupStatus.isEmpty ? "Kliknij „Odśwież status”." : model.backupStatus).font(.system(.body, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading).padding(6) }
         Divider().padding(.vertical, 4)
+        Label("Odtworzenie biblioteki ze zdalnego repozytorium", systemImage: "arrow.down.circle").font(.title2.bold())
+        Text("Pobiera skille, katalog i konfigurację MCP z repozytorium backupu — na przykład przy konfiguracji nowego Maca. Projekty, lokalne ścieżki i sekrety na tym Macu pozostają bez zmian. Przed zapisem powstaje pełny backup lokalny.").foregroundStyle(.secondary)
+        TextField("Adres repozytorium do odtworzenia", text: $restoreRemote).textFieldStyle(.roundedBorder)
+        HStack { Spacer(); Button("Odtwórz bibliotekę") { showRestoreConfirmation = true }.disabled(restoreRemote.trimmingCharacters(in: .whitespaces).isEmpty || model.isWorking) }
+        Divider().padding(.vertical, 4)
         Label("Pełny backup lokalny", systemImage: "externaldrive.fill.badge.plus").font(.title2.bold())
         Label("Zawiera również projekty, lokalne ścieżki, wszystkie skille, MCP, sekrety i klucze AI. Pliki są czytelne i niezaszyfrowane — nie udostępniaj folderu backups.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
         HStack { Button("Utwórz pełny backup") { Task { await model.createFullBackup() } }.buttonStyle(.borderedProminent); Button("Odśwież listę") { Task { await model.loadFullBackups() } }; Spacer(); Text("\(model.rootPath)/backups/full").font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
@@ -553,6 +683,10 @@ struct BackupView: View {
     }.padding(28) }.navigationTitle("Backup").task { await model.loadBackupStatus(); await model.loadFullBackups() }
         .confirmationDialog("Przywrócić pełny backup?", isPresented: Binding(get: { fullBackupToRestore != nil }, set: { if !$0 { fullBackupToRestore = nil } })) { Button("Przywróć wszystkie dane", role: .destructive) { if let backup = fullBackupToRestore { Task { await model.restoreFullBackup(backup) } }; fullBackupToRestore = nil }; Button("Anuluj", role: .cancel) { fullBackupToRestore = nil } } message: { Text("Aktualna biblioteka, projekty, skille, MCP i sekrety zostaną zastąpione. Agentbox najpierw zachowa pełną kopię aktualnego stanu w backups/restore-rollbacks.") }
         .confirmationDialog("Usunąć pełny backup?", isPresented: Binding(get: { fullBackupToDelete != nil }, set: { if !$0 { fullBackupToDelete = nil } })) { Button("Usuń backup", role: .destructive) { if let backup = fullBackupToDelete { Task { await model.deleteFullBackup(backup) } }; fullBackupToDelete = nil }; Button("Anuluj", role: .cancel) { fullBackupToDelete = nil } } message: { Text("Ta kopia zawierająca również sekrety zostanie trwale usunięta z lokalnego folderu backups/full.") }
+        .confirmationDialog("Odtworzyć bibliotekę z repozytorium?", isPresented: $showRestoreConfirmation) {
+            Button("Odtwórz bibliotekę", role: .destructive) { Task { await model.restoreLibraryFromRemote(restoreRemote.trimmingCharacters(in: .whitespaces)) } }
+            Button("Anuluj", role: .cancel) { }
+        } message: { Text("Katalog skilli, catalog.json i mcp.json zostaną zastąpione zawartością repozytorium. Projekty, lokalne ścieżki i sekrety pozostaną bez zmian, a aktualny stan zostanie zapisany jako pełny backup lokalny.") }
     }
 }
 

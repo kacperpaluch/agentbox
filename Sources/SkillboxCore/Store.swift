@@ -170,6 +170,46 @@ public actor SkillboxStore {
         try pruneFullRestoreBackups(at: rollbackRoot, keeping: 3)
     }
 
+    /// Replaces the Git-backed part of the library with a freshly cloned copy.
+    ///
+    /// `projects.local.json` and `mcp-secrets.json` are deliberately untouched: they never leave
+    /// this Mac, so a restore must not wipe the local project paths or secrets of the machine it
+    /// runs on. The clone's `.git` is adopted so later backups push straight back to the remote.
+    public func adoptLibrary(from clone: URL) throws {
+        let names = ["catalog.json", "mcp.json", "skills", ".gitignore", ".git"]
+        var isDirectory: ObjCBool = false
+        let hasCatalog = fm.fileExists(atPath: clone.appending(path: "catalog.json").path)
+        let hasSkills = fm.fileExists(atPath: clone.appending(path: "skills").path, isDirectory: &isDirectory) && isDirectory.boolValue
+        guard hasCatalog || hasSkills else { throw SkillboxError.invalidSkill("repozytorium nie zawiera biblioteki Agentbox (brak catalog.json i katalogu skills)") }
+        if hasCatalog { _ = try decoder.decode(Catalog.self, from: Data(contentsOf: clone.appending(path: "catalog.json"))) }
+        if fm.fileExists(atPath: clone.appending(path: "mcp.json").path) {
+            _ = try decoder.decode(MCPConfiguration.self, from: Data(contentsOf: clone.appending(path: "mcp.json")))
+        }
+        let rollbackRoot = root.appending(path: "backups/restore-rollbacks")
+        let rollback = rollbackRoot.appending(path: UUID().uuidString)
+        try fm.createDirectory(at: rollback, withIntermediateDirectories: true)
+        for name in names {
+            let current = root.appending(path: name)
+            if fm.fileExists(atPath: current.path) { try fm.copyItem(at: current, to: rollback.appending(path: name)) }
+        }
+        do {
+            for name in names {
+                let target = root.appending(path: name), source = clone.appending(path: name)
+                if fm.fileExists(atPath: target.path) { try fm.removeItem(at: target) }
+                if fm.fileExists(atPath: source.path) { try fm.copyItem(at: source, to: target) }
+            }
+            try fm.createDirectory(at: skillsDirectory, withIntermediateDirectories: true)
+        } catch {
+            for name in names {
+                let target = root.appending(path: name), saved = rollback.appending(path: name)
+                try? fm.removeItem(at: target)
+                if fm.fileExists(atPath: saved.path) { try? fm.copyItem(at: saved, to: target) }
+            }
+            throw error
+        }
+        try pruneFullRestoreBackups(at: rollbackRoot, keeping: 3)
+    }
+
     public func deleteFullBackup(named name: String) throws {
         guard name == URL(fileURLWithPath: name).lastPathComponent, !name.contains("..") else { throw SkillboxError.unsafePath(name) }
         let target = root.appending(path: "backups/full/\(name)").standardizedFileURL

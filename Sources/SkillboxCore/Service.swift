@@ -265,10 +265,40 @@ public actor SkillboxService {
         return results
     }
 
-    public func syncGlobal(tool: Tool, skillIDs: [String], tags: [String] = [], dryRun: Bool = false) async throws -> SyncResult {
-        let catalog = try await store.catalog()
-        let selected = catalog.skills.filter { skillIDs.contains($0.id) || !$0.tags.filter(tags.contains).isEmpty }
-        return try await sync(skills: selected, to: tool.globalSkillsURL(), dryRun: dryRun)
+    public func syncGlobal(tool: Tool, skillIDs: [String], tags: [String] = [], dryRun: Bool = false, home: URL = FileManager.default.homeDirectoryForCurrentUser) async throws -> SyncResult {
+        let selected = try await selectedSkills(ids: skillIDs, tags: tags)
+        return try await sync(skills: selected, to: tool.globalSkillsURL(home: home), dryRun: dryRun)
+    }
+
+    static func managedSkillIDs(at target: URL) -> Set<String> {
+        Set((try? JSONDecoder().decode([String].self, from: Data(contentsOf: target.appending(path: ".skillbox.json")))) ?? [])
+    }
+
+    /// A directory that exists in the target but is not listed in the Agentbox manifest belongs
+    /// to the user. Replacing it would destroy hand-written skills, so synchronization stops
+    /// instead — the same rule that already protects unmanaged MCP entries.
+    static func assertNoUnmanagedSkillConflict(ids: [String], target: URL, managed: Set<String>) throws {
+        let fm = FileManager.default
+        for id in ids where !managed.contains(id) && fm.fileExists(atPath: target.appending(path: id).path) {
+            throw SkillboxError.skillConflict("\(id) istnieje w \(target.path) i nie jest zarządzany przez Agentbox")
+        }
+    }
+
+    static func skillPreview(tool: Tool, target: URL, current: Set<String>) throws -> SkillSyncPreview {
+        let previous = managedSkillIDs(at: target)
+        try assertNoUnmanagedSkillConflict(ids: Array(current), target: target, managed: previous)
+        let fm = FileManager.default
+        return SkillSyncPreview(
+            tool: tool,
+            target: target.path,
+            added: Array(current.subtracting(previous)).sorted(),
+            updated: Array(current.intersection(previous)).filter { fm.fileExists(atPath: target.appending(path: $0).path) }.sorted(),
+            removed: Array(previous.subtracting(current)).sorted()
+        )
+    }
+
+    func selectedSkills(ids: [String], tags: [String]) async throws -> [Skill] {
+        try await store.catalog().skills.filter { ids.contains($0.id) || !$0.tags.filter(tags.contains).isEmpty }
     }
 
     private func sync(skills: [Skill], to target: URL, dryRun: Bool) async throws -> SyncResult {
@@ -276,6 +306,8 @@ public actor SkillboxService {
         let manifest = target.appending(path: ".skillbox.json")
         let previous: [String] = (try? JSONDecoder().decode([String].self, from: Data(contentsOf: manifest))) ?? []
         let current = skills.map(\.id).sorted(); var result = SyncResult()
+        // Checked before the first removal so a conflict never leaves a half-synchronized target.
+        try Self.assertNoUnmanagedSkillConflict(ids: current, target: target, managed: Set(previous))
         for stale in Set(previous).subtracting(current) {
             result.removed.append(stale)
             let staleURL = target.appending(path: stale)
@@ -306,6 +338,22 @@ public actor SkillboxService {
         if !staged.isEmpty { _ = try ProcessRunner.run("/usr/bin/git", ["commit", "-m", message], cwd: root) }
         if push, hasRemote { return try ProcessRunner.run("/usr/bin/git", ["push", "-u", "origin", "HEAD"], cwd: root) }
         return staged.isEmpty ? "Brak zmian" : "Utworzono lokalny commit"
+    }
+
+    /// Restores skills, catalog and MCP configuration from a backup repository — the missing half
+    /// of `backup(remote:)`, used when setting up a new Mac. A full local backup is taken first, so
+    /// the previous contents of the library remain recoverable.
+    @discardableResult
+    public func restoreLibraryFromRemote(_ remote: String, applicationVersion: String) async throws -> String {
+        guard Self.isAllowedGitLocation(remote) else { throw SkillboxError.invalidSkill("dozwolone źródła Git: https, http, ssh, git, file lub składnia user@host:path") }
+        let temp = fm.temporaryDirectory.appending(path: "agentbox-restore-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: temp) }
+        _ = try await store.createFullBackup(applicationVersion: applicationVersion)
+        // A full clone, not --depth 1: the adopted .git must stay pushable.
+        _ = try ProcessRunner.run("/usr/bin/git", ["clone", "--", remote, temp.path], timeout: 600)
+        try await store.adoptLibrary(from: temp)
+        let count = try await store.catalog().skills.count
+        return "Przywrócono bibliotekę z \(remote): \(count) skilli. Projekty i sekrety na tym Macu pozostały bez zmian."
     }
 
     public func automaticBackup(push: Bool) async throws -> String? {

@@ -70,6 +70,11 @@ public struct Catalog: Codable, Sendable {
 public struct LocalConfiguration: Codable, Sendable {
     public var projects: [Project] = []
     public var backupRemote: String?
+    /// Global (per-user) skill selection written to `~/.claude/skills` and its equivalents.
+    /// Optional so libraries created before global sync keep decoding.
+    public var globalTools: [Tool]?
+    public var globalSkillIDs: [String]?
+    public var globalTags: [String]?
     public init() {}
 }
 
@@ -239,6 +244,21 @@ public struct ProjectSyncPlan: Identifiable, Sendable {
     }
 }
 
+public struct ProjectSyncOutcome: Identifiable, Sendable {
+    public enum State: Sendable, Equatable {
+        case synced
+        /// The project was rolled back to its previous state; the message explains why.
+        case failed(String)
+        /// Not attempted, because an earlier project failed.
+        case skipped
+    }
+    public var id: UUID { plan.project.id }
+    public var plan: ProjectSyncPlan
+    public var state: State
+
+    public init(plan: ProjectSyncPlan, state: State) { self.plan = plan; self.state = state }
+}
+
 public struct LibrarySnapshot: Identifiable, Hashable, Sendable {
     public var id: String { name }
     public var name: String
@@ -262,7 +282,7 @@ public struct ProjectSyncBackup: Identifiable, Hashable, Sendable {
 public enum SkillboxError: LocalizedError {
     case invalidSkill(String), duplicateSkill(String), skillNotFound(String)
     case projectNotFound(String), commandFailed(String), unsafePath(String)
-    case mcpConflict(String)
+    case mcpConflict(String), skillConflict(String)
 
     public var errorDescription: String? {
         switch self {
@@ -273,6 +293,7 @@ public enum SkillboxError: LocalizedError {
         case .commandFailed(let value): "Polecenie nie powiodło się: \(value)"
         case .unsafePath(let value): "Niebezpieczna ścieżka: \(value)"
         case .mcpConflict(let value): "Konflikt MCP: \(value)"
+        case .skillConflict(let value): "Konflikt skilla: \(value)"
         }
     }
 }

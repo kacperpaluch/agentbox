@@ -21,18 +21,26 @@ extension SkillboxService {
         return plans
     }
 
+    /// Validates every project and computes every preview before the first write. Each project is
+    /// then synchronized transactionally; a failed project is rolled back on its own and stops the
+    /// run, so the caller always learns exactly which projects were written, which was rolled back,
+    /// and which were never attempted.
     @discardableResult
-    public func syncAllProjectsTransactions() async throws -> [ProjectSyncPlan] {
-        // Validate every project and compute every preview before the first write.
+    public func syncAllProjectsTransactions() async throws -> [ProjectSyncOutcome] {
         let plans = try await previewAllProjectsSync()
+        var outcomes: [ProjectSyncOutcome] = []
+        var failed = false
         for plan in plans {
+            guard !failed else { outcomes.append(ProjectSyncOutcome(plan: plan, state: .skipped)); continue }
             do {
                 _ = try await syncProjectTransaction(projectID: plan.project.id)
+                outcomes.append(ProjectSyncOutcome(plan: plan, state: .synced))
             } catch {
-                throw SkillboxError.commandFailed("synchronizacja projektu \(plan.project.name): \(error.localizedDescription)")
+                outcomes.append(ProjectSyncOutcome(plan: plan, state: .failed(error.localizedDescription)))
+                failed = true
             }
         }
-        return plans
+        return outcomes
     }
 
     public func previewProjectSync(projectID: UUID) async throws -> ProjectSyncPreview {
@@ -41,18 +49,8 @@ extension SkillboxService {
         let catalog = try await store.catalog()
         let selected = catalog.skills.filter { project.skillIDs.contains($0.id) || !$0.tags.filter(project.tags.contains).isEmpty }
         let current = Set(selected.map(\.id))
-        let fm = FileManager.default
-        let skills = project.tools.map { tool -> SkillSyncPreview in
-            let target = URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath)
-            let manifest = target.appending(path: ".skillbox.json")
-            let previous = Set((try? JSONDecoder().decode([String].self, from: Data(contentsOf: manifest))) ?? [])
-            return SkillSyncPreview(
-                tool: tool,
-                target: target.path,
-                added: Array(current.subtracting(previous)).sorted(),
-                updated: Array(current.intersection(previous)).filter { fm.fileExists(atPath: target.appending(path: $0).path) }.sorted(),
-                removed: Array(previous.subtracting(current)).sorted()
-            )
+        let skills = try project.tools.map { tool in
+            try SkillboxService.skillPreview(tool: tool, target: URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath), current: current)
         }
         return ProjectSyncPreview(skills: skills, mcp: try await previewMCP(projectID: projectID))
     }

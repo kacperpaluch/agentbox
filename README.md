@@ -143,7 +143,20 @@ Agentbox zachowuje niezależne, ręczne ustawienia w plikach projektu. Konflikt 
 
 Agentbox zachowuje maksymalnie 10 ostatnich katalogów kopii MCP. Jeśli źródłem jest `opencode.jsonc`, podgląd ostrzega, że komentarze i formatowanie zostaną utracone podczas przepisania pliku.
 
-GUI pokazuje również pełny plan zmian skilli dla każdego narzędzia. Synchronizacja skilli i MCP działa jako jedna transakcja: błąd na dowolnym etapie przywraca zarządzane katalogi i pliki do stanu sprzed operacji. Ostatnie kopie znajdują się w `.skillbox/sync-backups/`.
+GUI pokazuje również pełny plan zmian skilli dla każdego narzędzia. Synchronizacja skilli i MCP działa jako jedna transakcja: błąd na dowolnym etapie przywraca zarządzane katalogi i pliki do stanu sprzed operacji. Ostatnie kopie znajdują się w `.skillbox/sync-backups/`. To samo dotyczy CLI — `agentbox sync project` i `agentbox sync all` używają tej samej ścieżki transakcyjnej.
+
+Agentbox zastępuje wyłącznie katalogi skilli wymienione w swoim manifeście `.skillbox.json`. Katalog o tej samej nazwie, który nie pochodzi z Agentbox, zatrzymuje synchronizację zamiast zostać nadpisany — tak samo jak ręcznie dodany serwer MCP.
+
+`Synchronizuj wszystkie projekty` liczy plan dla wszystkich projektów przed pierwszym zapisem, a po zakończeniu pokazuje wynik dla każdego projektu osobno: zsynchronizowany, cofnięty po błędzie albo pominięty.
+
+### Skille globalne
+
+Sekcja `Globalne` synchronizuje wybrane skille do katalogów użytkownika zamiast do projektu: `~/.claude/skills`, `~/.codex/skills` i `~/.config/opencode/skills`. Wybór narzędzi, skilli i tagów jest zapisywany, a podgląd pokazuje zmiany przed zapisem.
+
+```bash
+swift run agentbox sync global --skills seo-audit,docx --tags seo --tools claude,opencode
+swift run agentbox sync all
+```
 
 Sekcja `Odzyskiwanie` pozwala przywrócić snapshot metadanych biblioteki albo cofnąć zarządzane pliki projektu do stanu sprzed wybranej synchronizacji. Przed przywróceniem Agentbox automatycznie zachowuje aktualny stan.
 
@@ -192,6 +205,14 @@ Pierwsze wywołanie inicjalizuje Git w folderze biblioteki. `--remote` ustawia `
 
 Po pierwszym ręcznym backupie GUI może automatycznie tworzyć lokalne commity po zmianach skilli, tagów i serwerów MCP. Zmiany wykonane w ciągu 5 sekund są łączone w jeden commit. Automatyczny push do `origin` ma osobny przełącznik i domyślnie jest wyłączony. Projekty, sekrety, klucze AI i sama synchronizacja folderu projektu nie uruchamiają automatycznego backupu.
 
+### Odtworzenie biblioteki
+
+```bash
+swift run agentbox restore --remote git@github.com:user/agentbox-backup.git
+```
+
+Pobiera skille, `catalog.json` i `mcp.json` z repozytorium backupu — na przykład przy konfiguracji nowego Maca. To samo działanie ma `Backup → Odtworzenie biblioteki ze zdalnego repozytorium`. Projekty, lokalne ścieżki i sekrety tego Maca pozostają bez zmian, a przed zapisem powstaje pełny backup lokalny.
+
 Przed zapisem danych Agentbox tworzy także lokalny snapshot `catalog.json`, `projects.local.json` i `mcp.json` w `.agentbox-snapshots/`. Zachowuje 10 ostatnich snapshotów; sekrety nie są kopiowane, a folder snapshotów nie trafia do Git.
 
 ## Pełny backup lokalny
@@ -205,6 +226,7 @@ W `Backup → Pełny backup lokalny` można utworzyć, przywrócić lub usunąć
 - Agentbox nie uruchamia ani nie testuje serwerów MCP.
 - Agentbox nie przeprowadza OAuth i nie zarządza sesją klienta.
 - Usunięcie projektu nigdy nie usuwa folderu projektu.
+- Odtworzenie biblioteki nie przywraca projektów ani sekretów — te dane nie trafiają do backupu Git.
 - Aktualizacje Git są wykonywane wyłącznie na żądanie.
 - Konfigurację wygenerowaną przez AI należy sprawdzić przed importem.
 

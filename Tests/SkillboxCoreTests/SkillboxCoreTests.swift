@@ -481,6 +481,168 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertTrue(secrets.values.contains("dummy-secret"))
     }
 
+    func testSyncRefusesToReplaceSkillDirectoryThatAgentboxDoesNotManage() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/notes"); let projectURL = root.appending(path: "project")
+        let manual = projectURL.appending(path: ".claude/skills/notes")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: manual, withIntermediateDirectories: true)
+        try "z biblioteki".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        try "reczna praca".write(to: manual.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        let project = try await service.addProject(name: "app", path: projectURL.path, tools: [.claude])
+        try await service.configureProject(id: project.id, skillIDs: ["notes"], tags: [])
+
+        // The preview must fail too, so "synchronizuj wszystko" stops before its first write.
+        await XCTAssertThrowsErrorAsync(try await service.previewProjectSync(projectID: project.id))
+        await XCTAssertThrowsErrorAsync(try await service.syncProject(id: project.id))
+        XCTAssertEqual(try String(contentsOf: manual.appending(path: "SKILL.md"), encoding: .utf8), "reczna praca")
+    }
+
+    func testManagedSkillIsStillReplacedOnSecondSync() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/notes"); let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        try "wersja 1".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        let project = try await service.addProject(name: "app", path: projectURL.path, tools: [.claude])
+        try await service.configureProject(id: project.id, skillIDs: ["notes"], tags: [])
+        _ = try await service.syncProject(id: project.id)
+        try "wersja 2".write(to: root.appending(path: "data/skills/notes/SKILL.md"), atomically: true, encoding: .utf8)
+        _ = try await service.syncProject(id: project.id)
+        XCTAssertEqual(try String(contentsOf: projectURL.appending(path: ".claude/skills/notes/SKILL.md"), encoding: .utf8), "wersja 2")
+    }
+
+    func testSyncAllProjectsReportsSyncedFailedAndSkippedProjects() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/notes")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try "skill".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        var ids: [UUID] = []
+        for name in ["a-first", "b-second", "c-third"] {
+            let url = root.appending(path: "projects/\(name)")
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            let project = try await service.addProject(name: name, path: url.path, tools: [.claude])
+            try await service.configureProject(id: project.id, skillIDs: ["notes"], tags: [])
+            ids.append(project.id)
+        }
+        // The middle project cannot be written: its skills path is occupied by a file.
+        try FileManager.default.createDirectory(at: root.appending(path: "projects/b-second/.claude"), withIntermediateDirectories: true)
+        try "blokada".write(to: root.appending(path: "projects/b-second/.claude/skills"), atomically: true, encoding: .utf8)
+
+        let outcomes = try await service.syncAllProjectsTransactions()
+        XCTAssertEqual(outcomes.count, 3)
+        XCTAssertEqual(outcomes[0].state, .synced)
+        guard case .failed = outcomes[1].state else { return XCTFail("drugi projekt powinien zgłosić błąd") }
+        XCTAssertEqual(outcomes[2].state, .skipped)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appending(path: "projects/a-first/.claude/skills/notes/SKILL.md").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appending(path: "projects/c-third/.claude/skills/notes").path))
+    }
+
+    func testGlobalSelectionIsPersistedAndSynchronizedIntoUserSkillDirectories() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/notes"); let home = root.appending(path: "home")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try "globalny".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        try await service.setTags(skillID: "notes", tags: ["wszedzie"])
+        try await service.setGlobalSelection(GlobalSkillSelection(tools: [.claude, .opencode], skillIDs: [], tags: ["wszedzie"]))
+
+        let preview = try await service.previewGlobalSync(home: home)
+        XCTAssertEqual(preview.map(\.added), [["notes"], ["notes"]])
+        _ = try await service.syncGlobalSelection(home: home)
+        XCTAssertEqual(try String(contentsOf: home.appending(path: ".claude/skills/notes/SKILL.md"), encoding: .utf8), "globalny")
+        XCTAssertEqual(try String(contentsOf: home.appending(path: ".config/opencode/skills/notes/SKILL.md"), encoding: .utf8), "globalny")
+        // Codex was never selected, so its directory must stay untouched.
+        XCTAssertFalse(FileManager.default.fileExists(atPath: home.appending(path: ".codex/skills").path))
+
+        let reloaded = try await service.globalSelection()
+        XCTAssertEqual(reloaded.tools, [.claude, .opencode])
+        XCTAssertEqual(reloaded.tags, ["wszedzie"])
+
+        // Deselecting removes the managed copy again.
+        try await service.setGlobalSelection(GlobalSkillSelection(tools: [.claude], skillIDs: [], tags: []))
+        _ = try await service.syncGlobalSelection(home: home)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: home.appending(path: ".claude/skills/notes").path))
+    }
+
+    func testLibraryIsRestoredFromRemoteRepositoryWithoutTouchingLocalProjectsAndSecrets() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/notes"); let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        try "zapasowy skill".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+
+        // Library that plays the role of the backup repository.
+        let origin = try SkillboxService(root: root.appending(path: "origin"))
+        _ = try await origin.addLocal(path: source.path)
+        try await origin.saveMCPServer(MCPServer(name: "api", transport: .http, url: "https://example.test/mcp"))
+        _ = try await origin.backup(message: "kopia", push: false)
+
+        // A fresh Mac: its own project and secret must survive the restore.
+        let fresh = try SkillboxService(root: root.appending(path: "fresh"))
+        let project = try await fresh.addProject(name: "lokalny", path: projectURL.path, tools: [.claude])
+        try await fresh.saveMCPServer(MCPServer(name: "local", transport: .stdio, command: "echo"), managedFields: [
+            MCPManagedField(location: .environment, key: "TOKEN", value: "dummy-secret", classification: .secret)
+        ])
+
+        _ = try await fresh.restoreLibraryFromRemote(root.appending(path: "origin").absoluteURL.absoluteString, applicationVersion: "test")
+
+        let restoredSkills = try await fresh.listSkills().map(\.id)
+        let restoredServers = try await fresh.mcpConfiguration().servers.map(\.name)
+        let keptProjects = try await fresh.listProjects().map(\.id)
+        let backupCount = try await fresh.fullBackups().count
+        XCTAssertEqual(restoredSkills, ["notes"])
+        XCTAssertEqual(try String(contentsOf: root.appending(path: "fresh/skills/notes/SKILL.md"), encoding: .utf8), "zapasowy skill")
+        XCTAssertEqual(restoredServers, ["api"])
+        XCTAssertEqual(keptProjects, [project.id])
+        let secrets = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: root.appending(path: "fresh/mcp-secrets.json")))
+        XCTAssertTrue(secrets.values.contains("dummy-secret"))
+        XCTAssertEqual(backupCount, 1)
+    }
+
+    func testRestoreRejectsRepositoryThatIsNotAnAgentboxLibrary() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let origin = root.appending(path: "origin")
+        try FileManager.default.createDirectory(at: origin, withIntermediateDirectories: true)
+        try "# zwykłe repo".write(to: origin.appending(path: "README.md"), atomically: true, encoding: .utf8)
+        try runGit(["init"], in: origin)
+        try runGit(["-c", "user.email=t@t.test", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init"], in: origin)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addProject(name: "zostaje", path: origin.path, tools: [.claude])
+        await XCTAssertThrowsErrorAsync(try await service.restoreLibraryFromRemote(origin.absoluteURL.absoluteString, applicationVersion: "test"))
+        let keptProjects = try await service.listProjects().map(\.name)
+        XCTAssertEqual(keptProjects, ["zostaje"])
+    }
+
+    func testProcessRunnerRunsGitWithoutInteractivePrompts() throws {
+        let environment = ProcessRunner.nonInteractiveEnvironment()
+        XCTAssertEqual(environment["GIT_TERMINAL_PROMPT"], "0")
+        XCTAssertEqual(environment["SSH_ASKPASS_REQUIRE"], "never")
+        XCTAssertNil(environment["GIT_ASKPASS"])
+        XCTAssertTrue(environment["GIT_SSH_COMMAND"]?.contains("BatchMode=yes") == true)
+        XCTAssertEqual(try ProcessRunner.run("/bin/sh", ["-c", "printf %s \"$GIT_TERMINAL_PROMPT\""]), "0")
+    }
+
+    func testProcessRunnerStopsAProcessThatNeverFinishes() throws {
+        let started = Date()
+        XCTAssertThrowsError(try ProcessRunner.run("/bin/sh", ["-c", "sleep 30"], timeout: 1)) { error in
+            XCTAssertTrue("\(error)".contains("limit"), "\(error)")
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 15)
+    }
+
+    private func XCTAssertThrowsErrorAsync<T>(_ expression: @autoclosure () async throws -> T, file: StaticString = #filePath, line: UInt = #line) async {
+        do { _ = try await expression(); XCTFail("oczekiwano błędu", file: file, line: line) } catch {}
+    }
+
     private func runGit(_ arguments: [String], in directory: URL) throws {
         let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = arguments; process.currentDirectoryURL = directory

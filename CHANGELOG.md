@@ -6,6 +6,25 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-24
+
+### Dodano
+
+- Sekcję `Globalne`: skille wybrane pojedynczo lub tagami można zsynchronizować do katalogów użytkownika (`~/.claude/skills`, `~/.codex/skills`, `~/.config/opencode/skills`). Wybór jest zapisywany, a podgląd pokazuje zmiany przed zapisem.
+- Odtworzenie biblioteki ze zdalnego repozytorium Git w `Backup` oraz `agentbox restore --remote <adres>`. Projekty, lokalne ścieżki i sekrety tego Maca pozostają bez zmian, a przed zapisem powstaje pełny backup lokalny.
+- `agentbox sync all` oraz `agentbox sync global` w CLI.
+
+### Naprawiono
+
+- Synchronizacja nie zastępuje już katalogu skilla, którego nie ma w manifeście Agentbox. Ręcznie napisany skill o tej samej nazwie zatrzymuje synchronizację zamiast zostać skasowany — ta sama zasada, która chroniła dotąd wyłącznie wpisy MCP.
+- `agentbox sync project` używa tej samej ścieżki transakcyjnej co GUI, więc tworzy backup i wycofuje zmiany po błędzie.
+- Git i SSH uruchamiane przez Agentbox nie mogą już czekać na hasło: pytania interaktywne są wyłączone, a każde polecenie ma limit czasu. Wcześniej prywatne repozytorium mogło zablokować aplikację na stałe.
+
+### Zmieniono
+
+- `Synchronizuj wszystkie projekty` pokazuje wynik dla każdego projektu osobno: zsynchronizowany, cofnięty po błędzie albo pominięty. Błąd zatrzymuje serię, zamiast pozostawiać nieznany stan.
+- `agentbox sync project` synchronizuje teraz skille i MCP razem, zgodnie z zachowaniem GUI.
+
 ## [0.5.1] - 2026-08-24
 
 ### Zmieniono

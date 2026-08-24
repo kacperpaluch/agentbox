@@ -39,11 +39,29 @@ Po imporcie klasyfikacją nadal można zarządzać w `MCP → Szczegóły`. Sekc
 
 ## Podgląd i synchronizacja
 
+### Skille, których Agentbox nie zarządza
+
+Agentbox usuwa i zastępuje wyłącznie katalogi wymienione w swoim manifeście `.skillbox.json`. Jeśli w katalogu docelowym leży katalog skilla o tej samej nazwie, którego w manifeście nie ma — na przykład skill napisany ręcznie w projekcie — synchronizacja zatrzymuje się z komunikatem `Konflikt skilla` i nie zapisuje niczego. Usuń ten katalog albo zmień nazwę skilla w bibliotece, jeśli ma go zastąpić. Ta sama zasada chroni ręcznie dodane serwery MCP.
+
+### Wynik synchronizacji wszystkich projektów
+
+`Synchronizuj wszystkie projekty` najpierw liczy plan dla wszystkich projektów i dopiero potem zapisuje. Każdy projekt jest zapisywany transakcyjnie, z własnym backupem. Pierwszy błąd zatrzymuje serię, a okno pokazuje wynik dla każdego projektu osobno: zsynchronizowany, cofnięty do stanu sprzed zmiany albo pominięty. Dzięki temu po błędzie zawsze wiadomo, które projekty zostały zmienione.
+
 ### Wybór MCP w projekcie
 
 Serwery MCP wybiera się tak samo jak skille: pojedynczo albo dynamicznie według tagów. Oba sposoby można łączyć, a projekt może korzystać równocześnie z dowolnej liczby serwerów, również takich, które wcześniej były traktowane jako wzajemnie wykluczające się warianty.
 
 Tagi dodaje się w szczegółach serwera MCP. Menu `Używane tagi` pokazuje istniejące wartości, co pomaga zachować jednolite nazwy. To samo menu jest dostępne podczas tagowania pojedynczych i wielu skilli. Stare przypisania presetów są zachowane przy odczycie i zamieniane na bezpośredni wybór serwerów przy następnym zapisie projektu.
+
+### Skille globalne
+
+Sekcja `Globalne` synchronizuje wybrane skille do katalogu użytkownika, a nie do projektu. Są wtedy widoczne we wszystkich sesjach danego klienta:
+
+- Claude Code — `~/.claude/skills`,
+- Codex — `~/.codex/skills`,
+- OpenCode — `~/.config/opencode/skills`.
+
+Zaznacz narzędzia, a następnie pojedyncze skille lub tagi dynamiczne. `Zapisz wybór` zapamiętuje ustawienie w `projects.local.json`, `Odśwież podgląd` pokazuje planowane dodania, aktualizacje i usunięcia, a `Synchronizuj globalnie` zapisuje zmiany. Odznaczenie skilla usuwa go z katalogu użytkownika przy kolejnej synchronizacji — również tutaj usuwane są wyłącznie katalogi z manifestu Agentbox.
 
 ### Dodawanie wielu projektów
 
@@ -99,7 +117,15 @@ Sekcja `Backup → Pełny backup lokalny` tworzy czytelną kopię w `<biblioteka
 
 Folder `backups/` jest wyłączony z Git. Pełny backup nie jest szyfrowany — nie umieszczaj go w chmurze ani repozytorium bez dodatkowego szyfrowania. Przed przywróceniem Agentbox waliduje wszystkie pliki JSON i katalog skilli, następnie zapisuje aktualny stan w `backups/restore-rollbacks/`. Nieudana operacja automatycznie odtwarza poprzednie dane. Z interfejsu można również usunąć wybraną pełną kopię po potwierdzeniu.
 
-Jeśli problem dotyczy katalogu skilli lub długoterminowej historii konfiguracji, można również przywrócić odpowiedni commit Git. Ta operacja nie jest jeszcze dostępna w GUI.
+### Odtworzenie biblioteki ze zdalnego repozytorium
+
+`Backup → Odtworzenie biblioteki ze zdalnego repozytorium` pobiera bibliotekę z repozytorium backupu. Służy przede wszystkim do konfiguracji nowego Maca albo odtworzenia biblioteki po awarii dysku.
+
+Zastępowane są `catalog.json`, `mcp.json`, katalog `skills/` oraz `.gitignore`. **Nie** są zmieniane `projects.local.json` ani `mcp-secrets.json` — projekty, lokalne ścieżki i sekrety należą do tego Maca i nie trafiają do repozytorium. Przed zapisem Agentbox tworzy pełny backup lokalny, waliduje pliki JSON z repozytorium i przy błędzie odtwarza poprzedni stan. Klon zachowuje swoje `.git`, więc kolejne backupy wypychają do tego samego repozytorium.
+
+Po odtworzeniu przypisz skille do projektów i uruchom synchronizację — pliki projektów nie są zmieniane automatycznie.
+
+Jeśli problem dotyczy katalogu skilli lub długoterminowej historii konfiguracji, można również przywrócić odpowiedni commit Git.
 
 ## Pliki projektu i Git
 
