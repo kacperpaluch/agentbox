@@ -118,6 +118,24 @@ struct OperationLogEntry: Identifiable {
     func syncMCP(_ project: Project) async { await perform { _ = try await self.service?.syncMCP(projectID: project.id); self.message = "Zsynchronizowano MCP dla \(project.name)" } }
     func previewProjectSync(_ project: Project) async throws -> ProjectSyncPreview { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewProjectSync(projectID: project.id) }
     func syncEverything(_ project: Project) async { await perform { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille i MCP dla \(project.name)" } }
+    func previewAllProjectsSync() async throws -> [ProjectSyncPlan] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewAllProjectsSync() }
+    func syncAllProjects() async -> Bool {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
+            let plans = try await service.syncAllProjectsTransactions()
+            message = "Zsynchronizowano wszystkie projekty: \(plans.count)"
+            record(.success, message)
+            await reload()
+            return true
+        } catch {
+            await reload()
+            message = error.localizedDescription
+            record(.error, message)
+            return false
+        }
+    }
     func analyzeMCP(_ text: String) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.analyzeMCPJSON(text) }
     func importMCP(_ text: String, serverNames: Set<String>, classifications: [String: MCPValueClassification]) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text, serverNames: serverNames, classifications: classifications); await reload(); scheduleAutomaticBackup(); message = "Zaimportowano \(result.servers.count) serwerów MCP"; record(.success, message); return result }
     func generateMCP(_ instructions: String, settings: MCPAISettings, key: String?) async throws -> String { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; try await service.saveMCPAISettings(settings, apiKey: key); return try await service.generateMCPConfiguration(instructions: instructions, settings: settings) }
@@ -250,12 +268,152 @@ struct SkillDetail: View {
 }
 
 struct ProjectsView: View {
-    @ObservedObject var model: AppModel; @Binding var showProject: Bool; @State private var showBatch = false; @State private var editing: Project?; @State private var previewProject: Project?; @State private var deleting: Project?
-    var body: some View { VStack(spacing: 0) { if model.projects.isEmpty { ContentUnavailableView("Brak projektów", systemImage: "folder.badge.plus", description: Text("Dodaj folder i wybierz skille dla Claude, Codex lub OpenCode.")) } else { List(model.projects) { project in VStack(alignment: .leading, spacing: 10) { HStack { VStack(alignment: .leading) { Text(project.name).font(.headline); Text(project.path).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Edytuj") { editing = project }; Button("Usuń", role: .destructive) { deleting = project }; Button("Synchronizuj wszystko") { previewProject = project }.buttonStyle(.borderedProminent) }; HStack { ForEach(project.tools, id: \.self) { Text($0.rawValue).font(.caption).padding(.horizontal, 8).padding(.vertical, 3).background(.quaternary, in: Capsule()) }; ForEach(project.tags, id: \.self) { TagPill(tag: $0) } } }.padding(.vertical, 7) } }; Divider(); HStack { Button { showProject = true } label: { Label("Dodaj projekt", systemImage: "plus") }; Button { showBatch = true } label: { Label("Dodaj wiele", systemImage: "folder.badge.plus") }; Spacer() }.padding(12) }.navigationTitle("Projekty")
+    @ObservedObject var model: AppModel
+    @Binding var showProject: Bool
+    @State private var showBatch = false
+    @State private var showAllSync = false
+    @State private var editing: Project?
+    @State private var previewProject: Project?
+    @State private var deleting: Project?
+
+    private struct ProjectGroup: Identifiable {
+        let path: String
+        let projects: [Project]
+        var id: String { path }
+        var name: String { URL(fileURLWithPath: path).lastPathComponent }
+    }
+
+    private var groups: [ProjectGroup] {
+        Dictionary(grouping: model.projects) {
+            URL(fileURLWithPath: $0.path).deletingLastPathComponent().standardizedFileURL.path
+        }
+        .map { path, projects in
+            ProjectGroup(path: path, projects: projects.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending })
+        }
+        .sorted { $0.path.localizedCaseInsensitiveCompare($1.path) == .orderedAscending }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if model.projects.isEmpty {
+                ContentUnavailableView("Brak projektów", systemImage: "folder.badge.plus", description: Text("Dodaj folder i wybierz skille dla Claude, Codex lub OpenCode."))
+            } else {
+                projectList
+            }
+            Divider()
+            actionBar
+        }
+        .navigationTitle("Projekty")
         .sheet(isPresented: $showBatch) { BatchProjectView(skills: model.skills, servers: model.mcp.servers, existingProjects: model.projects) { projects, servers, tags in Task { await model.addProjects(projects, serverIDs: servers, serverTags: tags) } } }
         .sheet(item: $editing) { project in ProjectEditor(skills: model.skills, servers: model.mcp.servers, project: project, selectedServerIDs: model.selectedMCPServerIDs(for: project), selectedServerTags: model.mcp.projectServerTags?[project.id.uuidString] ?? []) { updated, servers, tags in Task { await model.updateProject(updated, serverIDs: servers, serverTags: tags) } } }
         .sheet(item: $previewProject) { project in MCPPreviewView(model: model, project: project) }
+        .sheet(isPresented: $showAllSync) { AllProjectsSyncPreviewView(model: model) }
         .confirmationDialog("Usunąć projekt \(deleting?.name ?? "") z Agentbox?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) { Button("Usuń projekt", role: .destructive) { if let deleting { Task { await model.deleteProject(deleting) } }; deleting = nil }; Button("Anuluj", role: .cancel) { deleting = nil } } message: { Text("Folder projektu i jego pliki pozostaną na dysku.") }
+    }
+
+    private var projectList: some View {
+        List {
+            ForEach(groups) { group in
+                Section {
+                    ForEach(group.projects) { project in
+                        ProjectRow(project: project, editing: $editing, previewProject: $previewProject, deleting: $deleting)
+                    }
+                } header: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label(group.name, systemImage: "folder").font(.headline)
+                        Text(group.path).font(.caption).foregroundStyle(.secondary).textCase(nil)
+                    }
+                }
+            }
+        }
+    }
+
+    private var actionBar: some View {
+        HStack {
+            Button { showProject = true } label: { Label("Dodaj projekt", systemImage: "plus") }
+            Button { showBatch = true } label: { Label("Dodaj wiele", systemImage: "folder.badge.plus") }
+            Spacer()
+            Button { showAllSync = true } label: { Label("Synchronizuj wszystkie projekty", systemImage: "arrow.triangle.2.circlepath") }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.projects.isEmpty || model.isWorking)
+        }
+        .padding(12)
+    }
+}
+
+private struct ProjectRow: View {
+    let project: Project
+    @Binding var editing: Project?
+    @Binding var previewProject: Project?
+    @Binding var deleting: Project?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text(project.name).font(.headline)
+                    Text(project.path).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Edytuj") { editing = project }
+                Button("Usuń", role: .destructive) { deleting = project }
+                Button("Synchronizuj wszystko") { previewProject = project }.buttonStyle(.borderedProminent)
+            }
+            HStack {
+                ForEach(project.tools, id: \.self) { tool in
+                    Text(tool.rawValue).font(.caption).padding(.horizontal, 8).padding(.vertical, 3).background(.quaternary, in: Capsule())
+                }
+                ForEach(project.tags, id: \.self) { TagPill(tag: $0) }
+            }
+        }
+        .padding(.vertical, 7)
+    }
+}
+
+struct AllProjectsSyncPreviewView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var model: AppModel
+    @State private var plans: [ProjectSyncPlan]?; @State private var error = ""
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Synchronizacja wszystkich projektów").font(.title2.bold())
+            Text("Agentbox najpierw sprawdza plan dla wszystkich projektów. Każdy projekt jest synchronizowany transakcyjnie ze swoim backupem i rollbackiem.").font(.caption).foregroundStyle(.secondary)
+            Label("Wynikowe pliki MCP mogą zawierać jawne sekrety, dlatego pozostają wykluczone lokalnie z Git.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
+            if !error.isEmpty { Text(error).foregroundStyle(.red) }
+            else if plans == nil { ProgressView() }
+            else if let plans { ScrollView { LazyVStack(alignment: .leading, spacing: 12) { ForEach(plans) { AllProjectsSyncPlanRow(plan: $0) } } } }
+            HStack { Spacer(); Button("Zamknij") { dismiss() }; Button("Synchronizuj \(plans?.count ?? 0) projektów") { Task { if await model.syncAllProjects() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || plans == nil || model.isWorking) }
+        }.padding(24).frame(width: 820, height: 700).task { do { plans = try await model.previewAllProjectsSync() } catch { self.error = error.localizedDescription; model.reportError(error) } }
+    }
+}
+
+private struct AllProjectsSyncPlanRow: View {
+    let plan: ProjectSyncPlan
+    var body: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(plan.preview.skills, id: \.tool) { item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.target).font(.caption).foregroundStyle(.secondary)
+                        SyncChangeRows(added: item.added, updated: item.updated, removed: item.removed)
+                    }
+                }
+                ForEach(plan.preview.mcp, id: \.tool.rawValue) { item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.file).font(.caption).foregroundStyle(.secondary)
+                        SyncChangeRows(added: item.added, updated: [], removed: item.removed)
+                    }
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(plan.project.name).font(.headline)
+                Text(plan.project.path).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 

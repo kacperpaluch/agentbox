@@ -6,6 +6,11 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+### Dodano
+
+- Grupowanie listy projektów według bezpośredniego folderu nadrzędnego.
+- Podgląd i synchronizację wszystkich projektów z jednego miejsca, z walidacją całego planu przed pierwszym zapisem.
+
 ## [0.4.2] - 2026-08-24
 
 ### Zmieniono

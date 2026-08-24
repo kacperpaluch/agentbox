@@ -229,6 +229,17 @@ public struct ProjectSyncPreview: Sendable {
     public init(skills: [SkillSyncPreview], mcp: [MCPPreview]) { self.skills = skills; self.mcp = mcp }
 }
 
+public struct ProjectSyncPlan: Identifiable, Sendable {
+    public var id: UUID { project.id }
+    public var project: Project
+    public var preview: ProjectSyncPreview
+
+    public init(project: Project, preview: ProjectSyncPreview) {
+        self.project = project
+        self.preview = preview
+    }
+}
+
 public struct LibrarySnapshot: Identifiable, Hashable, Sendable {
     public var id: String { name }
     public var name: String

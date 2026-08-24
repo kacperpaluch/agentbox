@@ -335,6 +335,53 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.appending(path: "data/.agentbox-snapshots").path))
     }
 
+    func testSyncAllProjectsPreviewsEverythingBeforeWritingAndSyncsEveryProject() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/demo")
+        let firstFolder = root.appending(path: "group/first")
+        let secondFolder = root.appending(path: "group/second")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: firstFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: secondFolder, withIntermediateDirectories: true)
+        try "demo".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        for (name, folder) in [("first", firstFolder), ("second", secondFolder)] {
+            let project = try await service.addProject(name: name, path: folder.path, tools: [.claude])
+            try await service.configureProject(id: project.id, skillIDs: ["demo"], tags: [])
+        }
+
+        let preview = try await service.previewAllProjectsSync()
+        XCTAssertEqual(preview.map(\.project.name), ["first", "second"])
+        XCTAssertTrue(preview.allSatisfy { $0.preview.skills.first?.added == ["demo"] })
+        let result = try await service.syncAllProjectsTransactions()
+        XCTAssertEqual(result.count, 2)
+        for folder in [firstFolder, secondFolder] {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appending(path: ".claude/skills/demo/SKILL.md").path))
+        }
+    }
+
+    func testSyncAllProjectsDoesNotWriteWhenAnyPreviewFails() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/demo")
+        let validFolder = root.appending(path: "valid")
+        let missingFolder = root.appending(path: "missing")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: validFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: missingFolder, withIntermediateDirectories: true)
+        try "demo".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        for (name, folder) in [("valid", validFolder), ("missing", missingFolder)] {
+            let project = try await service.addProject(name: name, path: folder.path, tools: [.claude])
+            try await service.configureProject(id: project.id, skillIDs: ["demo"], tags: [])
+        }
+        try FileManager.default.removeItem(at: missingFolder)
+
+        do { _ = try await service.syncAllProjectsTransactions(); XCTFail("Oczekiwano błędu podglądu") } catch {}
+        XCTAssertFalse(FileManager.default.fileExists(atPath: validFolder.appending(path: ".claude/skills/demo/SKILL.md").path))
+    }
+
     func testLibrarySnapshotCanRestorePreviousMetadata() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let source = root.appending(path: "source/demo")

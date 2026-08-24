@@ -98,7 +98,9 @@ Projekt wskazuje istniejący folder na dysku oraz obsługiwane narzędzia. Możn
 
 Opcja `Dodaj wiele` przyjmuje folder nadrzędny, wykrywa jego bezpośrednie podfoldery i pozwala utworzyć z nich projekty z jednym wspólnym zestawem ustawień. Foldery już dodane do Agentbox są pomijane. Po imporcie każdy projekt ma niezależną kopię konfiguracji i może być edytowany osobno.
 
-`Synchronizuj wszystko` pokazuje podgląd MCP, a po zatwierdzeniu synchronizuje skille i konfiguracje MCP.
+Lista projektów jest grupowana według bezpośredniego folderu nadrzędnego, dzięki czemu projekty z jednego katalogu roboczego są widoczne razem.
+
+`Synchronizuj wszystko` przy projekcie pokazuje podgląd i synchronizuje jego skille oraz konfiguracje MCP. `Synchronizuj wszystkie projekty` najpierw przygotowuje plan dla całej listy, a następnie wykonuje tę samą transakcyjną operację kolejno dla każdego projektu.
 
 | Narzędzie | Skille w projekcie | MCP w projekcie |
 |---|---|---|

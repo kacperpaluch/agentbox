@@ -12,6 +12,29 @@ private struct SyncBackupEntry: Codable {
 }
 
 extension SkillboxService {
+    public func previewAllProjectsSync() async throws -> [ProjectSyncPlan] {
+        let projects = try await listProjects()
+        var plans: [ProjectSyncPlan] = []
+        for project in projects {
+            plans.append(ProjectSyncPlan(project: project, preview: try await previewProjectSync(projectID: project.id)))
+        }
+        return plans
+    }
+
+    @discardableResult
+    public func syncAllProjectsTransactions() async throws -> [ProjectSyncPlan] {
+        // Validate every project and compute every preview before the first write.
+        let plans = try await previewAllProjectsSync()
+        for plan in plans {
+            do {
+                _ = try await syncProjectTransaction(projectID: plan.project.id)
+            } catch {
+                throw SkillboxError.commandFailed("synchronizacja projektu \(plan.project.name): \(error.localizedDescription)")
+            }
+        }
+        return plans
+    }
+
     public func previewProjectSync(projectID: UUID) async throws -> ProjectSyncPreview {
         let config = try await store.configuration()
         guard let project = config.projects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }

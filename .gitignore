@@ -13,3 +13,8 @@ mcp-secrets.json
 projects.local.json
 *.pem
 *.p12
+.claude/
+.codex/
+.opencode/
+.skillbox/
+.mcp.json
