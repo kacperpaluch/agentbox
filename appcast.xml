@@ -6,6 +6,29 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.4.0</title>
+      <pubDate>Mon, 24 Aug 2026 07:34:33 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.4.0</link>
+      <sparkle:version>7</sparkle:version>
+      <sparkle:shortVersionString>0.4.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.4.0</h2>
+        <ul>
+          <li>Pełne zarządzanie zmiennymi, nagłówkami i sekretami istniejących serwerów MCP.</li>
+          <li>Zmiana klasyfikacji wartości bez ujawniania zapisanych sekretów.</li>
+          <li>Pełne lokalne backupy skilli, projektów, MCP i sekretów.</li>
+          <li>Przywracanie backupów z automatycznym rollbackiem.</li>
+          <li>Kompletna dokumentacja poleceń CLI.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.4.0/Agentbox-0.4.0.dmg"
+        length="4144345"
+        type="application/octet-stream"
+        sparkle:edSignature="zM0BRuchWBqgur+d7CJduGa6vbyt4scwjRWHB5XkTvdDx4TfXCJBSWbf2AgJgSZUX7oWE8ZeTsgpi0z2R40SAA==" />
+    </item>
+    <item>
       <title>Agentbox 0.3.2</title>
       <pubDate>Mon, 24 Aug 2026 05:18:00 +0000</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.3.2</link>

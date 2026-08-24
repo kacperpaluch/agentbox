@@ -29,6 +29,8 @@ Automatyczne rozpoznawanie jest tylko sugestią. Agentbox uznaje za podejrzane n
 
 Sekret przechowywany poza backupem biblioteki może zostać zapisany jawnie w wynikowym pliku MCP projektu, jeśli format klienta tego wymaga. Przed synchronizacją Agentbox pokazuje pełną treść wynikowych konfiguracji. Preferuj zmienne systemowe, jeśli klient je obsługuje.
 
+Po imporcie klasyfikacją nadal można zarządzać w `MCP → Szczegóły`. Sekcja `Zmienne i nagłówki` pozwala dodawać i usuwać pola oraz zmieniać ich typ. Zapisany sekret jest maskowany; pozostawienie pustej wartości zachowuje go, a wpisanie nowej zastępuje. Konwersja sekretu na zwykłą wartość przenosi jego bieżącą wartość do `mcp.json`, dlatego od tego momentu może ona trafić do backupu Git.
+
 ## Podgląd i synchronizacja
 
 ### Wybór MCP w projekcie
@@ -82,6 +84,12 @@ Sekcja `Odzyskiwanie → Backupy synchronizacji projektów` pokazuje zarządzane
 Backupy utworzone przez wersję 0.2.0 przed dodaniem metadanych pozostają na dysku, ale nie pojawiają się w GUI, ponieważ nie da się bezpiecznie przypisać plików `item-*` do oryginalnych ścieżek.
 
 Backup Git obejmuje `catalog.json`, `mcp.json` i `skills/`. Nie obejmuje lokalnych ścieżek projektów ani sekretów. Git zapewnia długoterminową historię biblioteki, natomiast snapshoty chronią ostatni stan przed przypadkowym lub uszkodzonym zapisem.
+
+### Pełny backup lokalny
+
+Sekcja `Backup → Pełny backup lokalny` tworzy czytelną kopię w `<biblioteka>/backups/full/<data>/`. Zawiera `catalog.json`, `projects.local.json`, `mcp.json`, `mcp-secrets.json`, metadane `backup.json` oraz cały katalog `skills/`. Obejmuje więc adresy Git skilli, lokalne ścieżki projektów, wszystkie MCP, sekrety i klucze AI.
+
+Folder `backups/` jest wyłączony z Git. Pełny backup nie jest szyfrowany — nie umieszczaj go w chmurze ani repozytorium bez dodatkowego szyfrowania. Przed przywróceniem Agentbox waliduje wszystkie pliki JSON i katalog skilli, następnie zapisuje aktualny stan w `backups/restore-rollbacks/`. Nieudana operacja automatycznie odtwarza poprzednie dane. Z interfejsu można również usunąć wybraną pełną kopię po potwierdzeniu.
 
 Jeśli problem dotyczy katalogu skilli lub długoterminowej historii konfiguracji, można również przywrócić odpowiedni commit Git. Ta operacja nie jest jeszcze dostępna w GUI.
 

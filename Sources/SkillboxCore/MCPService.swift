@@ -15,6 +15,61 @@ extension SkillboxService {
         try await store.save(config)
     }
 
+    public func managedFields(serverID: UUID) async throws -> [MCPManagedField] {
+        let config = try await store.mcpConfiguration()
+        guard let server = config.servers.first(where: { $0.id == serverID }) else { throw SkillboxError.mcpConflict("serwer MCP nie istnieje") }
+        var fields: [MCPManagedField] = []
+        fields += server.environment.map { MCPManagedField(location: .environment, key: $0.key, value: $0.value, classification: .environment) }
+        fields += (server.literalEnvironment ?? [:]).map { MCPManagedField(location: .environment, key: $0.key, value: $0.value, classification: .literal) }
+        fields += (server.secretEnvironment ?? [:]).map { MCPManagedField(location: .environment, key: $0.key, classification: .secret, hasStoredSecret: true) }
+        fields += server.headers.map { MCPManagedField(location: .header, key: $0.key, value: $0.value, classification: .environment) }
+        fields += (server.literalHeaders ?? [:]).map { MCPManagedField(location: .header, key: $0.key, value: $0.value, classification: .literal) }
+        fields += (server.secretHeaders ?? [:]).map { MCPManagedField(location: .header, key: $0.key, classification: .secret, hasStoredSecret: true) }
+        return fields.sorted { $0.location.rawValue == $1.location.rawValue ? $0.key < $1.key : $0.location.rawValue < $1.location.rawValue }
+    }
+
+    public func saveMCPServer(_ server: MCPServer, managedFields fields: [MCPManagedField]) async throws {
+        var config = try await store.mcpConfiguration()
+        let index = config.servers.firstIndex(where: { $0.id == server.id })
+        guard server.name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil else { throw SkillboxError.invalidSkill("nazwa MCP może zawierać litery, cyfry, _ i -") }
+        guard !config.servers.contains(where: { $0.id != server.id && $0.name == server.name }) else { throw SkillboxError.mcpConflict("serwer \(server.name) już istnieje") }
+        let old = index.map { config.servers[$0] } ?? server
+        let oldSecrets = try await store.secrets()
+        var secrets = oldSecrets
+        let oldAccounts = Set(Array((old.secretEnvironment ?? [:]).values) + Array((old.secretHeaders ?? [:]).values))
+        oldAccounts.forEach { secrets.removeValue(forKey: $0) }
+        var updated = server
+        updated.environment = [:]; updated.headers = [:]
+        updated.literalEnvironment = [:]; updated.literalHeaders = [:]
+        updated.secretEnvironment = [:]; updated.secretHeaders = [:]
+        var seen = Set<String>()
+        for field in fields {
+            let key = field.key.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty else { throw SkillboxError.mcpConflict("nazwa pola MCP nie może być pusta") }
+            let identity = "\(field.location.rawValue)|\(key.lowercased())"
+            guard seen.insert(identity).inserted else { throw SkillboxError.mcpConflict("pole \(key) występuje więcej niż raz") }
+            let oldAccount = field.location == .environment ? old.secretEnvironment?[key] : old.secretHeaders?[key]
+            let oldSecret = oldAccount.flatMap { oldSecrets[$0] }
+            switch field.classification {
+            case .environment:
+                let value = field.value.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !value.isEmpty else { throw SkillboxError.mcpConflict("podaj nazwę zmiennej systemowej dla \(key)") }
+                if field.location == .environment { updated.environment[key] = value } else { updated.headers[key] = value }
+            case .literal:
+                let value = field.value.isEmpty && field.hasStoredSecret ? oldSecret ?? "" : field.value
+                if field.location == .environment { updated.literalEnvironment?[key] = value } else { updated.literalHeaders?[key] = value }
+            case .secret:
+                let account = oldAccount ?? "mcp/\(server.id.uuidString)/\(field.location.rawValue)/\(key)"
+                let value = field.value.isEmpty && field.hasStoredSecret ? oldSecret : field.value
+                guard let value, !value.isEmpty else { throw SkillboxError.mcpConflict("podaj wartość sekretu dla \(key)") }
+                secrets[account] = value
+                if field.location == .environment { updated.secretEnvironment?[key] = account } else { updated.secretHeaders?[key] = account }
+            }
+        }
+        if let index { config.servers[index] = updated } else { config.servers.append(updated) }
+        try await store.save(config, replacingSecrets: secrets)
+    }
+
     public func saveMCPPreset(_ preset: MCPPreset) async throws {
         var config = try await store.mcpConfiguration()
         if let index = config.presets.firstIndex(where: { $0.id == preset.id }) { config.presets[index] = preset }

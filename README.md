@@ -4,7 +4,7 @@ Agentbox to natywna aplikacja macOS i CLI do zarządzania skillami oraz serweram
 
 Projekt jest obecnie MVP. Agentbox nie uruchamia serwerów MCP i nie zastępuje klientów AI — przygotowuje dla nich pliki konfiguracyjne i katalogi skilli.
 
-Szczegółowy opis pierwszego uruchomienia, klasyfikacji sekretów, bezpiecznej synchronizacji i odzyskiwania danych znajduje się w [instrukcji użytkownika](docs/USER_GUIDE.md). Historia wydań i zmian jest prowadzona w [changelogu](CHANGELOG.md).
+Szczegółowy opis pierwszego uruchomienia, klasyfikacji sekretów, bezpiecznej synchronizacji i odzyskiwania danych znajduje się w [instrukcji użytkownika](docs/USER_GUIDE.md). Wszystkie polecenia terminalowe opisuje [instrukcja CLI](docs/CLI.md). Historia wydań i zmian jest prowadzona w [changelogu](CHANGELOG.md).
 
 ## Wymagania i uruchomienie
 
@@ -184,6 +184,10 @@ Pierwsze wywołanie inicjalizuje Git w folderze biblioteki. `--remote` ustawia `
 Po pierwszym ręcznym backupie GUI może automatycznie tworzyć lokalne commity po zmianach skilli, tagów i serwerów MCP. Zmiany wykonane w ciągu 5 sekund są łączone w jeden commit. Automatyczny push do `origin` ma osobny przełącznik i domyślnie jest wyłączony. Projekty, sekrety, klucze AI i sama synchronizacja folderu projektu nie uruchamiają automatycznego backupu.
 
 Przed zapisem danych Agentbox tworzy także lokalny snapshot `catalog.json`, `projects.local.json` i `mcp.json` w `.agentbox-snapshots/`. Zachowuje 10 ostatnich snapshotów; sekrety nie są kopiowane, a folder snapshotów nie trafia do Git.
+
+## Pełny backup lokalny
+
+W `Backup → Pełny backup lokalny` można utworzyć, przywrócić lub usunąć kompletną kopię biblioteki. Czytelny folder powstaje w `backups/full/` i zawiera skille, źródła Git, projekty, lokalne ścieżki, MCP oraz `mcp-secrets.json`. `backups/` jest wyłączony z Git. Kopia zawiera jawne sekrety i nie jest szyfrowana, dlatego należy chronić ją jak plik z hasłami.
 
 ## Ograniczenia i bezpieczeństwo MVP
 

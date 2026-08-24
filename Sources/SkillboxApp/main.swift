@@ -21,8 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 enum AppVersion {
+    static var short: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—" }
     static var display: String {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        let version = short
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
         return "Wersja \(version) (\(build))"
     }
@@ -67,6 +68,7 @@ struct OperationLogEntry: Identifiable {
     @Published var operationLog: [OperationLogEntry] = []
     @Published var librarySnapshots: [LibrarySnapshot] = []
     @Published var projectBackups: [ProjectSyncBackup] = []
+    @Published var fullBackups: [FullBackupInfo] = []
     private var automaticBackupTask: Task<Void, Never>?
     var service: SkillboxService?
     init() {
@@ -95,10 +97,22 @@ struct OperationLogEntry: Identifiable {
     func sync(_ project: Project) async { await perform { _ = try await self.service?.syncProject(id: project.id); self.message = "Zsynchronizowano \(project.name)" } }
     func loadBackupStatus() async { backupStatus = (try? await service?.backupStatus()) ?? "Nie można odczytać statusu." }
     func backup(remote: String) async { await perform { self.message = try await self.service?.backup(remote: remote.isEmpty ? nil : remote) ?? "Gotowe" }; await loadBackupStatus() }
+    func loadFullBackups() async { do { fullBackups = try await service?.fullBackups() ?? [] } catch { reportError(error) } }
+    func createFullBackup() async { await perform { guard let service = self.service else { throw SkillboxError.commandFailed("Brak usługi") }; let backup = try await service.createFullBackup(applicationVersion: AppVersion.short); self.message = "Utworzono pełny backup: \(backup.name)" }; await loadFullBackups() }
+    func restoreFullBackup(_ backup: FullBackupInfo) async { await perform { try await self.service?.restoreFullBackup(named: backup.name); self.message = "Przywrócono pełny backup: \(backup.name)" }; await loadFullBackups() }
+    func deleteFullBackup(_ backup: FullBackupInfo) async { await perform { try await self.service?.deleteFullBackup(named: backup.name); self.message = "Usunięto pełny backup: \(backup.name)" }; await loadFullBackups() }
     func loadRecovery() async { do { librarySnapshots = try await service?.librarySnapshots() ?? []; projectBackups = try await service?.projectSyncBackups() ?? [] } catch { reportError(error) } }
     func restoreLibrary(_ snapshot: LibrarySnapshot) async { await perform { let files = try await self.service?.restoreLibrarySnapshot(named: snapshot.name) ?? []; self.message = "Przywrócono snapshot biblioteki: \(files.joined(separator: ", "))" }; await loadRecovery() }
     func restoreProject(_ backup: ProjectSyncBackup) async { await perform { let targets = try await self.service?.restoreProjectSyncBackup(projectID: backup.projectID, named: backup.name) ?? []; self.message = "Przywrócono \(targets.count) elementów projektu \(backup.projectName)" }; await loadRecovery() }
     func saveMCPServer(_ server: MCPServer) async { await perform(autoBackup: true) { try await self.service?.saveMCPServer(server); self.message = "Zapisano serwer MCP" } }
+    func managedFields(for server: MCPServer) async -> [MCPManagedField] { (try? await service?.managedFields(serverID: server.id)) ?? [] }
+    func saveMCPServer(_ server: MCPServer, fields: [MCPManagedField]) async -> Bool {
+        isWorking = true; defer { isWorking = false }
+        do {
+            try await service?.saveMCPServer(server, managedFields: fields)
+            message = "Zapisano serwer MCP"; record(.success, message); await reload(); scheduleAutomaticBackup(); return true
+        } catch { message = error.localizedDescription; record(.error, message); await reload(); return false }
+    }
     func deleteMCPServer(_ id: UUID) async { await perform(autoBackup: true) { try await self.service?.deleteMCPServer(id: id); self.message = "Usunięto serwer MCP" } }
     func previewMCP(_ project: Project) async throws -> [MCPPreview] { try await service?.previewMCP(projectID: project.id) ?? [] }
     func syncMCP(_ project: Project) async { await perform { _ = try await self.service?.syncMCP(projectID: project.id); self.message = "Zsynchronizowano MCP dla \(project.name)" } }
@@ -254,19 +268,26 @@ struct MCPView: View {
         Section("Serwery") { ForEach(model.mcp.servers) { server in HStack { Image(systemName: server.transport == .stdio ? "terminal" : "globe").foregroundStyle(.tint); VStack(alignment: .leading, spacing: 5) { HStack { Text(server.name).fontWeight(.medium); Text(server.transport == .stdio ? "Lokalny" : "HTTP").font(.caption2.weight(.semibold)).padding(.horizontal, 7).padding(.vertical, 2).background((server.transport == .stdio ? Color.blue : Color.green).opacity(0.14), in: Capsule()); ForEach(server.tags ?? [], id: \.self) { TagPill(tag: $0) } }; let secretCount = (server.secretEnvironment?.count ?? 0) + (server.secretHeaders?.count ?? 0); Text("\(server.arguments.count) argumentów · \((server.environment.count) + (server.literalEnvironment?.count ?? 0) + (server.secretEnvironment?.count ?? 0)) zmiennych\(secretCount > 0 ? " · \(secretCount) sekretów lokalnych" : "")").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Szczegóły") { editingServer = server }; Button(role: .destructive) { serverToDelete = server } label: { Image(systemName: "trash") } } } }
     }; Divider(); HStack { Button { showImport = true } label: { Label("Importuj lub użyj AI", systemImage: "sparkles") }.buttonStyle(.borderedProminent); Button { editingServer = MCPServer(name: "", transport: .stdio) } label: { Label("Nowy serwer", systemImage: "plus") }; Spacer() }.padding(12) }.navigationTitle("MCP")
         .sheet(isPresented: $showImport) { MCPImportView(model: model) }
-        .sheet(item: $editingServer) { server in MCPServerEditor(server: server, existingTags: Array(Set(model.mcp.servers.flatMap { $0.tags ?? [] })).sorted()) { value in Task { await model.saveMCPServer(value) } } }
+        .sheet(item: $editingServer) { server in MCPServerEditor(model: model, server: server, existingTags: Array(Set(model.mcp.servers.flatMap { $0.tags ?? [] })).sorted()) }
         .confirmationDialog("Usunąć serwer \(serverToDelete?.name ?? "")?", isPresented: Binding(get: { serverToDelete != nil }, set: { if !$0 { serverToDelete = nil } })) { Button("Usuń", role: .destructive) { if let serverToDelete { Task { await model.deleteMCPServer(serverToDelete.id) } }; serverToDelete = nil }; Button("Anuluj", role: .cancel) { serverToDelete = nil } } message: { Text("Serwer zostanie usunięty także z bezpośrednich przypisań projektów.") }
     }
 }
 
 struct MCPServerEditor: View {
     @Environment(\.dismiss) private var dismiss
-    let original: MCPServer; let existingTags: [String]; let onSave: (MCPServer) -> Void
-    @State private var name: String; @State private var transport: MCPTransport; @State private var command: String; @State private var arguments: String; @State private var url: String; @State private var environment: String; @State private var headers: String; @State private var enabled: Bool; @State private var tags: String
-    init(server: MCPServer, existingTags: [String], onSave: @escaping (MCPServer) -> Void) { original = server; self.existingTags = existingTags; self.onSave = onSave; _name = State(initialValue: server.name); _transport = State(initialValue: server.transport); _command = State(initialValue: server.command); _arguments = State(initialValue: server.arguments.joined(separator: "\n")); _url = State(initialValue: server.url); _environment = State(initialValue: Self.format(server.environment)); _headers = State(initialValue: Self.format(server.headers)); _enabled = State(initialValue: server.enabled); _tags = State(initialValue: (server.tags ?? []).joined(separator: ", ")) }
-    var body: some View { Form { Text("Serwer MCP").font(.title2.bold()); TextField("Nazwa techniczna", text: $name); HStack { TextField("Tagi, oddzielone przecinkami", text: $tags); ExistingTagMenu(tags: existingTags, text: $tags) }; Picker("Transport", selection: $transport) { Text("Lokalny STDIO").tag(MCPTransport.stdio); Text("Zdalny HTTP").tag(MCPTransport.http) }.pickerStyle(.segmented); if transport == .stdio { TextField("Polecenie, np. npx", text: $command); Text("Argumenty — jeden na linię").font(.caption).foregroundStyle(.secondary); TextEditor(text: $arguments).font(.system(.body, design: .monospaced)).frame(height: 90); Text("Zmienne: NAZWA=NAZWA, jedna na linię (Codex wymaga identycznych nazw)").font(.caption).foregroundStyle(.secondary); TextEditor(text: $environment).font(.system(.body, design: .monospaced)).frame(height: 70) } else { TextField("URL", text: $url); Text("Nagłówki: Header=SOURCE_ENV, np. Authorization=GITHUB_TOKEN").font(.caption).foregroundStyle(.secondary); TextEditor(text: $headers).font(.system(.body, design: .monospaced)).frame(height: 80) }; Toggle("Włączony", isOn: $enabled); let stored = (original.secretEnvironment?.count ?? 0) + (original.secretHeaders?.count ?? 0); if stored > 0 { Label("Ten serwer ma \(stored) lokalnych sekretów. Edycja nie zmienia ich wartości.", systemImage: "lock.doc").font(.caption).foregroundStyle(.orange) }; Text("Pola powyżej służą do odwołań do zmiennych systemowych. Sekrety z importu są w lokalnym mcp-secrets.json.").font(.caption).foregroundStyle(.secondary); HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { onSave(MCPServer(id: original.id, name: name, transport: transport, command: command, arguments: arguments.split(whereSeparator: \.isNewline).map(String.init), url: url, environment: Self.parse(environment), headers: Self.parse(headers), enabled: enabled, literalEnvironment: original.literalEnvironment, literalHeaders: original.literalHeaders, secretEnvironment: original.secretEnvironment, secretHeaders: original.secretHeaders, group: original.group, profile: original.profile, tags: AppModel.csv(tags))); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || (transport == .stdio ? command.isEmpty : url.isEmpty)) } }.padding(24).frame(width: 620, height: 630) }
-    private static func parse(_ text: String) -> [String: String] { var result: [String: String] = [:]; for line in text.split(whereSeparator: \.isNewline) { let parts = line.split(separator: "=", maxSplits: 1).map(String.init); if parts.count == 2 { result[parts[0].trimmingCharacters(in: .whitespaces)] = parts[1].trimmingCharacters(in: .whitespaces) } }; return result }
-    private static func format(_ values: [String: String]) -> String { values.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "\n") }
+    @ObservedObject var model: AppModel
+    let original: MCPServer; let existingTags: [String]
+    @State private var name: String; @State private var transport: MCPTransport; @State private var command: String; @State private var arguments: String; @State private var url: String; @State private var enabled: Bool; @State private var tags: String
+    @State private var fields: [MCPManagedField] = []
+    init(model: AppModel, server: MCPServer, existingTags: [String]) { self.model = model; original = server; self.existingTags = existingTags; _name = State(initialValue: server.name); _transport = State(initialValue: server.transport); _command = State(initialValue: server.command); _arguments = State(initialValue: server.arguments.joined(separator: "\n")); _url = State(initialValue: server.url); _enabled = State(initialValue: server.enabled); _tags = State(initialValue: (server.tags ?? []).joined(separator: ", ")) }
+    var body: some View { ScrollView { Form { Text("Serwer MCP").font(.title2.bold()); TextField("Nazwa techniczna", text: $name); HStack { TextField("Tagi, oddzielone przecinkami", text: $tags); ExistingTagMenu(tags: existingTags, text: $tags) }; Picker("Transport", selection: $transport) { Text("Lokalny STDIO").tag(MCPTransport.stdio); Text("Zdalny HTTP").tag(MCPTransport.http) }.pickerStyle(.segmented); if transport == .stdio { TextField("Polecenie, np. npx", text: $command); Text("Argumenty — jeden na linię").font(.caption).foregroundStyle(.secondary); TextEditor(text: $arguments).font(.system(.body, design: .monospaced)).frame(height: 75) } else { TextField("URL", text: $url) }; GroupBox("Zmienne i nagłówki") { VStack(alignment: .leading, spacing: 10) { Text("Sekrety pozostają zamaskowane. Puste pole zachowuje poprzednią wartość sekretu.").font(.caption).foregroundStyle(.secondary); ForEach($fields) { $field in MCPManagedFieldRow(field: $field) { fields.removeAll { $0.id == field.id } } }; HStack { Button("Dodaj zmienną") { fields.append(MCPManagedField(location: .environment, key: "", classification: .environment)) }; Button("Dodaj nagłówek") { fields.append(MCPManagedField(location: .header, key: "", classification: .environment)) } } }.padding(7) }; Toggle("Włączony", isOn: $enabled); HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { Task { if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(name.isEmpty || (transport == .stdio ? command.isEmpty : url.isEmpty) || model.isWorking) } }.padding(24) }.frame(width: 760, height: 760).task { fields = await model.managedFields(for: original) } }
+    private func save() async -> Bool { let server = MCPServer(id: original.id, name: name, transport: transport, command: command, arguments: arguments.split(whereSeparator: \.isNewline).map(String.init), url: url, enabled: enabled, group: original.group, profile: original.profile, tags: AppModel.csv(tags)); return await model.saveMCPServer(server, fields: fields) }
+}
+
+struct MCPManagedFieldRow: View {
+    @Binding var field: MCPManagedField
+    let onDelete: () -> Void
+    var body: some View { HStack { Picker("Miejsce", selection: $field.location) { Text("Zmienna").tag(MCPImportField.Location.environment); Text("Nagłówek").tag(MCPImportField.Location.header) }.labelsHidden().frame(width: 105); TextField("Nazwa", text: $field.key).frame(minWidth: 120); Picker("Typ", selection: $field.classification) { ForEach(MCPValueClassification.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.labelsHidden().frame(width: 165); if field.classification == .secret { SecureField(field.hasStoredSecret ? "Zapisany — wpisz, aby zmienić" : "Wartość sekretu", text: $field.value) } else { TextField(field.classification == .environment ? "Nazwa zmiennej systemowej" : "Wartość", text: $field.value) }; Button(role: .destructive, action: onDelete) { Image(systemName: "trash") } }.onChange(of: field.classification) { if field.classification == .environment && field.value.isEmpty { field.value = field.key } } }
 }
 
 struct MCPImportView: View {
@@ -343,17 +364,27 @@ struct SyncChangeRows: View {
 struct BackupView: View {
     @ObservedObject var model: AppModel
     @State private var remote = ""
+    @State private var fullBackupToRestore: FullBackupInfo?
+    @State private var fullBackupToDelete: FullBackupInfo?
     @AppStorage("AgentboxAutoBackup") private var autoBackup = true
     @AppStorage("AgentboxAutoPush") private var autoPush = false
-    var body: some View { VStack(alignment: .leading, spacing: 18) {
+    private let formatter: DateFormatter = { let value = DateFormatter(); value.dateStyle = .medium; value.timeStyle = .medium; return value }()
+    var body: some View { ScrollView { VStack(alignment: .leading, spacing: 18) {
         Label("Backup Git", systemImage: "externaldrive.badge.timemachine").font(.largeTitle.bold())
         Text("Do Git trafiają skille, tagi i konfiguracja MCP bez sekretów. Lokalne ścieżki projektów pozostają tylko na tym Macu.").foregroundStyle(.secondary)
         GroupBox("Automatyzacja") { VStack(alignment: .leading, spacing: 10) { Toggle("Automatycznie twórz lokalne commity", isOn: $autoBackup); Toggle("Automatycznie wysyłaj do origin", isOn: $autoPush).disabled(!autoBackup); Text("Zmiany skilli, tagów i serwerów są łączone przez 5 sekund w jeden commit. Pierwszy backup i konfigurację origin wykonaj ręcznie.").font(.caption).foregroundStyle(.secondary) }.padding(8) }
         TextField("Git remote, np. git@github.com:user/agentbox-backup.git", text: $remote).textFieldStyle(.roundedBorder)
         HStack { Button("Odśwież status") { Task { await model.loadBackupStatus() } }; Button("Wykonaj backup teraz") { Task { await model.backup(remote: remote) } }.buttonStyle(.borderedProminent) }
         GroupBox("Status") { Text(model.backupStatus.isEmpty ? "Kliknij „Odśwież status”." : model.backupStatus).font(.system(.body, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading).padding(6) }
-        Spacer()
-    }.padding(28).navigationTitle("Backup").task { await model.loadBackupStatus() } }
+        Divider().padding(.vertical, 4)
+        Label("Pełny backup lokalny", systemImage: "externaldrive.fill.badge.plus").font(.title2.bold())
+        Label("Zawiera również projekty, lokalne ścieżki, wszystkie skille, MCP, sekrety i klucze AI. Pliki są czytelne i niezaszyfrowane — nie udostępniaj folderu backups.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+        HStack { Button("Utwórz pełny backup") { Task { await model.createFullBackup() } }.buttonStyle(.borderedProminent); Button("Odśwież listę") { Task { await model.loadFullBackups() } }; Spacer(); Text("\(model.rootPath)/backups/full").font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
+        GroupBox("Dostępne pełne backupy") { VStack(spacing: 8) { if model.fullBackups.isEmpty { Text("Brak pełnych backupów.").foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }; ForEach(model.fullBackups) { backup in HStack { Image(systemName: "archivebox.fill").foregroundStyle(.blue); VStack(alignment: .leading) { Text(formatter.string(from: backup.createdAt)); Text("Agentbox \(backup.applicationVersion) · \(backup.name)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Przywróć") { fullBackupToRestore = backup }; Button("Usuń", role: .destructive) { fullBackupToDelete = backup } } } }.padding(8) }
+    }.padding(28) }.navigationTitle("Backup").task { await model.loadBackupStatus(); await model.loadFullBackups() }
+        .confirmationDialog("Przywrócić pełny backup?", isPresented: Binding(get: { fullBackupToRestore != nil }, set: { if !$0 { fullBackupToRestore = nil } })) { Button("Przywróć wszystkie dane", role: .destructive) { if let backup = fullBackupToRestore { Task { await model.restoreFullBackup(backup) } }; fullBackupToRestore = nil }; Button("Anuluj", role: .cancel) { fullBackupToRestore = nil } } message: { Text("Aktualna biblioteka, projekty, skille, MCP i sekrety zostaną zastąpione. Agentbox najpierw zachowa pełną kopię aktualnego stanu w backups/restore-rollbacks.") }
+        .confirmationDialog("Usunąć pełny backup?", isPresented: Binding(get: { fullBackupToDelete != nil }, set: { if !$0 { fullBackupToDelete = nil } })) { Button("Usuń backup", role: .destructive) { if let backup = fullBackupToDelete { Task { await model.deleteFullBackup(backup) } }; fullBackupToDelete = nil }; Button("Anuluj", role: .cancel) { fullBackupToDelete = nil } } message: { Text("Ta kopia zawierająca również sekrety zostanie trwale usunięta z lokalnego folderu backups/full.") }
+    }
 }
 
 struct RecoveryView: View {

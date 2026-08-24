@@ -379,6 +379,50 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertTrue(preview.content.contains("\"n8n-tailscale\""))
     }
 
+    func testExistingMCPFieldCanBeReclassifiedWithoutRevealingStoredSecret() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let service = try SkillboxService(root: root)
+        let server = MCPServer(name: "api", transport: .http, url: "https://example.test/mcp", literalHeaders: ["Authorization": "initial"])
+        try await service.saveMCPServer(server)
+        var fields = try await service.managedFields(serverID: server.id)
+        fields[0].classification = .secret
+        fields[0].value = "dummy-secret"
+        try await service.saveMCPServer(server, managedFields: fields)
+        let managed = try await service.managedFields(serverID: server.id)
+        var secretField = try XCTUnwrap(managed.first)
+        XCTAssertTrue(secretField.hasStoredSecret); XCTAssertEqual(secretField.value, "")
+        secretField.classification = .literal
+        try await service.saveMCPServer(server, managedFields: [secretField])
+        let config = try await service.mcpConfiguration()
+        XCTAssertEqual(config.servers.first?.literalHeaders?["Authorization"], "dummy-secret")
+        XCTAssertNil(config.servers.first?.secretHeaders?["Authorization"])
+    }
+
+    func testFullLocalBackupRestoresSkillsProjectsMCPAndSecrets() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/demo"); let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true); try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        try "original skill".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        _ = try await service.addProject(name: "saved", path: projectURL.path, tools: [.claude])
+        let server = MCPServer(name: "api", transport: .http, url: "https://example.test/mcp")
+        try await service.saveMCPServer(server)
+        try await service.saveMCPServer(server, managedFields: [MCPManagedField(location: .header, key: "Authorization", value: "dummy-secret", classification: .secret)])
+        let backup = try await service.createFullBackup(applicationVersion: "test")
+        try await service.deleteProject(id: (try await service.listProjects())[0].id)
+        try await service.deleteMCPServer(id: server.id)
+        try "changed".write(to: root.appending(path: "data/skills/demo/SKILL.md"), atomically: true, encoding: .utf8)
+        try await service.restoreFullBackup(named: backup.name)
+        let restoredProjects = try await service.listProjects()
+        XCTAssertEqual(restoredProjects.first?.name, "saved")
+        XCTAssertEqual(try String(contentsOf: root.appending(path: "data/skills/demo/SKILL.md"), encoding: .utf8), "original skill")
+        let restoredMCP = try await service.mcpConfiguration()
+        XCTAssertNotNil(restoredMCP.servers.first?.secretHeaders?["Authorization"])
+        let secrets = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: root.appending(path: "data/mcp-secrets.json")))
+        XCTAssertTrue(secrets.values.contains("dummy-secret"))
+    }
+
     private func runGit(_ arguments: [String], in directory: URL) throws {
         let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = arguments; process.currentDirectoryURL = directory

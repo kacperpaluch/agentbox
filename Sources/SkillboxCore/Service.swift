@@ -326,7 +326,7 @@ public actor SkillboxService {
     private func ensureLibraryGitignore(_ root: URL) throws {
         let url = root.appending(path: ".gitignore")
         var text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-        for entry in ["projects.local.json", "mcp-secrets.json", ".agentbox-snapshots/"] where !text.split(whereSeparator: \.isNewline).contains(Substring(entry)) {
+        for entry in ["projects.local.json", "mcp-secrets.json", ".agentbox-snapshots/", "backups/"] where !text.split(whereSeparator: \.isNewline).contains(Substring(entry)) {
             if !text.isEmpty && !text.hasSuffix("\n") { text += "\n" }
             text += entry + "\n"
         }

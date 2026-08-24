@@ -73,6 +73,21 @@ public struct LocalConfiguration: Codable, Sendable {
     public init() {}
 }
 
+public struct FullBackupMetadata: Codable, Sendable {
+    public var formatVersion: Int
+    public var createdAt: Date
+    public var applicationVersion: String
+    public init(formatVersion: Int = 1, createdAt: Date = .now, applicationVersion: String) { self.formatVersion = formatVersion; self.createdAt = createdAt; self.applicationVersion = applicationVersion }
+}
+
+public struct FullBackupInfo: Identifiable, Hashable, Sendable {
+    public var id: String { name }
+    public var name: String
+    public var createdAt: Date
+    public var applicationVersion: String
+    public init(name: String, createdAt: Date, applicationVersion: String) { self.name = name; self.createdAt = createdAt; self.applicationVersion = applicationVersion }
+}
+
 public struct SyncResult: Sendable {
     public var copied: [String] = []
     public var removed: [String] = []
@@ -171,6 +186,20 @@ public struct MCPImportField: Identifiable, Hashable, Sendable {
         self.id = "\(serverName)|\(location.rawValue)|\(key)"
         self.serverName = serverName; self.location = location; self.key = key
         self.displayValue = displayValue; self.classification = classification
+    }
+}
+
+public struct MCPManagedField: Identifiable, Hashable, Sendable {
+    public var id: UUID
+    public var location: MCPImportField.Location
+    public var key: String
+    public var value: String
+    public var classification: MCPValueClassification
+    public var hasStoredSecret: Bool
+
+    public init(id: UUID = UUID(), location: MCPImportField.Location, key: String, value: String = "", classification: MCPValueClassification, hasStoredSecret: Bool = false) {
+        self.id = id; self.location = location; self.key = key; self.value = value
+        self.classification = classification; self.hasStoredSecret = hasStoredSecret
     }
 }
 
