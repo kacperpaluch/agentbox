@@ -18,3 +18,5 @@ projects.local.json
 .opencode/
 .skillbox/
 .mcp.json
+opencode.json
+opencode.jsonc
