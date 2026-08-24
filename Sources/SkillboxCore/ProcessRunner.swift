@@ -1,11 +1,11 @@
 import Foundation
 
-/// Thread-safe flag shared with the timeout watchdog.
-private final class TimeoutFlag: @unchecked Sendable {
+/// Thread-safe container for the output read on the background thread.
+private final class OutputBuffer: @unchecked Sendable {
     private let lock = NSLock()
-    private var value = false
-    func set() { lock.lock(); value = true; lock.unlock() }
-    var isSet: Bool { lock.lock(); defer { lock.unlock() }; return value }
+    private var value = Data()
+    func set(_ data: Data) { lock.lock(); value = data; lock.unlock() }
+    var data: Data { lock.lock(); defer { lock.unlock() }; return value }
 }
 
 enum ProcessRunner {
@@ -19,7 +19,7 @@ enum ProcessRunner {
         environment["GIT_TERMINAL_PROMPT"] = "0"
         environment["SSH_ASKPASS_REQUIRE"] = "never"
         let ssh = environment["GIT_SSH_COMMAND"] ?? "ssh"
-        environment["GIT_SSH_COMMAND"] = ssh + " -o BatchMode=yes"
+        environment["GIT_SSH_COMMAND"] = ssh + " -o BatchMode=yes -o ConnectTimeout=30"
         return environment
     }
 
@@ -31,16 +31,22 @@ enum ProcessRunner {
         process.standardInput = FileHandle.nullDevice
         let pipe = Pipe(); process.standardOutput = pipe; process.standardError = pipe
         try process.run()
-        let timedOut = TimeoutFlag()
-        let watchdog = DispatchWorkItem { if process.isRunning { timedOut.set(); process.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: watchdog)
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        watchdog.cancel()
-        let output = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        if timedOut.isSet {
+        // The read happens on its own thread so a timeout can abandon it. An orphaned
+        // grandchild (git → ssh on a dead connection) keeps the pipe open after its parent
+        // dies, and a blocking read here would freeze the service actor until app restart.
+        let buffer = OutputBuffer()
+        let done = DispatchSemaphore(value: 0)
+        let handle = pipe.fileHandleForReading
+        Thread.detachNewThread { buffer.set(handle.readDataToEndOfFile()); done.signal() }
+        if done.wait(timeout: .now() + timeout) == .timedOut {
+            // ponytail: SIGKILL reaches only the direct child; a grandchild holding the pipe
+            // leaks one blocked reader thread until it exits, but the actor stays usable.
+            kill(process.processIdentifier, SIGKILL)
+            process.waitUntilExit()
             throw SkillboxError.commandFailed("przekroczono limit \(Int(timeout)) s: \(([executable] + arguments).joined(separator: " "))")
         }
+        process.waitUntilExit()
+        let output = String(decoding: buffer.data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         guard process.terminationStatus == 0 else { throw SkillboxError.commandFailed(output) }
         return output
     }

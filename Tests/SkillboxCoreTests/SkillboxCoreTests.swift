@@ -300,8 +300,8 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertEqual(analyzed.fields.first(where: { $0.key == "CREDENTIAL" })?.classification, .literal)
         XCTAssertEqual(analyzed.fields.first(where: { $0.key == "TOKEN_LIMIT" })?.classification, .secret)
         let overrides: [String: MCPValueClassification] = [
-            "custom|environment|CREDENTIAL": .secret,
-            "custom|environment|TOKEN_LIMIT": .literal
+            MCPImportField.fieldID(serverName: "custom", location: .environment, key: "CREDENTIAL"): .secret,
+            MCPImportField.fieldID(serverName: "custom", location: .environment, key: "TOKEN_LIMIT"): .literal
         ]
         let imported = try await service.importMCPJSON(json, classifications: overrides)
         let server = try XCTUnwrap(imported.servers.first)
@@ -1030,6 +1030,50 @@ final class SkillboxCoreTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let service = try SkillboxService(root: root)
         await XCTAssertThrowsErrorAsync(try await AgentboxCommand.run(["sync", "project", "nieistniejacy"], service: service))
+    }
+
+    func testTagsMatchRegardlessOfLetterCase() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/demo")
+        let project = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try "---\nname: demo\ndescription: Demo\n---\n".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        try await service.setTags(skillID: "demo", tags: ["Web"])
+        let added = try await service.addProject(name: "sample", path: project.path, tools: [.claude])
+        // The CLI could save a project tag with different casing than the skill tag.
+        try await service.configureProject(name: "sample", skillIDs: [], tags: ["WEB"])
+        _ = try await service.syncProject(name: "sample")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: project.appending(path: ".claude/skills/demo/SKILL.md").path))
+
+        // An MCP server tagged "SEO" must match a project assignment stored lowercased.
+        try await service.saveMCPServer(MCPServer(name: "probe", transport: .stdio, command: "echo", tags: ["SEO"]))
+        try await service.setMCPServers(projectID: added.id, serverIDs: [], tags: ["Seo"])
+        let previews = try await service.previewMCP(projectID: added.id)
+        XCTAssertTrue(previews.contains { $0.added.contains("probe") }, "\(previews.map(\.added))")
+        let stored = try await service.mcpConfiguration().servers.first { $0.name == "probe" }
+        XCTAssertEqual(stored?.tags, ["seo"], "tagi serwera są zapisywane małymi literami")
+    }
+
+    func testImportingManySkillsTakesOneRecoverySnapshot() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let repo = root.appending(path: "repo")
+        for name in ["a", "b", "c"] {
+            let folder = repo.appending(path: "skills/\(name)")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try "---\nname: \(name)\ndescription: Demo\n---\n".write(to: folder.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        }
+        try runGit(["init"], in: repo); try runGit(["add", "."], in: repo)
+        try runGit(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"], in: repo)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: repo.appending(path: "skills/a").path, id: "seed")
+        let before = try await service.librarySnapshots().count
+        let imported = try await service.addGitCollection(url: repo.absoluteURL.absoluteString, subpath: "skills")
+        XCTAssertEqual(imported.count, 3)
+        let after = try await service.librarySnapshots().count
+        XCTAssertEqual(after - before, 1, "cały import to jeden zapis katalogu i jeden snapshot")
     }
 
     private func XCTAssertThrowsErrorAsync<T>(_ expression: @autoclosure () async throws -> T, file: StaticString = #filePath, line: UInt = #line) async {

@@ -82,8 +82,15 @@ public actor SkillboxStore {
         try writeSecrets(values)
     }
     private func writeSecrets(_ values: [String: String]) throws {
-        try atomicWrite(values, to: secretsURL)
-        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: secretsURL.path)
+        // Created with 0600 from the first byte and renamed into place, so the secrets file
+        // never exists with default permissions, even for a moment.
+        let data = try encoder.encode(values)
+        let temp = root.appending(path: ".mcp-secrets-\(UUID().uuidString).tmp")
+        guard fm.createFile(atPath: temp.path, contents: data, attributes: [.posixPermissions: 0o600]),
+              rename(temp.path, secretsURL.path) == 0 else {
+            try? fm.removeItem(at: temp)
+            throw SkillboxError.commandFailed("nie można zapisać mcp-secrets.json")
+        }
     }
 
     public func snapshots() throws -> [LibrarySnapshot] {

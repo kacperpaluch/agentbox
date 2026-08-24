@@ -6,6 +6,29 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.7.2</title>
+      <pubDate>Mon, 24 Aug 2026 19:49:42 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.7.2</link>
+      <sparkle:version>15</sparkle:version>
+      <sparkle:shortVersionString>0.7.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.7.2</h2>
+        <ul>
+          <li>Tagi dopasowują się niezależnie od wielkości liter — serwer MCP z tagiem <code>SEO</code> nie jest już cicho pomijany.</li>
+          <li>Zawieszona operacja Git nie blokuje już aplikacji na stałe; limit czasu działa nawet przy martwym połączeniu SSH.</li>
+          <li>Import wielu skilli z Git to jeden zapis katalogu — nie zużywa już wszystkich snapshotów odzyskiwania.</li>
+          <li>Niedostępny folder biblioteki pokazuje komunikat i przycisk do Ustawień zamiast pustej biblioteki.</li>
+          <li><code>mcp-secrets.json</code> ma od pierwszego bajtu uprawnienia tylko dla właściciela.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.7.2/Agentbox-0.7.2.dmg"
+        length="4930806"
+        type="application/octet-stream"
+        sparkle:edSignature="stTeUvKnEgOpMhNxyaxD+A3p0/AcKKcH0AMuis9JVc6COdsn4mt1qEU3d2uel0sd62X6ulefh1WkYvckqdiABg==" />
+    </item>
+    <item>
       <title>Agentbox 0.7.1</title>
       <pubDate>Mon, 24 Aug 2026 12:45:00 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.7.1</link>

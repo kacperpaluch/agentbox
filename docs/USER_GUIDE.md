@@ -72,7 +72,7 @@ Agentbox usuwa i zastępuje wyłącznie katalogi wymienione w swoim manifeście 
 
 Serwery MCP wybiera się tak samo jak skille: pojedynczo albo dynamicznie według tagów. Oba sposoby można łączyć, a projekt może korzystać równocześnie z dowolnej liczby serwerów, również takich, które wcześniej były traktowane jako wzajemnie wykluczające się warianty.
 
-Tagi dodaje się w szczegółach serwera MCP. Menu `Używane tagi` pokazuje istniejące wartości, co pomaga zachować jednolite nazwy. To samo menu jest dostępne podczas tagowania pojedynczych i wielu skilli. Stare przypisania presetów są zachowane przy odczycie i zamieniane na bezpośredni wybór serwerów przy następnym zapisie projektu.
+Tagi dodaje się w szczegółach serwera MCP. Menu `Używane tagi` pokazuje istniejące wartości, co pomaga zachować jednolite nazwy. To samo menu jest dostępne podczas tagowania pojedynczych i wielu skilli. Wielkość liter nie ma znaczenia — tagi są zapisywane małymi literami, a `SEO` i `seo` to ten sam tag. Stare przypisania presetów są zachowane przy odczycie i zamieniane na bezpośredni wybór serwerów przy następnym zapisie projektu.
 
 ### Wykluczenia w projekcie
 

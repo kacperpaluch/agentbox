@@ -198,8 +198,14 @@ public struct MCPImportField: Identifiable, Hashable, Sendable {
     public var displayValue: String
     public var classification: MCPValueClassification
 
+    /// Builds the identity used to match a field with its user-chosen classification.
+    /// The unit separator cannot appear in server names or sane keys, unlike "|".
+    public static func fieldID(serverName: String, location: Location, key: String) -> String {
+        "\(serverName)\u{1F}\(location.rawValue)\u{1F}\(key)"
+    }
+
     public init(serverName: String, location: Location, key: String, displayValue: String, classification: MCPValueClassification) {
-        self.id = "\(serverName)|\(location.rawValue)|\(key)"
+        self.id = Self.fieldID(serverName: serverName, location: location, key: key)
         self.serverName = serverName; self.location = location; self.key = key
         self.displayValue = displayValue; self.classification = classification
     }

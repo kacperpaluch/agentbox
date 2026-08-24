@@ -70,6 +70,10 @@ struct OperationLogEntry: Identifiable {
     @Published var fullBackups: [FullBackupInfo] = []
     @Published var statuses: [UUID: ProjectStatus] = [:]
     @Published var isCheckingStatuses = false
+    /// Set when the library folder cannot be opened at all (missing disk, no permissions).
+    /// The UI then explains the situation instead of showing an empty library that looks like
+    /// lost data.
+    @Published var serviceError: String?
     private var automaticBackupTask: Task<Void, Never>?
     var service: SkillboxService?
     init() {
@@ -77,7 +81,8 @@ struct OperationLogEntry: Identifiable {
         let defaultPath = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support/Skillbox").path
         let shared = AgentboxRootPreference.load()?.path
         rootPath = saved ?? shared ?? defaultPath
-        service = try? SkillboxService(root: URL(fileURLWithPath: rootPath))
+        do { service = try SkillboxService(root: URL(fileURLWithPath: rootPath)) }
+        catch { serviceError = "Nie można otworzyć biblioteki w \(rootPath): \(error.localizedDescription)" }
         Task { await reload() }
     }
     func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); if let service { hasOpenAIKey = try await service.hasMCPAIKey(.openAI); hasAnthropicKey = try await service.hasMCPAIKey(.claude) }; if selection == nil { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription } }
@@ -215,6 +220,7 @@ struct OperationLogEntry: Identifiable {
             UserDefaults.standard.set(url.standardizedFileURL.path, forKey: "SkillboxLibraryRoot")
             try AgentboxRootPreference.save(url)
             rootPath = url.standardizedFileURL.path
+            serviceError = nil
             selection = nil
             await reload()
             message = existing ? "Podłączono istniejącą bibliotekę" : "Biblioteka skopiowana do nowego folderu"
@@ -247,7 +253,19 @@ struct ContentView: View {
     init(updater: SPUUpdater) { self.updater = updater; _model = StateObject(wrappedValue: AppModel()) }
     var body: some View {
         NavigationSplitView { VStack(spacing: 0) { List(SectionKind.allCases, selection: $section) { item in Label(item.rawValue, systemImage: item.icon).tag(item) }.navigationTitle("Agentbox"); Divider(); Text(AppVersion.display).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(12) }.navigationSplitViewColumnWidth(min: 180, ideal: 210) } detail: {
-            Group { switch section ?? .library { case .library: LibraryView(model: model, showGit: $showGit); case .projects: ProjectsView(model: model, showProject: $showProject); case .global: GlobalSyncView(model: model); case .mcp: MCPView(model: model); case .backup: BackupView(model: model); case .recovery: RecoveryView(model: model); case .settings: SettingsView(model: model, updater: updater) } }
+            Group {
+                if let serviceError = model.serviceError, section != .settings {
+                    ContentUnavailableView {
+                        Label("Biblioteka niedostępna", systemImage: "externaldrive.badge.exclamationmark")
+                    } description: {
+                        Text("\(serviceError)\nDane nie zostały zmienione. Podłącz dysk z biblioteką albo wskaż jej folder w Ustawieniach.")
+                    } actions: {
+                        Button("Otwórz Ustawienia") { section = .settings }.buttonStyle(.borderedProminent)
+                    }
+                } else {
+                    switch section ?? .library { case .library: LibraryView(model: model, showGit: $showGit); case .projects: ProjectsView(model: model, showProject: $showProject); case .global: GlobalSyncView(model: model); case .mcp: MCPView(model: model); case .backup: BackupView(model: model); case .recovery: RecoveryView(model: model); case .settings: SettingsView(model: model, updater: updater) }
+                }
+            }
         }
         .overlay(alignment: .bottom) { if !model.message.isEmpty { StatusToast(text: model.message) { model.message = "" } } }
         .task(id: model.message) { let current = model.message; guard !current.isEmpty else { return }; try? await Task.sleep(for: .seconds(4)); guard !Task.isCancelled, model.message == current else { return }; withAnimation { model.message = "" } }
@@ -823,7 +841,7 @@ struct MCPPreviewView: View {
             Text("Synchronizacja · \(project.name)").font(.title2.bold())
             Text("Poniżej znajduje się pełny plan zmian skilli i konfiguracji MCP. Całość zostanie wycofana, jeśli którykolwiek zapis się nie powiedzie.").font(.caption).foregroundStyle(.secondary)
             Label("Pliki projektu mogą zawierać jawne sekrety. Agentbox doda je do lokalnego .git/info/exclude, ale nie szyfruje ich na dysku.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
-            if preview?.mcp.contains(where: { $0.file.hasSuffix(".jsonc") }) == true { Label("Plik OpenCode JSONC zostanie przepisany jako JSON. Komentarze i dotychczasowe formatowanie zostaną usunięte; kopia powstanie w .skillbox/mcp-backups.", systemImage: "text.badge.xmark").font(.caption).foregroundStyle(.orange) }
+            if preview?.mcp.contains(where: { $0.file.hasSuffix(".jsonc") }) == true { Label("Plik OpenCode JSONC zostanie przepisany jako JSON. Komentarze i dotychczasowe formatowanie zostaną usunięte.", systemImage: "text.badge.xmark").font(.caption).foregroundStyle(.orange) }
             if !error.isEmpty { Text(error).foregroundStyle(.red) }
             else if preview == nil { ProgressView() }
             else if let preview { ScrollView { VStack(alignment: .leading, spacing: 12) {

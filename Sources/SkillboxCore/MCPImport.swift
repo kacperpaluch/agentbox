@@ -46,7 +46,7 @@ extension SkillboxService {
             var secretEnv: [String: String] = [:], secretHeaders: [String: String] = [:]
             for (key, val) in env.sorted(by: { $0.key < $1.key }) {
                 let detected: MCPValueClassification = Self.environmentReference(val) != nil ? .environment : (Self.looksSecret(key) ? .secret : .literal)
-                let field = MCPImportField(serverName: name, location: .environment, key: key, displayValue: detected == .secret ? "••••••••" : val, classification: classifications["\(name)|environment|\(key)"] ?? detected)
+                let field = MCPImportField(serverName: name, location: .environment, key: key, displayValue: detected == .secret ? "••••••••" : val, classification: classifications[MCPImportField.fieldID(serverName: name, location: .environment, key: key)] ?? detected)
                 fields.append(field)
                 switch field.classification {
                 case .environment: environmentRefs[key] = Self.environmentReference(val) ?? key
@@ -58,7 +58,7 @@ extension SkillboxService {
             for (key, rawValue) in headers.sorted(by: { $0.key < $1.key }) {
                 let withoutBearer = rawValue.replacingOccurrences(of: "Bearer ", with: "", options: [.caseInsensitive, .anchored])
                 let detected: MCPValueClassification = Self.environmentReference(withoutBearer) != nil ? .environment : ((Self.looksSecret(key) || Self.looksSecret(rawValue)) ? .secret : .literal)
-                let field = MCPImportField(serverName: name, location: .header, key: key, displayValue: detected == .secret ? "••••••••" : rawValue, classification: classifications["\(name)|header|\(key)"] ?? detected)
+                let field = MCPImportField(serverName: name, location: .header, key: key, displayValue: detected == .secret ? "••••••••" : rawValue, classification: classifications[MCPImportField.fieldID(serverName: name, location: .header, key: key)] ?? detected)
                 fields.append(field)
                 switch field.classification {
                 case .environment: headerRefs[key] = Self.environmentReference(withoutBearer) ?? key

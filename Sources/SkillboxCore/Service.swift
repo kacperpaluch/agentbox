@@ -51,7 +51,11 @@ public actor SkillboxService {
     @discardableResult
     public func addLocal(path: String, id suppliedID: String? = nil) async throws -> Skill {
         let source = URL(fileURLWithPath: path).standardizedFileURL
-        return try await importSkill(from: source, source: SkillSource(kind: .local, location: source.path), suppliedID: suppliedID)
+        let skillsDirectory = await store.skillsDirectory
+        var catalog = try await store.catalog()
+        let skill = try importSkill(from: source, source: SkillSource(kind: .local, location: source.path), suppliedID: suppliedID, into: &catalog, skillsDirectory: skillsDirectory)
+        try await store.save(catalog)
+        return skill
     }
 
     public func addGitCollection(url: String, subpath: String? = nil, branch: String? = nil, id: String? = nil) async throws -> [Skill] {
@@ -68,6 +72,10 @@ public actor SkillboxService {
         let candidates = discoverSkills(in: base)
         guard !candidates.isEmpty else { throw SkillboxError.invalidSkill("brak SKILL.md w \(input.subpath ?? "repozytorium")") }
         if id != nil, candidates.count > 1 { throw SkillboxError.invalidSkill("--id można podać tylko dla pojedynczego skilla") }
+        // The whole import is one catalog read and one save: a save per candidate burned one of
+        // the ten recovery snapshots each, and an error mid-loop left a partially saved catalog.
+        let skillsDirectory = await store.skillsDirectory
+        var catalog = try await store.catalog()
         var imported: [Skill] = []
         for candidate in candidates {
             let tempPath = temp.resolvingSymlinksInPath().path
@@ -78,20 +86,19 @@ public actor SkillboxService {
             else { throw SkillboxError.unsafePath(candidatePath) }
             let source = SkillSource(kind: .git, location: input.url, subpath: relative, branch: input.branch, revision: revision)
             let skillID = id ?? Self.defaultSkillID(relative: relative, candidate: candidate, repository: input.url)
-            var catalog = try await store.catalog()
             if let index = catalog.skills.firstIndex(where: { $0.id == skillID }) {
                 let existingLocation = catalog.skills[index].source.location.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                 let newLocation = input.url.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                 guard catalog.skills[index].source.kind == .git, existingLocation == newLocation else { throw SkillboxError.duplicateSkill(skillID) }
-                try copyReplacing(from: candidate, to: await store.skillsDirectory.appending(path: skillID))
+                try copyReplacing(from: candidate, to: skillsDirectory.appending(path: skillID))
                 catalog.skills[index].source = source
                 catalog.skills[index].updatedAt = .now
-                try await store.save(catalog)
                 imported.append(catalog.skills[index])
             } else {
-                imported.append(try await importSkill(from: candidate, source: source, suppliedID: skillID))
+                imported.append(try importSkill(from: candidate, source: source, suppliedID: skillID, into: &catalog, skillsDirectory: skillsDirectory))
             }
         }
+        try await store.save(catalog)
         return imported
     }
 
@@ -102,16 +109,16 @@ public actor SkillboxService {
             .sorted { $0.path < $1.path }
     }
 
-    private func importSkill(from sourceURL: URL, source: SkillSource, suppliedID: String?) async throws -> Skill {
+    /// Adds one skill to the passed-in catalog without saving it, so a batch import can make
+    /// one save (and one recovery snapshot) for any number of skills.
+    private func importSkill(from sourceURL: URL, source: SkillSource, suppliedID: String?, into catalog: inout Catalog, skillsDirectory: URL) throws -> Skill {
         guard fm.fileExists(atPath: sourceURL.appending(path: "SKILL.md").path) else { throw SkillboxError.invalidSkill("brak SKILL.md w \(sourceURL.path)") }
         let id = suppliedID ?? sourceURL.lastPathComponent.lowercased().replacingOccurrences(of: " ", with: "-")
         guard id.range(of: "^[a-z0-9]+(?:-[a-z0-9]+)*$", options: .regularExpression) != nil else { throw SkillboxError.invalidSkill(id) }
-        var catalog = try await store.catalog()
         guard !catalog.skills.contains(where: { $0.id == id }) else { throw SkillboxError.duplicateSkill(id) }
-        let destination = await store.skillsDirectory.appending(path: id)
-        try copyReplacing(from: sourceURL, to: destination)
+        try copyReplacing(from: sourceURL, to: skillsDirectory.appending(path: id))
         let skill = Skill(id: id, name: id, source: source)
-        catalog.skills.append(skill); try await store.save(catalog)
+        catalog.skills.append(skill)
         return skill
     }
 
@@ -137,7 +144,7 @@ public actor SkillboxService {
     public func setTags(skillID: String, tags: [String]) async throws {
         var catalog = try await store.catalog()
         guard let index = catalog.skills.firstIndex(where: { $0.id == skillID }) else { throw SkillboxError.skillNotFound(skillID) }
-        catalog.skills[index].tags = Array(Set(tags.map { $0.lowercased() })).sorted()
+        catalog.skills[index].tags = Self.normalizedTags(tags)
         try await store.save(catalog)
     }
 
@@ -238,7 +245,7 @@ public actor SkillboxService {
         assignments[projectID.uuidString] = Array(Set(serverIDs))
         mcp.projectServerIDs = assignments
         var tagAssignments = mcp.projectServerTags ?? [:]
-        tagAssignments[projectID.uuidString] = Array(Set(tags.map { $0.lowercased() })).sorted()
+        tagAssignments[projectID.uuidString] = normalizedTags(tags)
         mcp.projectServerTags = tagAssignments
         // Legacy presets are replaced by the direct selection saved here.
         mcp.projectPresetIDs[projectID.uuidString] = []
@@ -247,15 +254,20 @@ public actor SkillboxService {
     public func configureProject(name: String, skillIDs: [String], tags: [String]) async throws {
         var config = try await store.configuration()
         guard let index = config.projects.firstIndex(where: { $0.name == name }) else { throw SkillboxError.projectNotFound(name) }
-        config.projects[index].skillIDs = skillIDs; config.projects[index].tags = tags
+        config.projects[index].skillIDs = skillIDs; config.projects[index].tags = Self.normalizedTags(tags)
         try await store.save(config)
     }
 
     public func configureProject(id: UUID, skillIDs: [String], tags: [String]) async throws {
         var config = try await store.configuration()
         guard let index = config.projects.firstIndex(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
-        config.projects[index].skillIDs = skillIDs; config.projects[index].tags = tags
+        config.projects[index].skillIDs = skillIDs; config.projects[index].tags = Self.normalizedTags(tags)
         try await store.save(config)
+    }
+
+    /// Tags match case-insensitively everywhere, so they are stored lowercased everywhere.
+    static func normalizedTags(_ tags: [String]) -> [String] {
+        Array(Set(tags.map { $0.lowercased() }.filter { !$0.isEmpty })).sorted()
     }
 
     public func updateProject(_ project: Project) async throws {
@@ -309,8 +321,14 @@ public actor SkillboxService {
 
     @discardableResult
     public func adoptSkills(_ items: [AdoptableSkill]) async throws -> [Skill] {
+        let skillsDirectory = await store.skillsDirectory
+        var catalog = try await store.catalog()
         var adopted: [Skill] = []
-        for item in items { adopted.append(try await addLocal(path: item.path, id: item.suggestedID)) }
+        for item in items {
+            let source = URL(fileURLWithPath: item.path).standardizedFileURL
+            adopted.append(try importSkill(from: source, source: SkillSource(kind: .local, location: source.path), suppliedID: item.suggestedID, into: &catalog, skillsDirectory: skillsDirectory))
+        }
+        try await store.save(catalog)
         return adopted
     }
 
@@ -423,15 +441,18 @@ public actor SkillboxService {
 
     func selectedSkills(ids: [String], tags: [String], excluding excluded: [String] = []) async throws -> [Skill] {
         let excludedIDs = Set(excluded)
+        // Lowercased at comparison too, so selections saved before normalization keep working.
+        let wanted = Set(tags.map { $0.lowercased() })
         return try await store.catalog().skills
-            .filter { ids.contains($0.id) || !$0.tags.filter(tags.contains).isEmpty }
+            .filter { ids.contains($0.id) || !wanted.isDisjoint(with: $0.tags.map { $0.lowercased() }) }
             .filter { !excludedIDs.contains($0.id) }
     }
 
     static func selectedSkills(in catalog: Catalog, for project: Project) -> [Skill] {
         let excluded = Set(project.excludedSkillIDs ?? [])
+        let wanted = Set(project.tags.map { $0.lowercased() })
         return catalog.skills
-            .filter { project.skillIDs.contains($0.id) || !$0.tags.filter(project.tags.contains).isEmpty }
+            .filter { project.skillIDs.contains($0.id) || !wanted.isDisjoint(with: $0.tags.map { $0.lowercased() }) }
             .filter { !excluded.contains($0.id) }
     }
 

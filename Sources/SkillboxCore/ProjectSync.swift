@@ -108,8 +108,14 @@ extension SkillboxService {
                 try MCPRenderer.apply(previews: mcpPreviews, project: projectURL)
                 removed += mcpPreviews.flatMap { preview in preview.removed.map { "\(URL(fileURLWithPath: preview.file).lastPathComponent): \($0)" } }
             }
-            let skillboxDirectory = projectURL.appending(path: ".skillbox/mcp-manifest.json")
-            if fm.fileExists(atPath: skillboxDirectory.path) { try fm.removeItem(at: skillboxDirectory) }
+            let manifest = projectURL.appending(path: ".skillbox/mcp-manifest.json")
+            if fm.fileExists(atPath: manifest.path) { try fm.removeItem(at: manifest) }
+            // The manifest was the last thing Agentbox kept there; an emptied .skillbox is ours to
+            // take away too instead of leaving clutter in the user's repository.
+            let skillboxDirectory = projectURL.appending(path: ".skillbox")
+            if let leftovers = try? fm.contentsOfDirectory(atPath: skillboxDirectory.path), leftovers.allSatisfy({ $0 == ".DS_Store" }) {
+                try? fm.removeItem(at: skillboxDirectory)
+            }
         } catch {
             try? Self.applySyncBackup(project: projectURL, backup: backup, metadata: metadata)
             throw error

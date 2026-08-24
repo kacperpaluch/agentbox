@@ -6,12 +6,16 @@ extension SkillboxService {
     public func saveMCPServer(_ server: MCPServer) async throws {
         var config = try await store.mcpConfiguration()
         guard server.name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil else { throw SkillboxError.invalidSkill("nazwa MCP może zawierać litery, cyfry, _ i -") }
-        if let index = config.servers.firstIndex(where: { $0.id == server.id }) {
-            guard !config.servers.contains(where: { $0.id != server.id && $0.name == server.name }) else { throw SkillboxError.mcpConflict("serwer \(server.name) już istnieje") }
-            config.servers[index] = server
+        // Project tag assignments are stored lowercased, so server tags must be too — a server
+        // tagged "SEO" was silently never matched by a project tag saved as "seo".
+        var stored = server
+        stored.tags = stored.tags.map(SkillboxService.normalizedTags)
+        if let index = config.servers.firstIndex(where: { $0.id == stored.id }) {
+            guard !config.servers.contains(where: { $0.id != stored.id && $0.name == stored.name }) else { throw SkillboxError.mcpConflict("serwer \(stored.name) już istnieje") }
+            config.servers[index] = stored
         }
-        else if config.servers.contains(where: { $0.name == server.name }) { throw SkillboxError.mcpConflict("serwer \(server.name) już istnieje") }
-        else { config.servers.append(server) }
+        else if config.servers.contains(where: { $0.name == stored.name }) { throw SkillboxError.mcpConflict("serwer \(stored.name) już istnieje") }
+        else { config.servers.append(stored) }
         try await store.save(config)
     }
 
@@ -39,6 +43,7 @@ extension SkillboxService {
         let oldAccounts = Set(Array((old.secretEnvironment ?? [:]).values) + Array((old.secretHeaders ?? [:]).values))
         oldAccounts.forEach { secrets.removeValue(forKey: $0) }
         var updated = server
+        updated.tags = updated.tags.map(SkillboxService.normalizedTags)
         updated.environment = [:]; updated.headers = [:]
         updated.literalEnvironment = [:]; updated.literalHeaders = [:]
         updated.secretEnvironment = [:]; updated.secretHeaders = [:]
@@ -100,7 +105,7 @@ extension SkillboxService {
         assignments[projectID.uuidString] = Array(Set(serverIDs))
         config.projectServerIDs = assignments
         var tagAssignments = config.projectServerTags ?? [:]
-        tagAssignments[projectID.uuidString] = Array(Set(tags.map { $0.lowercased() })).sorted()
+        tagAssignments[projectID.uuidString] = SkillboxService.normalizedTags(tags)
         config.projectServerTags = tagAssignments
         try await store.save(config)
     }
@@ -114,8 +119,9 @@ extension SkillboxService {
         let presetIDs = Set(mcp.projectPresetIDs[projectID.uuidString] ?? [])
         var serverIDs = Set(mcp.presets.filter { presetIDs.contains($0.id) }.flatMap(\.serverIDs))
         serverIDs.formUnion(mcp.projectServerIDs?[projectID.uuidString] ?? [])
-        let tags = Set(mcp.projectServerTags?[projectID.uuidString] ?? [])
-        var servers = mcp.servers.filter { serverIDs.contains($0.id) || !tags.isDisjoint(with: $0.tags ?? []) }.filter(\.enabled)
+        // Lowercased on both sides, so tags saved before normalization keep matching.
+        let tags = Set((mcp.projectServerTags?[projectID.uuidString] ?? []).map { $0.lowercased() })
+        var servers = mcp.servers.filter { serverIDs.contains($0.id) || !tags.isDisjoint(with: ($0.tags ?? []).map { $0.lowercased() }) }.filter(\.enabled)
         servers.sort { $0.name < $1.name }
         let secrets = try await store.secrets()
         return try project.tools.map { try MCPRenderer.preview(tool: $0, project: URL(fileURLWithPath: project.path), servers: servers, secrets: secrets) }

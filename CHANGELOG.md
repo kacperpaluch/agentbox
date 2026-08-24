@@ -6,6 +6,18 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-08-24
+
+### Naprawiono
+
+- Tagi dopasowują się niezależnie od wielkości liter. Serwer MCP z tagiem `SEO` był cicho pomijany przy synchronizacji, bo przypisanie projektu zapisywało tag jako `seo`. Tagi serwerów i projektów są teraz zapisywane małymi literami, a porównanie ignoruje wielkość liter także dla danych zapisanych wcześniej.
+- Zawieszona operacja Git nie blokuje już aplikacji na stałe. Gdy proces potomny (np. `ssh` na martwym połączeniu) trzymał otwarty potok po przekroczeniu limitu czasu, każda kolejna operacja wisiała aż do restartu aplikacji. Limit czasu przerywa teraz operację niezależnie od procesów potomnych, a `ssh` dostaje dodatkowo `ConnectTimeout=30`.
+- Import kolekcji skilli z Git zapisuje katalog raz, a nie osobno dla każdego skilla. Wcześniej import kilkunastu skilli zużywał wszystkie sloty snapshotów odzyskiwania, a błąd w połowie importu zostawiał katalog zapisany częściowo. To samo dotyczy przejmowania wielu skilli z projektu.
+- Gdy folder biblioteki jest niedostępny (odłączony dysk, brak uprawnień), aplikacja pokazuje komunikat i przycisk do Ustawień zamiast pustej biblioteki wyglądającej jak utrata danych.
+- `mcp-secrets.json` od pierwszego bajtu ma uprawnienia tylko dla właściciela; wcześniej przez moment po zapisie miał uprawnienia domyślne.
+- `Usuń i posprzątaj pliki` zabiera także opróżniony katalog `.skillbox/` z folderu projektu.
+- Podgląd synchronizacji nie obiecuje już kopii w `.skillbox/mcp-backups` — te kopie zniknęły w 0.7.1.
+
 ## [0.7.1] - 2026-08-24
 
 ### Zmieniono

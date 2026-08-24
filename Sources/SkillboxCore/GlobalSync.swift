@@ -23,7 +23,7 @@ extension SkillboxService {
         var config = try await store.configuration()
         config.globalTools = selection.tools
         config.globalSkillIDs = selection.skillIDs
-        config.globalTags = Array(Set(selection.tags.map { $0.lowercased() })).sorted()
+        config.globalTags = SkillboxService.normalizedTags(selection.tags)
         try await store.save(config)
     }
 
