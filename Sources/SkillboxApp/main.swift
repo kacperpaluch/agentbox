@@ -67,7 +67,6 @@ struct OperationLogEntry: Identifiable {
     @Published var hasAnthropicKey = false
     @Published var operationLog: [OperationLogEntry] = []
     @Published var librarySnapshots: [LibrarySnapshot] = []
-    @Published var projectBackups: [ProjectSyncBackup] = []
     @Published var fullBackups: [FullBackupInfo] = []
     @Published var statuses: [UUID: ProjectStatus] = [:]
     @Published var isCheckingStatuses = false
@@ -139,9 +138,8 @@ struct OperationLogEntry: Identifiable {
     func createFullBackup() async { await perform { guard let service = self.service else { throw SkillboxError.commandFailed("Brak usługi") }; let backup = try await service.createFullBackup(applicationVersion: AppVersion.short); self.message = "Utworzono pełny backup: \(backup.name)" }; await loadFullBackups() }
     func restoreFullBackup(_ backup: FullBackupInfo) async { await perform { try await self.service?.restoreFullBackup(named: backup.name); self.message = "Przywrócono pełny backup: \(backup.name)" }; await loadFullBackups() }
     func deleteFullBackup(_ backup: FullBackupInfo) async { await perform { try await self.service?.deleteFullBackup(named: backup.name); self.message = "Usunięto pełny backup: \(backup.name)" }; await loadFullBackups() }
-    func loadRecovery() async { do { librarySnapshots = try await service?.librarySnapshots() ?? []; projectBackups = try await service?.projectSyncBackups() ?? [] } catch { reportError(error) } }
+    func loadRecovery() async { do { librarySnapshots = try await service?.librarySnapshots() ?? [] } catch { reportError(error) } }
     func restoreLibrary(_ snapshot: LibrarySnapshot) async { await perform { let files = try await self.service?.restoreLibrarySnapshot(named: snapshot.name) ?? []; self.message = "Przywrócono snapshot biblioteki: \(files.joined(separator: ", "))" }; await loadRecovery() }
-    func restoreProject(_ backup: ProjectSyncBackup) async { await perform { let targets = try await self.service?.restoreProjectSyncBackup(projectID: backup.projectID, named: backup.name) ?? []; self.message = "Przywrócono \(targets.count) elementów projektu \(backup.projectName)" }; await loadRecovery() }
     func managedFields(for server: MCPServer) async -> [MCPManagedField] { (try? await service?.managedFields(serverID: server.id)) ?? [] }
     func saveMCPServer(_ server: MCPServer, fields: [MCPManagedField]) async -> Bool {
         isWorking = true; defer { isWorking = false }
@@ -162,7 +160,11 @@ struct OperationLogEntry: Identifiable {
             guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
             let outcomes = try await service.syncAllProjectsTransactions()
             let synced = outcomes.filter { $0.state == .synced }.count
-            if synced == outcomes.count { message = "Zsynchronizowano wszystkie projekty: \(synced)"; record(.success, message) }
+            let upToDate = outcomes.filter { $0.state == .upToDate }.count
+            if synced + upToDate == outcomes.count {
+                message = upToDate == 0 ? "Zsynchronizowano wszystkie projekty: \(synced)" : "Zsynchronizowano \(synced), bez zmian \(upToDate)"
+                record(.success, message)
+            }
             else {
                 message = "Zsynchronizowano \(synced) z \(outcomes.count) projektów"
                 record(.error, message)
@@ -559,7 +561,7 @@ struct AllProjectsSyncPreviewView: View {
                     Button("Synchronizuj \(plans?.count ?? 0) projektów") {
                         Task {
                             let result = await model.syncAllProjects()
-                            if result.allSatisfy({ $0.state == .synced }) { dismiss() } else { outcomes = result }
+                            if result.allSatisfy({ $0.state == .synced || $0.state == .upToDate }) { dismiss() } else { outcomes = result }
                         }
                     }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || plans == nil || model.isWorking)
                 }
@@ -573,6 +575,7 @@ private struct ProjectSyncOutcomeRow: View {
     private var icon: (String, Color) {
         switch outcome.state {
         case .synced: ("checkmark.circle.fill", .green)
+        case .upToDate: ("equal.circle.fill", .secondary)
         case .failed: ("xmark.octagon.fill", .red)
         case .skipped: ("minus.circle.fill", .secondary)
         }
@@ -584,6 +587,7 @@ private struct ProjectSyncOutcomeRow: View {
                 Text(outcome.plan.project.name).fontWeight(.medium)
                 switch outcome.state {
                 case .synced: Text("Zsynchronizowano").font(.caption).foregroundStyle(.secondary)
+                case .upToDate: Text("Bez zmian — nic nie zapisano i nie utworzono backupu.").font(.caption).foregroundStyle(.secondary)
                 case .failed(let reason): Text("Cofnięto do stanu sprzed synchronizacji — \(reason)").font(.caption).foregroundStyle(.red).textSelection(.enabled)
                 case .skipped: Text("Pominięto po wcześniejszym błędzie; pliki projektu nie zostały zmienione.").font(.caption).foregroundStyle(.secondary)
                 }
@@ -878,21 +882,16 @@ struct BackupView: View {
 struct RecoveryView: View {
     @ObservedObject var model: AppModel
     @State private var snapshotToRestore: LibrarySnapshot?
-    @State private var projectBackupToRestore: ProjectSyncBackup?
     private let formatter: DateFormatter = { let value = DateFormatter(); value.dateStyle = .medium; value.timeStyle = .medium; return value }()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack { Label("Odzyskiwanie", systemImage: "clock.arrow.circlepath").font(.largeTitle.bold()); Spacer(); Button("Odśwież") { Task { await model.loadRecovery() } }.buttonStyle(.bordered) }
-            Text("Przywrócenie tworzy najpierw kopię aktualnego stanu, więc można cofnąć również samą operację odzyskiwania.").foregroundStyle(.secondary)
+            Text("Odzyskiwanie dotyczy biblioteki: katalogu skilli, tagów, konfiguracji MCP i projektów. Pliki w folderach projektów odtwarza się przez ponowną synchronizację, a czyści przez „Usuń i posprzątaj pliki” w sekcji Projekty.").foregroundStyle(.secondary)
             List {
                 Section("Snapshoty biblioteki") {
                     if model.librarySnapshots.isEmpty { Text("Brak snapshotów biblioteki.").foregroundStyle(.secondary) }
                     ForEach(model.librarySnapshots) { snapshot in HStack { Image(systemName: "externaldrive").foregroundStyle(.blue); VStack(alignment: .leading, spacing: 3) { Text(formatter.string(from: snapshot.date)).fontWeight(.medium); Text(snapshot.files.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Przywróć") { snapshotToRestore = snapshot }.buttonStyle(.bordered) } }
-                }
-                Section("Backupy synchronizacji projektów") {
-                    if model.projectBackups.isEmpty { Text("Brak backupów z metadanymi. Pojawią się po kolejnej synchronizacji projektu.").foregroundStyle(.secondary) }
-                    ForEach(model.projectBackups) { backup in HStack(alignment: .top) { Image(systemName: "folder.badge.clock").foregroundStyle(.purple); VStack(alignment: .leading, spacing: 3) { Text(backup.projectName).fontWeight(.medium); Text(formatter.string(from: backup.date)).font(.caption).foregroundStyle(.secondary); DisclosureGroup("\(backup.targets.count) elementów") { ForEach(backup.targets, id: \.self) { Text($0).font(.system(.caption, design: .monospaced)).textSelection(.enabled) } } }; Spacer(); Button("Przywróć") { projectBackupToRestore = backup }.buttonStyle(.bordered) } }
                 }
             }
         }
@@ -901,10 +900,6 @@ struct RecoveryView: View {
             Button("Przywróć bibliotekę", role: .destructive) { if let snapshotToRestore { Task { await model.restoreLibrary(snapshotToRestore) } }; snapshotToRestore = nil }
             Button("Anuluj", role: .cancel) { snapshotToRestore = nil }
         } message: { Text("Aktualny stan zostanie zachowany jako nowy snapshot. Sekrety i katalog skills nie zostaną zmienione.") }
-        .confirmationDialog("Cofnąć synchronizację projektu?", isPresented: Binding(get: { projectBackupToRestore != nil }, set: { if !$0 { projectBackupToRestore = nil } })) {
-            Button("Przywróć projekt", role: .destructive) { if let projectBackupToRestore { Task { await model.restoreProject(projectBackupToRestore) } }; projectBackupToRestore = nil }
-            Button("Anuluj", role: .cancel) { projectBackupToRestore = nil }
-        } message: { Text("Zarządzane katalogi skilli, pliki MCP i manifest zostaną przywrócone. Przed zmianą powstanie backup aktualnego stanu.") }
     }
 }
 

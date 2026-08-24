@@ -6,6 +6,19 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-24
+
+### Zmieniono
+
+- Agentbox nie prowadzi już historii kopii zapasowych w folderach projektów. Kopia potrzebna do cofnięcia nieudanego zapisu powstaje w katalogu tymczasowym i znika po operacji, więc bezpieczeństwo transakcji zostaje bez zmian. Katalogi `.skillbox/sync-backups/` i `.skillbox/mcp-backups/` zostawione przez wcześniejsze wersje są usuwane przy najbliższej synchronizacji. W repozytorium zostają wyłącznie manifesty własności.
+- Stan projektu odtwarza się przez `Usuń i posprzątaj pliki` (albo `agentbox project unsync`) i ponowną synchronizację z biblioteki. Z sekcji `Odzyskiwanie` znika lista `Backupy synchronizacji projektów`; pozostają snapshoty biblioteki i pełny backup lokalny.
+
+### Naprawiono
+
+- Projekt, w którym nic się nie zmieniło, nie jest już przepisywany. Wcześniej jedno `Synchronizuj wszystkie projekty` dotykało każdego projektu, nawet gdy zapisywało identyczne bajty. Taki projekt jest teraz raportowany jako `Bez zmian`.
+- Decyzja o pominięciu zapisu porównuje zawartość katalogów, a nie znaczniki czasu — skill zmieniony w tej samej sekundzie co ostatnia synchronizacja nadal zostanie skopiowany.
+- Pominięcie zapisu odświeża manifest, więc status projektu nie pokazuje driftu, którego nie ma.
+
 ## [0.7.0] - 2026-08-24
 
 ### Dodano

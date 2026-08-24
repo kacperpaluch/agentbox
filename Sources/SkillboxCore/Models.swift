@@ -300,6 +300,8 @@ public struct AdoptableSkill: Identifiable, Hashable, Sendable {
 public struct ProjectSyncOutcome: Identifiable, Sendable {
     public enum State: Sendable, Equatable {
         case synced
+        /// Already matched the library, so nothing was written and no backup was taken.
+        case upToDate
         /// The project was rolled back to its previous state; the message explains why.
         case failed(String)
         /// Not attempted, because an earlier project failed.
@@ -318,18 +320,6 @@ public struct LibrarySnapshot: Identifiable, Hashable, Sendable {
     public var date: Date
     public var files: [String]
     public init(name: String, date: Date, files: [String]) { self.name = name; self.date = date; self.files = files }
-}
-
-public struct ProjectSyncBackup: Identifiable, Hashable, Sendable {
-    public var id: String { "\(projectID.uuidString)/\(name)" }
-    public var projectID: UUID
-    public var projectName: String
-    public var name: String
-    public var date: Date
-    public var targets: [String]
-    public init(projectID: UUID, projectName: String, name: String, date: Date, targets: [String]) {
-        self.projectID = projectID; self.projectName = projectName; self.name = name; self.date = date; self.targets = targets
-    }
 }
 
 public enum SkillboxError: LocalizedError {

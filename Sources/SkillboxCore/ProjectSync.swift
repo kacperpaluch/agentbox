@@ -33,8 +33,10 @@ extension SkillboxService {
         for plan in plans {
             guard !failed else { outcomes.append(ProjectSyncOutcome(plan: plan, state: .skipped)); continue }
             do {
+                let selected = SkillboxService.selectedSkills(in: try await store.catalog(), for: plan.project)
+                let upToDate = await isUpToDate(plan.preview, skills: selected)
                 _ = try await syncProjectTransaction(projectID: plan.project.id)
-                outcomes.append(ProjectSyncOutcome(plan: plan, state: .synced))
+                outcomes.append(ProjectSyncOutcome(plan: plan, state: upToDate ? .upToDate : .synced))
             } catch {
                 outcomes.append(ProjectSyncOutcome(plan: plan, state: .failed(error.localizedDescription)))
                 failed = true
@@ -77,6 +79,7 @@ extension SkillboxService {
         let config = try await store.configuration()
         guard let project = config.projects.first(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
         let projectURL = URL(fileURLWithPath: project.path)
+        Self.removeLegacyBackupDirectories(projectURL)
         let fm = FileManager.default
         var targets = project.tools.map { projectURL.appending(path: $0.projectSkillsPath) }
         let mcpPreviews = try await previewMCPRemovingEverything(project: project)
@@ -86,7 +89,9 @@ extension SkillboxService {
         targets.append(projectURL.appending(path: ".skillbox/mcp-manifest.json"))
         var unique: [URL] = []
         for target in targets where !unique.contains(target) { unique.append(target) }
-        let (backup, metadata) = try Self.makeSyncBackup(project: projectURL, targets: unique)
+        let scratch = Self.scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let (backup, metadata) = try Self.makeSyncBackup(project: projectURL, targets: unique, in: scratch)
         var removed: [String] = []
         do {
             for tool in project.tools {
@@ -105,7 +110,6 @@ extension SkillboxService {
             }
             let skillboxDirectory = projectURL.appending(path: ".skillbox/mcp-manifest.json")
             if fm.fileExists(atPath: skillboxDirectory.path) { try fm.removeItem(at: skillboxDirectory) }
-            try Self.pruneSyncBackups(projectURL, keeping: 10)
         } catch {
             try? Self.applySyncBackup(project: projectURL, backup: backup, metadata: metadata)
             throw error
@@ -134,6 +138,21 @@ extension SkillboxService {
         try text.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    static func scratchDirectory() -> URL {
+        FileManager.default.temporaryDirectory.appending(path: "agentbox-sync-\(UUID().uuidString)")
+    }
+
+    /// Versions up to 0.7.0 kept a history of sync backups inside each project. They protected
+    /// nothing that the library plus `unsyncProject` cannot reproduce, so they are removed on the
+    /// next sync rather than left behind as clutter in the user's repositories.
+    static func removeLegacyBackupDirectories(_ project: URL) {
+        let fm = FileManager.default
+        for name in ["sync-backups", "mcp-backups"] {
+            let directory = project.appending(path: ".skillbox/\(name)")
+            if fm.fileExists(atPath: directory.path) { try? fm.removeItem(at: directory) }
+        }
+    }
+
     private func previewMCPRemovingEverything(project: Project) async throws -> [MCPPreview] {
         let secrets = try await store.secrets()
         return try project.tools.map { try MCPRenderer.preview(tool: $0, project: URL(fileURLWithPath: project.path), servers: [], secrets: secrets) }
@@ -150,73 +169,99 @@ extension SkillboxService {
         return ProjectSyncPreview(skills: skills, mcp: try await previewMCP(projectID: projectID))
     }
 
+    /// True when synchronizing would write exactly what is already on disk.
+    ///
+    /// The skill timestamps in the manifest are only good to the second, because `catalog.json`
+    /// stores `updatedAt` that way. That precision is fine for showing drift, but not for deciding
+    /// to skip a write: a skill edited in the same second as the last sync would never be copied.
+    /// The decision therefore compares the managed directories byte for byte. It costs about as
+    /// much as the copy it avoids, and saves a full backup on top of that.
+    func isUpToDate(_ preview: ProjectSyncPreview, skills: [Skill]) async -> Bool {
+        guard preview.skills.allSatisfy({ $0.added.isEmpty && $0.removed.isEmpty }) else { return false }
+        let library = await store.skillsDirectory
+        for item in preview.skills {
+            let target = URL(fileURLWithPath: item.target)
+            for skill in skills where !Self.directoryMatches(library.appending(path: skill.id), target.appending(path: skill.id)) { return false }
+        }
+        return preview.mcp.allSatisfy { item in
+            item.staleFile == nil && (try? String(contentsOf: URL(fileURLWithPath: item.file), encoding: .utf8)) == item.content
+        }
+    }
+
+    /// Recursive byte comparison of two skill directories.
+    static func directoryMatches(_ source: URL, _ copy: URL) -> Bool {
+        let fm = FileManager.default
+        func files(_ root: URL) -> [String: URL] {
+            guard let enumerator = fm.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey]) else { return [:] }
+            var result: [String: URL] = [:]
+            for case let item as URL in enumerator {
+                guard (try? item.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { continue }
+                let path = item.standardizedFileURL.path, base = root.standardizedFileURL.path
+                guard path.hasPrefix(base + "/") else { continue }
+                result[String(path.dropFirst(base.count + 1))] = item
+            }
+            return result
+        }
+        guard fm.fileExists(atPath: source.path), fm.fileExists(atPath: copy.path) else { return false }
+        let left = files(source), right = files(copy)
+        guard Set(left.keys) == Set(right.keys) else { return false }
+        for (relative, url) in left {
+            guard let other = right[relative],
+                  let a = try? Data(contentsOf: url), let b = try? Data(contentsOf: other), a == b else { return false }
+        }
+        return true
+    }
+
     @discardableResult
     public func syncProjectTransaction(projectID: UUID) async throws -> ProjectSyncPreview {
         let preview = try await previewProjectSync(projectID: projectID)
         let config = try await store.configuration()
         guard let project = config.projects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
         let projectURL = URL(fileURLWithPath: project.path)
+        Self.removeLegacyBackupDirectories(projectURL)
+        // Independent of the sync content and idempotent, so it also runs for an unchanged project
+        // whose owner has just switched the option on.
+        if project.manageGitignore == true { try Self.updateProjectGitignore(projectURL, files: preview.mcp.map { URL(fileURLWithPath: $0.file) }) }
+        // Writing identical bytes would still produce a full backup of every managed directory.
+        // One "synchronize everything" run then buried the recovery list under a dozen useless
+        // snapshots taken in the same second.
+        let selected = SkillboxService.selectedSkills(in: try await store.catalog(), for: project)
+        if await isUpToDate(preview, skills: selected) {
+            // The files already match, but the manifest still records the timestamps from the last
+            // write. Restamping it — Agentbox's own bookkeeping, no backup needed — keeps the
+            // project's status honest instead of reporting drift that does not exist.
+            for item in preview.skills {
+                try SkillboxService.writeSkillManifest(selected, to: URL(fileURLWithPath: item.target))
+            }
+            return preview
+        }
         var targets = preview.skills.map { URL(fileURLWithPath: $0.target) }
         targets += preview.mcp.map { URL(fileURLWithPath: $0.file) }
         targets += preview.mcp.compactMap { $0.staleFile.map(URL.init(fileURLWithPath:)) }
         targets.append(projectURL.appending(path: ".skillbox/mcp-manifest.json"))
         var unique: [URL] = []
         for target in targets where !unique.contains(target) { unique.append(target) }
-        let (backup, metadata) = try Self.makeSyncBackup(project: projectURL, targets: unique)
+        // The rollback copy exists only for the duration of this write. Once the sync succeeds it
+        // protects nothing: the library is the source of truth, the manifests say what Agentbox
+        // owns, and `unsyncProject` removes it all cleanly. Keeping it around only produced
+        // directories of stale copies.
+        let scratch = Self.scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let (backup, metadata) = try Self.makeSyncBackup(project: projectURL, targets: unique, in: scratch)
 
         do {
             _ = try await syncProject(id: projectID)
             _ = try await syncMCP(projectID: projectID)
-            if project.manageGitignore == true { try Self.updateProjectGitignore(projectURL, files: preview.mcp.map { URL(fileURLWithPath: $0.file) }) }
-            try Self.pruneSyncBackups(projectURL, keeping: 10)
             return preview
         } catch {
             try? Self.applySyncBackup(project: projectURL, backup: backup, metadata: metadata)
-            try? Self.pruneSyncBackups(projectURL, keeping: 10)
             throw error
         }
     }
 
-    public func projectSyncBackups() async throws -> [ProjectSyncBackup] {
-        let projects = try await store.configuration().projects
+    private static func makeSyncBackup(project: URL, targets: [URL], in backupRoot: URL) throws -> (URL, SyncBackupMetadata) {
         let fm = FileManager.default
-        var result: [ProjectSyncBackup] = []
-        for project in projects {
-            let root = URL(fileURLWithPath: project.path).appending(path: ".skillbox/sync-backups")
-            guard fm.fileExists(atPath: root.path) else { continue }
-            for directory in try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) {
-                guard let metadata = try? Self.readMetadata(directory) else { continue }
-                let date = (try? directory.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? metadata.createdAt
-                result.append(ProjectSyncBackup(projectID: project.id, projectName: project.name, name: directory.lastPathComponent, date: date, targets: metadata.entries.map(\.targetRelativePath).sorted()))
-            }
-        }
-        return result.sorted { $0.date > $1.date }
-    }
-
-    @discardableResult
-    public func restoreProjectSyncBackup(projectID: UUID, named name: String) async throws -> [String] {
-        guard name == URL(fileURLWithPath: name).lastPathComponent, !name.contains("..") else { throw SkillboxError.unsafePath(name) }
-        let projects = try await store.configuration().projects
-        guard let project = projects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
-        let projectURL = URL(fileURLWithPath: project.path).standardizedFileURL
-        let backup = projectURL.appending(path: ".skillbox/sync-backups/\(name)").standardizedFileURL
-        let expectedRoot = projectURL.appending(path: ".skillbox/sync-backups").standardizedFileURL
-        guard backup.deletingLastPathComponent().path == expectedRoot.path else { throw SkillboxError.unsafePath(backup.path) }
-        let metadata = try Self.readMetadata(backup)
-        let targets = try metadata.entries.map { try Self.targetURL(project: projectURL, relativePath: $0.targetRelativePath) }
-        let (safetyBackup, safetyMetadata) = try Self.makeSyncBackup(project: projectURL, targets: targets)
-        do { try Self.applySyncBackup(project: projectURL, backup: backup, metadata: metadata) }
-        catch {
-            try? Self.applySyncBackup(project: projectURL, backup: safetyBackup, metadata: safetyMetadata)
-            throw error
-        }
-        try Self.pruneSyncBackups(projectURL, keeping: 10)
-        return metadata.entries.map(\.targetRelativePath).sorted()
-    }
-
-    private static func makeSyncBackup(project: URL, targets: [URL]) throws -> (URL, SyncBackupMetadata) {
-        let fm = FileManager.default
-        let backup = project.appending(path: ".skillbox/sync-backups/\(UUID().uuidString)")
+        let backup = backupRoot.appending(path: UUID().uuidString)
         try fm.createDirectory(at: backup, withIntermediateDirectories: true)
         var entries: [SyncBackupEntry] = []
         for (index, target) in targets.enumerated() {
@@ -261,36 +306,4 @@ extension SkillboxService {
         return target
     }
 
-    /// Each backup is a full copy of the managed skill trees, so ten of them across three tools can
-    /// reach hundreds of megabytes inside a repository. Keep the newest ones within both a count
-    /// and a size budget, always retaining at least the most recent one.
-    static func pruneSyncBackups(_ project: URL, keeping limit: Int, maximumBytes: Int = 200 * 1024 * 1024) throws {
-        let root = project.appending(path: ".skillbox/sync-backups")
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: root.path) else { return }
-        let items = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey])
-        let sorted = items.sorted {
-            ((try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) >
-            ((try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
-        }
-        for item in sorted.dropFirst(limit) { try fm.removeItem(at: item) }
-        var kept = Array(sorted.prefix(limit))
-        var total = kept.reduce(0) { $0 + directorySize(of: $1) }
-        while total > maximumBytes, kept.count > 1, let oldest = kept.last {
-            total -= directorySize(of: oldest)
-            try fm.removeItem(at: oldest)
-            kept.removeLast()
-        }
-    }
-
-    private static func directorySize(of url: URL) -> Int {
-        guard let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .isRegularFileKey]) else { return 0 }
-        var total = 0
-        for case let item as URL in enumerator {
-            let values = try? item.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .isRegularFileKey])
-            guard values?.isRegularFile == true else { continue }
-            total += values?.totalFileAllocatedSize ?? 0
-        }
-        return total
-    }
 }

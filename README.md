@@ -144,12 +144,13 @@ Agentbox zachowuje niezależne, ręczne ustawienia w plikach projektu. Konflikt 
 
 ```text
 .skillbox/mcp-manifest.json     # wpisy zarządzane przez Agentbox
-.skillbox/mcp-backups/<UUID>/   # kopie plików sprzed synchronizacji
+                                # kopie sprzed zapisu są tymczasowe;
+                                # repozytorium dostaje tylko manifest
 ```
 
-Agentbox zachowuje maksymalnie 10 ostatnich katalogów kopii MCP. Jeśli źródłem jest `opencode.jsonc`, podgląd ostrzega, że komentarze i formatowanie zostaną utracone podczas przepisania pliku.
+Kopia sprzed zapisu powstaje w katalogu tymczasowym i znika po zakończeniu operacji. Agentbox nie zostawia historii kopii w folderach projektów — repozytorium dostaje wyłącznie manifesty własności. Jeśli źródłem jest `opencode.jsonc`, podgląd ostrzega, że komentarze i formatowanie zostaną utracone podczas przepisania pliku.
 
-GUI pokazuje również pełny plan zmian skilli dla każdego narzędzia. Synchronizacja skilli i MCP działa jako jedna transakcja: błąd na dowolnym etapie przywraca zarządzane katalogi i pliki do stanu sprzed operacji. Ostatnie kopie znajdują się w `.skillbox/sync-backups/`. To samo dotyczy CLI — `agentbox sync project` i `agentbox sync all` używają tej samej ścieżki transakcyjnej.
+GUI pokazuje również pełny plan zmian skilli dla każdego narzędzia. Synchronizacja skilli i MCP działa jako jedna transakcja: błąd na dowolnym etapie przywraca zarządzane katalogi i pliki do stanu sprzed operacji. Kopia użyta do cofnięcia jest tymczasowa i znika po operacji. Projekt bez faktycznych zmian jest pomijany: nic nie jest zapisywane. To samo dotyczy CLI — `agentbox sync project` i `agentbox sync all` używają tej samej ścieżki transakcyjnej.
 
 `Sprawdź stan` sprawdza wszystkie projekty naraz i oznacza każdy z nich: aktualny, liczba zmian do synchronizacji, zablokowany albo brak folderu. To samo w terminalu daje `agentbox project status`.
 
@@ -166,7 +167,7 @@ swift run agentbox sync global --skills seo-audit,docx --tags seo --tools claude
 swift run agentbox sync all
 ```
 
-Sekcja `Odzyskiwanie` pozwala przywrócić snapshot metadanych biblioteki albo cofnąć zarządzane pliki projektu do stanu sprzed wybranej synchronizacji. Przed przywróceniem Agentbox automatycznie zachowuje aktualny stan.
+Sekcja `Odzyskiwanie` pozwala przywrócić snapshot metadanych biblioteki albo pełny backup lokalny. Pliki w folderach projektów odtwarza się ponowną synchronizacją, a czyści przez `Usuń i posprzątaj pliki`. Przed przywróceniem Agentbox automatycznie zachowuje aktualny stan.
 
 ### Sekrety
 

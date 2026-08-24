@@ -80,7 +80,7 @@ Do not commit `.build/` or generated `dist/` artifacts. DMG files belong in GitH
 - Update manifests only after their corresponding writes succeed.
 - Do not ignore file-removal or replacement errors.
 - Never delete directories that are not listed in an Agentbox manifest.
-- Keep project-level sync backups bounded; the current retention limit is 10.
+- The rollback copy taken before a project write is transient: it lives in a temporary directory and is removed once the operation ends, successfully or not. Agentbox keeps no backup history inside project folders — the library is the source of truth and `unsyncProject` plus a re-sync reproduces any project state.
 - Add a regression test whenever synchronization ownership, backup, rollback, or manifest behavior changes.
 
 ## Testing expectations

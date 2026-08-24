@@ -6,6 +6,28 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.7.1</title>
+      <pubDate>Mon, 24 Aug 2026 12:45:00 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.7.1</link>
+      <sparkle:version>14</sparkle:version>
+      <sparkle:shortVersionString>0.7.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.7.1</h2>
+        <ul>
+          <li>Agentbox nie zostawia już kopii zapasowych w folderach projektów — kopia do cofnięcia zapisu jest tymczasowa.</li>
+          <li>Katalogi <code>.skillbox/sync-backups/</code> z wcześniejszych wersji są usuwane przy najbliższej synchronizacji.</li>
+          <li>Projekt bez zmian nie jest przepisywany i jest raportowany jako <b>Bez zmian</b>.</li>
+          <li>Stan projektu odtwarza się przez „Usuń i posprzątaj pliki” plus ponowną synchronizację.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.7.1/Agentbox-0.7.1.dmg"
+        length="4893852"
+        type="application/octet-stream"
+        sparkle:edSignature="NY5zh+3yWY6vwApIAkcEkO1WsfuXRu9e5vjDEk6M5lTqFJRSfZL15DkIpY8Lox7FVL54EoWnZmgDUxnmE87ABA==" />
+    </item>
+    <item>
       <title>Agentbox 0.7.0</title>
       <pubDate>Mon, 24 Aug 2026 12:05:00 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.7.0</link>

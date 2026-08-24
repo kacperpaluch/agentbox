@@ -111,7 +111,7 @@ Podgląd projektu pokazuje osobno dla Claude, Codex i OpenCode:
 - serwery MCP dodawane i usuwane;
 - pełną wynikową treść plików MCP.
 
-Synchronizacja skilli i MCP jest jedną operacją. Przed zapisem Agentbox tworzy backup zarządzanych katalogów i plików w `.skillbox/sync-backups/`. Jeśli którykolwiek etap zakończy się błędem, wcześniejsze zmiany tej operacji są automatycznie wycofywane. Zachowywanych jest 10 ostatnich backupów.
+Synchronizacja skilli i MCP jest jedną operacją. Przed zapisem Agentbox tworzy backup zarządzanych katalogów i plików w bibliotece, w `backups/projects/<id-projektu>/`. Jeśli którykolwiek etap zakończy się błędem, wcześniejsze zmiany tej operacji są automatycznie wycofywane. Zachowywanych jest 10 ostatnich backupów.
 
 Obce skille i ręczne wpisy MCP nie są przejmowane przez Agentbox. Konflikt nazwy z ręcznym wpisem zatrzymuje operację przed zapisem.
 
@@ -138,9 +138,21 @@ Snapshot zawiera bieżące wersje `catalog.json`, `projects.local.json` i `mcp.j
 
 W sekcji `Odzyskiwanie → Snapshoty biblioteki` można wybrać kopię na podstawie daty i przywrócić zapisane w niej pliki. Katalog `skills/` i `mcp-secrets.json` nie są zmieniane. Przed przywróceniem Agentbox tworzy snapshot aktualnego stanu.
 
-Sekcja `Odzyskiwanie → Backupy synchronizacji projektów` pokazuje zarządzane ścieżki zapisane przed synchronizacją. Przywrócenie cofa katalogi skilli, pliki MCP i manifest do wybranego stanu. Najpierw tworzony jest nowy backup aktualnego projektu, dzięki czemu można cofnąć również operację odzyskiwania.
+### Gdzie leżą kopie
 
-Backupy utworzone przez wersję 0.2.0 przed dodaniem metadanych pozostają na dysku, ale nie pojawiają się w GUI, ponieważ nie da się bezpiecznie przypisać plików `item-*` do oryginalnych ścieżek.
+Kopia sprzed zapisu istnieje wyłącznie przez czas trwania jednej synchronizacji, w katalogu tymczasowym, i jest kasowana niezależnie od tego, czy zapis się powiódł. Służy do jednego: cofnięcia zmian, gdy operacja padnie w połowie.
+
+Agentbox nie prowadzi historii kopii w folderach projektów. Nie jest potrzebna, bo biblioteka jest źródłem prawdy, manifesty mówią, co należy do Agentboxa, a stan projektu odtwarza się dwoma ruchami: `Usuń i posprzątaj pliki` (albo `agentbox project unsync`) czyści to, co Agentbox tam zapisał, a ponowna synchronizacja odtwarza to z biblioteki.
+
+W folderze projektu zostają wyłącznie manifesty własności: `.skillbox/mcp-manifest.json` i `.skillbox.json` w każdym katalogu skilli. To małe pliki JSON odpowiadające na pytanie „które wpisy tutaj są moje" — bez nich Agentbox nadpisałby ręcznie dodane skille i serwery.
+
+Wersje do 0.7.0 zostawiały historię kopii w `<projekt>/.skillbox/sync-backups/` i `mcp-backups/`. Przy najbliższej synchronizacji te katalogi są usuwane z repozytorium.
+
+Projekt, w którym nic się nie zmieniło, jest pomijany — nic nie jest zapisywane, a wynik to `Bez zmian`.
+
+Sekcja `Odzyskiwanie` dotyczy wyłącznie biblioteki: snapshotów metadanych i pełnego backupu lokalnego.
+
+
 
 Backup Git obejmuje `catalog.json`, `mcp.json` i `skills/`. Nie obejmuje lokalnych ścieżek projektów ani sekretów. Git zapewnia długoterminową historię biblioteki, natomiast snapshoty chronią ostatni stan przed przypadkowym lub uszkodzonym zapisem.
 

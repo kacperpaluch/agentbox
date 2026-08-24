@@ -126,6 +126,7 @@ public enum AgentboxCommand {
             return try await service.syncAllProjectsTransactions().map { outcome in
                 switch outcome.state {
                 case .synced: return "✓ \(outcome.plan.project.name)"
+                case .upToDate: return "= \(outcome.plan.project.name) — bez zmian"
                 case .failed(let reason): return "✗ \(outcome.plan.project.name) — cofnięto: \(reason)"
                 case .skipped: return "– \(outcome.plan.project.name) — pominięto po wcześniejszym błędzie"
                 }
@@ -150,12 +151,14 @@ public enum AgentboxCommand {
         for outcome in outcomes {
             switch outcome.state {
             case .synced: lines.append("✓ \(outcome.plan.project.name)")
+            case .upToDate: lines.append("= \(outcome.plan.project.name) — bez zmian")
             case .failed(let reason): lines.append("✗ \(outcome.plan.project.name) — cofnięto: \(reason)")
             case .skipped: lines.append("– \(outcome.plan.project.name) — pominięto")
             }
         }
         let synced = outcomes.filter { $0.state == .synced }.count
-        lines.append("Gotowe: zaktualizowano \(updates.count) skilli, zsynchronizowano \(synced) z \(outcomes.count) projektów")
+        let upToDate = outcomes.filter { $0.state == .upToDate }.count
+        lines.append("Gotowe: zaktualizowano \(updates.count) skilli, zsynchronizowano \(synced), bez zmian \(upToDate) z \(outcomes.count) projektów")
         return lines
     }
 

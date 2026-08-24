@@ -164,7 +164,9 @@ enum MCPRenderer {
 
     static func apply(previews: [MCPPreview], project: URL) throws {
         let fm = FileManager.default
-        let backup = project.appending(path: ".skillbox/mcp-backups/\(UUID().uuidString)")
+        // Scratch copies for this write only; removed whether it succeeds or fails.
+        let backup = SkillboxService.scratchDirectory()
+        defer { try? fm.removeItem(at: backup) }
         var state = try manifest(project)
         var originals: [(file: URL, backup: URL?, existed: Bool)] = []
         try protectGeneratedFiles(project)
@@ -205,7 +207,6 @@ enum MCPRenderer {
             }
             throw error
         }
-        try pruneBackups(project, keeping: 10)
     }
 
     private static func manifest(_ project: URL) throws -> [String: [String]] {
@@ -340,14 +341,6 @@ enum MCPRenderer {
         if !text.contains(marker) { text += marker + "\n" }
         text += missing.joined(separator: "\n") + "\n"
         try text.write(to: url, atomically: true, encoding: .utf8)
-    }
-
-    private static func pruneBackups(_ project: URL, keeping limit: Int) throws {
-        let root = project.appending(path: ".skillbox/mcp-backups")
-        guard FileManager.default.fileExists(atPath: root.path) else { return }
-        let items = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey])
-        let sorted = items.sorted { ((try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) > ((try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) }
-        for item in sorted.dropFirst(limit) { try FileManager.default.removeItem(at: item) }
     }
 
     private static func stripJSONComments(_ input: String) -> String {
