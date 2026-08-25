@@ -1099,9 +1099,14 @@ struct ProjectEditor: View {
     private var mcpTags: [String] { Array(Set(servers.flatMap { $0.tags ?? [] })).sorted() }
     var body: some View { ScrollView { VStack(alignment: .leading, spacing: 14) { Text(project == nil ? "Nowy projekt" : "Edytuj projekt").font(.title2.bold()); TextField("Nazwa", text: $name); HStack { TextField("Folder projektu", text: $path); Button("Wybierz…") { chooseFolder() } }; GroupBox("Narzędzia") { HStack { ForEach(Tool.allCases, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: toolBinding(tool)).toggleStyle(.checkbox) } }.padding(6) }; GroupBox("Pojedyncze skille") { ScrollView { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(skills) { skill in skillToggle(skill) } }.padding(6) }.frame(height: 150) }; GroupBox("Tagi skilli") { tagGrid(availableTags, selection: $selectedTags) }; GroupBox("Pojedyncze serwery MCP") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(servers) { server in serverToggle(server) } }.padding(6) }; GroupBox("Tagi MCP") { tagGrid(mcpTags, selection: $selectedMCPtags) }; exclusionsBox; GroupBox("Git") { VStack(alignment: .leading, spacing: 6) { Toggle("Dopisuj wygenerowane pliki MCP do .gitignore projektu", isOn: $manageGitignore).toggleStyle(.checkbox); Text(".gitignore jedzie z repozytorium, więc chroni też zespół. Agentbox dopisuje tylko własny blok i nigdy nie usuwa istniejących wpisów.").font(.caption).foregroundStyle(.secondary) }.padding(6) }; HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { onSave(Project(id: project?.id ?? UUID(), name: name, path: path, tools: Array(tools), skillIDs: Array(selected), tags: Array(selectedTags).sorted(), excludedSkillIDs: excluded.isEmpty ? nil : Array(excluded).sorted(), manageGitignore: manageGitignore), Array(selectedServers), Array(selectedMCPtags).sorted()); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || path.isEmpty || tools.isEmpty) } }.padding(24) }.frame(width: 700, height: 880).onAppear { selectedServers = Set(selectedServerIDs); selectedMCPtags = Set(selectedServerTags); if let project { name = project.name; path = project.path; tools = Set(project.tools); selected = Set(project.skillIDs); selectedTags = Set(project.tags); excluded = Set(project.excludedSkillIDs ?? []); manageGitignore = project.manageGitignore ?? false } else { manageGitignore = true } } }
 
-    /// Only skills that a tag pulls in can be excluded — an individually selected skill is removed
-    /// by unchecking it, so listing it here would be a second way to do the same thing.
-    private var tagMatched: [Skill] { skills.filter { !$0.tags.filter(selectedTags.contains).isEmpty && !selected.contains($0.id) }.sorted { $0.name < $1.name } }
+    /// Every skill a tag pulls in can be excluded here, including one that was also ticked
+    /// individually — the tag locks its checkbox, so this box is the only way to drop it.
+    private var tagMatched: [Skill] { skills.filter { covered($0.tags, by: selectedTags) }.sorted { $0.name < $1.name } }
+    /// Tags are compared case-insensitively, the same way the sync resolves them.
+    private func covered(_ tags: [String], by selection: Set<String>) -> Bool {
+        let wanted = Set(selection.map { $0.lowercased() })
+        return !wanted.isDisjoint(with: tags.map { $0.lowercased() })
+    }
     @ViewBuilder private var exclusionsBox: some View {
         GroupBox("Wykluczenia") {
             VStack(alignment: .leading, spacing: 6) {
@@ -1110,7 +1115,7 @@ struct ProjectEditor: View {
                     Text("Te skille wchodzą przez tagi. Zaznaczone zostaną pominięte w tym projekcie.").font(.caption).foregroundStyle(.secondary)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) {
                         ForEach(tagMatched) { skill in
-                            Toggle(skill.name, isOn: Binding(get: { excluded.contains(skill.id) }, set: { if $0 { excluded.insert(skill.id) } else { excluded.remove(skill.id) } })).toggleStyle(.checkbox)
+                            Toggle(skill.name, isOn: Binding(get: { excluded.contains(skill.id) }, set: { if $0 { excluded.insert(skill.id); selected.remove(skill.id) } else { excluded.remove(skill.id) } })).toggleStyle(.checkbox)
                         }
                     }
                 }
@@ -1121,14 +1126,17 @@ struct ProjectEditor: View {
     private func skillBinding(_ id: String) -> Binding<Bool> { Binding(get: { selected.contains(id) }, set: { if $0 { selected.insert(id) } else { selected.remove(id) } }) }
     private func serverBinding(_ id: UUID) -> Binding<Bool> { Binding(get: { selectedServers.contains(id) }, set: { if $0 { selectedServers.insert(id) } else { selectedServers.remove(id) } }) }
     // A selected tag pulls the skill/server in on its own; showing it checked-but-locked here makes
-    // that visible right on the list instead of only in the separate "Wykluczenia" box.
+    // that visible right on the list instead of only in the separate "Wykluczenia" box. The tag wins
+    // even over an earlier individual tick, so an item tagged later looks the same as one the tag
+    // pulled in from the start. Unticking the tag before saving brings the individual tick back;
+    // saving hands the item to the tag, because the store drops ids a tag already covers.
     private func skillToggle(_ skill: Skill) -> some View {
-        let tagCovered = !selected.contains(skill.id) && !skill.tags.filter(selectedTags.contains).isEmpty
+        let tagCovered = covered(skill.tags, by: selectedTags)
         return Toggle(skill.name, isOn: tagCovered ? .constant(true) : skillBinding(skill.id)).toggleStyle(.checkbox)
             .disabled(tagCovered).help(tagCovered ? "Wybrany przez tag — odznacz go w sekcji Wykluczenia, by pominąć" : "")
     }
     private func serverToggle(_ server: MCPServer) -> some View {
-        let tagCovered = !selectedServers.contains(server.id) && !(server.tags ?? []).filter(selectedMCPtags.contains).isEmpty
+        let tagCovered = covered(server.tags ?? [], by: selectedMCPtags)
         return Toggle(server.name, isOn: tagCovered ? .constant(true) : serverBinding(server.id)).toggleStyle(.checkbox)
             .disabled(tagCovered).help(tagCovered ? "Wybrany przez tag MCP" : "")
     }

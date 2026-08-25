@@ -6,6 +6,18 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-08-25
+
+### Naprawiono
+
+- W edytorze projektu serwer MCP albo skill zaznaczony wcześniej ręcznie wyglądał inaczej niż taki sam wciągnięty tagiem: pozostawał zwykłym zaznaczeniem zamiast zablokowanej pozycji tagu. Żeby zobaczyć go jako wybranego przez tag, trzeba było odznaczyć wszystko i wybrać tag jeszcze raz. Teraz tag ma pierwszeństwo od razu, a ręczne zaznaczenie zostaje pod spodem i wraca po odznaczeniu tagu.
+- Sekcja `Wykluczenia` pomijała skille, które były jednocześnie zaznaczone ręcznie i wciągane tagiem — po zablokowaniu ich pola nie było już jak usunąć takiego skilla z projektu. Wykluczenie zdejmuje teraz także ręczne zaznaczenie, więc w danych nie zostaje martwy wpis.
+- Dopasowanie tagów w edytorze projektu ignoruje wielkość liter, tak jak robi to synchronizacja.
+
+### Zmieniono
+
+- Zapis projektu — z aplikacji i z CLI — nie trzyma już pojedynczych zaznaczeń skilli i serwerów MCP, które i tak wciąga wybrany tag, ani skilli wpisanych na listę wykluczeń. Do projektu wchodzi dokładnie to samo co wcześniej, ale po usunięciu tagu pozycja nie zostaje w projekcie przez zapomniane zaznaczenie sprzed tagowania. Stare przypisania czyszczą się przy najbliższym zapisie projektu.
+
 ## [0.8.0] - 2026-08-25
 
 ### Dodano
@@ -224,7 +236,14 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 - Lokalny i zdalny backup Git biblioteki bez sekretów i ścieżek projektów.
 - Obraz instalacyjny DMG podpisany ad-hoc.
 
-[Unreleased]: https://github.com/kacperpaluch/agentbox/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/kacperpaluch/agentbox/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/kacperpaluch/agentbox/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/kacperpaluch/agentbox/compare/v0.7.2...v0.8.0
+[0.7.2]: https://github.com/kacperpaluch/agentbox/compare/v0.7.1...v0.7.2
+[0.7.1]: https://github.com/kacperpaluch/agentbox/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/kacperpaluch/agentbox/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/kacperpaluch/agentbox/compare/v0.5.1...v0.6.0
+[0.5.1]: https://github.com/kacperpaluch/agentbox/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/kacperpaluch/agentbox/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/kacperpaluch/agentbox/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/kacperpaluch/agentbox/compare/v0.4.0...v0.4.1

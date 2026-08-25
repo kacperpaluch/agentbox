@@ -102,7 +102,7 @@ extension SkillboxService {
     public func setMCPServers(projectID: UUID, serverIDs: [UUID], tags: [String]) async throws {
         var config = try await store.mcpConfiguration()
         var assignments = config.projectServerIDs ?? [:]
-        assignments[projectID.uuidString] = Array(Set(serverIDs))
+        assignments[projectID.uuidString] = SkillboxService.prunedServerIDs(Array(Set(serverIDs)), tags: tags, servers: config.servers)
         config.projectServerIDs = assignments
         var tagAssignments = config.projectServerTags ?? [:]
         tagAssignments[projectID.uuidString] = SkillboxService.normalizedTags(tags)

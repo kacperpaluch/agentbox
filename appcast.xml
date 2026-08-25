@@ -6,6 +6,27 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.8.1</title>
+      <pubDate>Tue, 25 Aug 2026 12:33:01 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.8.1</link>
+      <sparkle:version>17</sparkle:version>
+      <sparkle:shortVersionString>0.8.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.8.1</h2>
+        <ul>
+          <li>Serwer MCP albo skill zaznaczony wcześniej ręcznie wygląda teraz tak samo jak każdy inny wciągnięty tagiem — bez odznaczania wszystkiego i wybierania tagu od nowa.</li>
+          <li>Sekcja „Wykluczenia” pokazuje także skille zaznaczone ręcznie i objęte tagiem, więc da się je pominąć w projekcie.</li>
+          <li>Zapis projektu czyści zbędne pojedyncze zaznaczenia, które i tak pokrywa tag.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.8.1/Agentbox-0.8.1.dmg"
+        length="4921001"
+        type="application/octet-stream"
+        sparkle:edSignature="aiXFRwliVpghuiUo1rLDmLy9zaAn3l1G80sn5BF3sj0AMtHGq7IxL+in2wcncIFjmStFSM13euhIDXiZTZzSBQ==" />
+    </item>
+    <item>
       <title>Agentbox 0.8.0</title>
       <pubDate>Tue, 25 Aug 2026 12:05:46 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.8.0</link>

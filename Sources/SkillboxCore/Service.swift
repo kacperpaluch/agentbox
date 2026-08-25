@@ -220,7 +220,7 @@ public actor SkillboxService {
         guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
         var config = try await store.configuration()
         guard !config.projects.contains(where: { $0.name.caseInsensitiveCompare(project.name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(project.name) już istnieje") }
-        var stored = project; stored.path = url.path
+        var stored = Self.pruned(project, in: try await store.catalog()); stored.path = url.path
         config.projects.append(stored)
         var mcp = try await store.mcpConfiguration()
         Self.assign(&mcp, projectID: stored.id, serverIDs: serverIDs, tags: serverTags)
@@ -234,7 +234,7 @@ public actor SkillboxService {
         guard !config.projects.contains(where: { $0.id != project.id && $0.name.caseInsensitiveCompare(project.name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(project.name) już istnieje") }
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
-        config.projects[index] = project
+        config.projects[index] = Self.pruned(project, in: try await store.catalog())
         var mcp = try await store.mcpConfiguration()
         Self.assign(&mcp, projectID: project.id, serverIDs: serverIDs, tags: serverTags)
         try await store.save(config, mcp)
@@ -242,7 +242,7 @@ public actor SkillboxService {
 
     private static func assign(_ mcp: inout MCPConfiguration, projectID: UUID, serverIDs: [UUID], tags: [String]) {
         var assignments = mcp.projectServerIDs ?? [:]
-        assignments[projectID.uuidString] = Array(Set(serverIDs))
+        assignments[projectID.uuidString] = prunedServerIDs(Array(Set(serverIDs)), tags: tags, servers: mcp.servers)
         mcp.projectServerIDs = assignments
         var tagAssignments = mcp.projectServerTags ?? [:]
         tagAssignments[projectID.uuidString] = normalizedTags(tags)
@@ -251,18 +251,45 @@ public actor SkillboxService {
         mcp.projectPresetIDs[projectID.uuidString] = []
     }
 
+    static func prunedServerIDs(_ serverIDs: [UUID], tags: [String], servers: [MCPServer]) -> [UUID] {
+        let tagsByID = Dictionary(servers.map { ($0.id, $0.tags ?? []) }, uniquingKeysWith: { first, _ in first })
+        return pruneRedundant(serverIDs, coveredBy: tags) { tagsByID[$0] ?? [] }
+    }
+
     public func configureProject(name: String, skillIDs: [String], tags: [String]) async throws {
         var config = try await store.configuration()
         guard let index = config.projects.firstIndex(where: { $0.name == name }) else { throw SkillboxError.projectNotFound(name) }
-        config.projects[index].skillIDs = skillIDs; config.projects[index].tags = Self.normalizedTags(tags)
+        config.projects[index].skillIDs = skillIDs; config.projects[index].tags = tags
+        config.projects[index] = Self.pruned(config.projects[index], in: try await store.catalog())
         try await store.save(config)
     }
 
     public func configureProject(id: UUID, skillIDs: [String], tags: [String]) async throws {
         var config = try await store.configuration()
         guard let index = config.projects.firstIndex(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
-        config.projects[index].skillIDs = skillIDs; config.projects[index].tags = Self.normalizedTags(tags)
+        config.projects[index].skillIDs = skillIDs; config.projects[index].tags = tags
+        config.projects[index] = Self.pruned(config.projects[index], in: try await store.catalog())
         try await store.save(config)
+    }
+
+    /// A tag owns everything it pulls in, so keeping an individual id for a tagged skill or server
+    /// is a second source of truth: the editor already shows such an item as selected-by-tag, and
+    /// the leftover id would silently keep it in the project after the tag is removed.
+    static func pruneRedundant<ID: Hashable>(_ ids: [ID], coveredBy tags: [String], tagsOf: (ID) -> [String]) -> [ID] {
+        let wanted = Set(normalizedTags(tags))
+        return ids.filter { wanted.isDisjoint(with: tagsOf($0).map { $0.lowercased() }) }
+    }
+
+    /// Normalizes a project before it is stored: lowercased tags, no skill id that a selected tag
+    /// already covers, and no skill id that the project excludes anyway.
+    static func pruned(_ project: Project, in catalog: Catalog) -> Project {
+        var project = project
+        project.tags = normalizedTags(project.tags)
+        let excluded = Set(project.excludedSkillIDs ?? [])
+        let tagsByID = Dictionary(catalog.skills.map { ($0.id, $0.tags) }, uniquingKeysWith: { first, _ in first })
+        project.skillIDs = pruneRedundant(project.skillIDs, coveredBy: project.tags) { tagsByID[$0] ?? [] }
+            .filter { !excluded.contains($0) }
+        return project
     }
 
     /// Tags match case-insensitively everywhere, so they are stored lowercased everywhere.

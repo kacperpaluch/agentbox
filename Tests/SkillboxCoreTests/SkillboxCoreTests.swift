@@ -1057,6 +1057,41 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertEqual(stored?.tags, ["seo"], "tagi serwera są zapisywane małymi literami")
     }
 
+    func testTagSelectionDropsRedundantIndividualSelection() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "demo")
+        let folder = root.appending(path: "sample")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try "---\nname: demo\ndescription: Demo\n---\n".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        try await service.setTags(skillID: "demo", tags: ["SEO"])
+        try await service.saveMCPServer(MCPServer(name: "probe", transport: .stdio, command: "echo", tags: ["SEO"]))
+        let server = try await service.mcpConfiguration().servers.first { $0.name == "probe" }!
+
+        // Both are picked individually *and* covered by a tag — the tag owns them from now on.
+        let project = Project(name: "sample", path: folder.path, tools: [.claude], skillIDs: ["demo"], tags: ["seo"])
+        let added = try await service.addProject(project, serverIDs: [server.id], serverTags: ["seo"])
+        var stored = try await service.listProjects().first { $0.id == added.id }!
+        XCTAssertEqual(stored.skillIDs, [], "tag wciąga skilla, więc pojedyncze zaznaczenie jest zbędne")
+        let mcp = try await service.mcpConfiguration()
+        XCTAssertEqual(mcp.projectServerIDs?[added.id.uuidString], [], "tag wciąga serwer, więc jego id jest zbędne")
+
+        // The project still gets both — only the duplicate bookkeeping is gone.
+        _ = try await service.syncProject(name: "sample")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appending(path: ".claude/skills/demo/SKILL.md").path))
+        let previews = try await service.previewMCP(projectID: added.id)
+        XCTAssertTrue(previews.contains { $0.added.contains("probe") }, "\(previews.map(\.added))")
+
+        // An excluded skill loses its individual id too, otherwise the store keeps a selection
+        // that synchronization ignores.
+        stored.tags = []; stored.skillIDs = ["demo"]; stored.excludedSkillIDs = ["demo"]
+        try await service.updateProject(stored, serverIDs: [], serverTags: [])
+        let reloaded = try await service.listProjects().first { $0.id == added.id }!
+        XCTAssertEqual(reloaded.skillIDs, [], "wykluczony skill nie zostaje zaznaczony pojedynczo")
+    }
+
     func testImportingManySkillsTakesOneRecoverySnapshot() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let repo = root.appending(path: "repo")
