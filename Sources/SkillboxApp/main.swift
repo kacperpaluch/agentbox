@@ -85,7 +85,11 @@ struct OperationLogEntry: Identifiable {
         catch { serviceError = "Nie można otworzyć biblioteki w \(rootPath): \(error.localizedDescription)" }
         Task { await reload() }
     }
-    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); if let service { hasOpenAIKey = try await service.hasMCPAIKey(.openAI); hasAnthropicKey = try await service.hasMCPAIKey(.claude) }; if selection == nil { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription } }
+    // Statuses depend on the exact things reload() refreshes (skills, tags, MCP servers and their
+    // tags), so it recomputes them here too. That is the only place callers need to remember to
+    // call — a skill tag edit or a new tagged MCP server no longer leaves the Projects tab showing
+    // a stale "synced" badge until someone happens to touch a project directly.
+    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); if let service { hasOpenAIKey = try await service.hasMCPAIKey(.openAI); hasAnthropicKey = try await service.hasMCPAIKey(.claude) }; if selection == nil { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; await loadStatuses() }
     func loadMarkdown() async { guard let selection else { markdown = ""; return }; markdown = (try? await service?.skillMarkdown(skillID: selection)) ?? "" }
     func addLocal(_ url: URL) async { await perform(autoBackup: true) { _ = try await self.service?.addLocal(path: url.path); self.message = "Dodano skill z dysku" } }
     func addGit(_ url: String, subpath: String) async { await perform(autoBackup: true) { let urls = url.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }; var count = 0; for item in urls { count += try await self.service?.addGitCollection(url: item, subpath: subpath.isEmpty ? nil : subpath).count ?? 0 }; self.message = "Zaimportowano \(count) skilli" } }
@@ -96,15 +100,15 @@ struct OperationLogEntry: Identifiable {
         do {
             try await service?.saveSkillMarkdown(skillID: id, content: content)
             message = "Zapisano \(id)"; record(.success, message)
-            await reload(); await loadStatuses(); scheduleAutomaticBackup(); return true
+            await reload(); scheduleAutomaticBackup(); return true
         } catch { message = error.localizedDescription; record(.error, message); return false }
     }
     func saveTags(_ id: String, text: String) async { await perform(autoBackup: true) { try await self.service?.setTags(skillID: id, tags: Self.csv(text)); self.message = "Zapisano tagi" } }
     func addTags(_ ids: Set<String>, text: String) async { await perform(autoBackup: true) { try await self.service?.addTags(skillIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) skilli" } }
     func deleteSkill(_ id: String) async { await perform(autoBackup: true) { try await self.service?.deleteSkill(skillID: id); if self.selection == id { self.selection = nil; self.markdown = "" }; self.updateAvailable.remove(id); self.message = "Usunięto skill \(id)" } }
-    func addProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async { await perform { _ = try await self.service?.addProject(project, serverIDs: serverIDs, serverTags: serverTags); self.message = "Dodano projekt" }; await loadStatuses() }
-    func addProjects(_ projects: [Project], serverIDs: [UUID], serverTags: [String]) async { await perform { for project in projects { _ = try await self.service?.addProject(project, serverIDs: serverIDs, serverTags: serverTags) }; self.message = "Dodano \(projects.count) projektów" }; await loadStatuses() }
-    func updateProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async { await perform { try await self.service?.updateProject(project, serverIDs: serverIDs, serverTags: serverTags); self.message = "Zapisano projekt" }; await loadStatuses() }
+    func addProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async { await perform { _ = try await self.service?.addProject(project, serverIDs: serverIDs, serverTags: serverTags); self.message = "Dodano projekt" } }
+    func addProjects(_ projects: [Project], serverIDs: [UUID], serverTags: [String]) async { await perform { for project in projects { _ = try await self.service?.addProject(project, serverIDs: serverIDs, serverTags: serverTags) }; self.message = "Dodano \(projects.count) projektów" } }
+    func updateProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async { await perform { try await self.service?.updateProject(project, serverIDs: serverIDs, serverTags: serverTags); self.message = "Zapisano projekt" } }
     func selectedMCPServerIDs(for project: Project) -> [UUID] { let direct = mcp.projectServerIDs?[project.id.uuidString] ?? []; let legacyPresetIDs = Set(mcp.projectPresetIDs[project.id.uuidString] ?? []); let legacy = mcp.presets.filter { legacyPresetIDs.contains($0.id) }.flatMap(\.serverIDs); return Array(Set(direct + legacy)) }
     func deleteProject(_ project: Project, removingFiles: Bool) async {
         await perform {
@@ -117,7 +121,6 @@ struct OperationLogEntry: Identifiable {
                 self.message = "Usunięto projekt \(project.name) z Agentbox; pliki w jego folderze zostały bez zmian"
             }
         }
-        await loadStatuses()
     }
     func loadStatuses() async {
         isCheckingStatuses = true; defer { isCheckingStatuses = false }
@@ -127,7 +130,6 @@ struct OperationLogEntry: Identifiable {
     }
     func unsyncProject(_ project: Project) async {
         await perform { let removed = try await self.service?.unsyncProject(id: project.id) ?? []; self.message = "Usunięto \(removed.count) elementów z \(project.name)" }
-        await loadStatuses()
     }
     func adoptableSkills(_ project: Project) async throws -> [AdoptableSkill] {
         guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
@@ -135,7 +137,6 @@ struct OperationLogEntry: Identifiable {
     }
     func adoptSkills(_ items: [AdoptableSkill]) async {
         await perform { let adopted = try await self.service?.adoptSkills(items) ?? []; self.message = "Przejęto \(adopted.count) skilli do biblioteki" }
-        await loadStatuses()
     }
     func loadBackupStatus() async { backupStatus = (try? await service?.backupStatus()) ?? "Nie można odczytać statusu." }
     func backup(remote: String) async { await perform { self.message = try await self.service?.backup(remote: remote.isEmpty ? nil : remote) ?? "Gotowe" }; await loadBackupStatus() }
@@ -156,7 +157,7 @@ struct OperationLogEntry: Identifiable {
     func deleteMCPServer(_ id: UUID) async { await perform(autoBackup: true) { try await self.service?.deleteMCPServer(id: id); self.message = "Usunięto serwer MCP" } }
     func previewMCP(_ project: Project) async throws -> [MCPPreview] { try await service?.previewMCP(projectID: project.id) ?? [] }
     func previewProjectSync(_ project: Project) async throws -> ProjectSyncPreview { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewProjectSync(projectID: project.id) }
-    func syncEverything(_ project: Project) async { await perform { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille i MCP dla \(project.name)" }; await loadStatuses() }
+    func syncEverything(_ project: Project) async { await perform { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille i MCP dla \(project.name)" } }
     func previewAllProjectsSync() async throws -> [ProjectSyncPlan] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewAllProjectsSync() }
     func syncAllProjects() async -> [ProjectSyncOutcome] {
         isWorking = true
@@ -1096,7 +1097,7 @@ struct ProjectEditor: View {
     @State private var manageGitignore = false
     private var availableTags: [String] { Array(Set(skills.flatMap(\.tags))).sorted() }
     private var mcpTags: [String] { Array(Set(servers.flatMap { $0.tags ?? [] })).sorted() }
-    var body: some View { ScrollView { VStack(alignment: .leading, spacing: 14) { Text(project == nil ? "Nowy projekt" : "Edytuj projekt").font(.title2.bold()); TextField("Nazwa", text: $name); HStack { TextField("Folder projektu", text: $path); Button("Wybierz…") { chooseFolder() } }; GroupBox("Narzędzia") { HStack { ForEach(Tool.allCases, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: toolBinding(tool)).toggleStyle(.checkbox) } }.padding(6) }; GroupBox("Pojedyncze skille") { ScrollView { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(skills) { skill in Toggle(skill.name, isOn: skillBinding(skill.id)).toggleStyle(.checkbox) } }.padding(6) }.frame(height: 150) }; GroupBox("Tagi skilli") { tagGrid(availableTags, selection: $selectedTags) }; GroupBox("Pojedyncze serwery MCP") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(servers) { server in Toggle(server.name, isOn: serverBinding(server.id)).toggleStyle(.checkbox) } }.padding(6) }; GroupBox("Tagi MCP") { tagGrid(mcpTags, selection: $selectedMCPtags) }; exclusionsBox; GroupBox("Git") { VStack(alignment: .leading, spacing: 6) { Toggle("Dopisuj wygenerowane pliki MCP do .gitignore projektu", isOn: $manageGitignore).toggleStyle(.checkbox); Text(".gitignore jedzie z repozytorium, więc chroni też zespół. Agentbox dopisuje tylko własny blok i nigdy nie usuwa istniejących wpisów.").font(.caption).foregroundStyle(.secondary) }.padding(6) }; HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { onSave(Project(id: project?.id ?? UUID(), name: name, path: path, tools: Array(tools), skillIDs: Array(selected), tags: Array(selectedTags).sorted(), excludedSkillIDs: excluded.isEmpty ? nil : Array(excluded).sorted(), manageGitignore: manageGitignore), Array(selectedServers), Array(selectedMCPtags).sorted()); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || path.isEmpty || tools.isEmpty) } }.padding(24) }.frame(width: 700, height: 880).onAppear { selectedServers = Set(selectedServerIDs); selectedMCPtags = Set(selectedServerTags); if let project { name = project.name; path = project.path; tools = Set(project.tools); selected = Set(project.skillIDs); selectedTags = Set(project.tags); excluded = Set(project.excludedSkillIDs ?? []); manageGitignore = project.manageGitignore ?? false } else { manageGitignore = true } } }
+    var body: some View { ScrollView { VStack(alignment: .leading, spacing: 14) { Text(project == nil ? "Nowy projekt" : "Edytuj projekt").font(.title2.bold()); TextField("Nazwa", text: $name); HStack { TextField("Folder projektu", text: $path); Button("Wybierz…") { chooseFolder() } }; GroupBox("Narzędzia") { HStack { ForEach(Tool.allCases, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: toolBinding(tool)).toggleStyle(.checkbox) } }.padding(6) }; GroupBox("Pojedyncze skille") { ScrollView { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(skills) { skill in skillToggle(skill) } }.padding(6) }.frame(height: 150) }; GroupBox("Tagi skilli") { tagGrid(availableTags, selection: $selectedTags) }; GroupBox("Pojedyncze serwery MCP") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(servers) { server in serverToggle(server) } }.padding(6) }; GroupBox("Tagi MCP") { tagGrid(mcpTags, selection: $selectedMCPtags) }; exclusionsBox; GroupBox("Git") { VStack(alignment: .leading, spacing: 6) { Toggle("Dopisuj wygenerowane pliki MCP do .gitignore projektu", isOn: $manageGitignore).toggleStyle(.checkbox); Text(".gitignore jedzie z repozytorium, więc chroni też zespół. Agentbox dopisuje tylko własny blok i nigdy nie usuwa istniejących wpisów.").font(.caption).foregroundStyle(.secondary) }.padding(6) }; HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { onSave(Project(id: project?.id ?? UUID(), name: name, path: path, tools: Array(tools), skillIDs: Array(selected), tags: Array(selectedTags).sorted(), excludedSkillIDs: excluded.isEmpty ? nil : Array(excluded).sorted(), manageGitignore: manageGitignore), Array(selectedServers), Array(selectedMCPtags).sorted()); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || path.isEmpty || tools.isEmpty) } }.padding(24) }.frame(width: 700, height: 880).onAppear { selectedServers = Set(selectedServerIDs); selectedMCPtags = Set(selectedServerTags); if let project { name = project.name; path = project.path; tools = Set(project.tools); selected = Set(project.skillIDs); selectedTags = Set(project.tags); excluded = Set(project.excludedSkillIDs ?? []); manageGitignore = project.manageGitignore ?? false } else { manageGitignore = true } } }
 
     /// Only skills that a tag pulls in can be excluded — an individually selected skill is removed
     /// by unchecking it, so listing it here would be a second way to do the same thing.
@@ -1119,6 +1120,18 @@ struct ProjectEditor: View {
     private func toolBinding(_ tool: Tool) -> Binding<Bool> { Binding(get: { tools.contains(tool) }, set: { if $0 { tools.insert(tool) } else { tools.remove(tool) } }) }
     private func skillBinding(_ id: String) -> Binding<Bool> { Binding(get: { selected.contains(id) }, set: { if $0 { selected.insert(id) } else { selected.remove(id) } }) }
     private func serverBinding(_ id: UUID) -> Binding<Bool> { Binding(get: { selectedServers.contains(id) }, set: { if $0 { selectedServers.insert(id) } else { selectedServers.remove(id) } }) }
+    // A selected tag pulls the skill/server in on its own; showing it checked-but-locked here makes
+    // that visible right on the list instead of only in the separate "Wykluczenia" box.
+    private func skillToggle(_ skill: Skill) -> some View {
+        let tagCovered = !selected.contains(skill.id) && !skill.tags.filter(selectedTags.contains).isEmpty
+        return Toggle(skill.name, isOn: tagCovered ? .constant(true) : skillBinding(skill.id)).toggleStyle(.checkbox)
+            .disabled(tagCovered).help(tagCovered ? "Wybrany przez tag — odznacz go w sekcji Wykluczenia, by pominąć" : "")
+    }
+    private func serverToggle(_ server: MCPServer) -> some View {
+        let tagCovered = !selectedServers.contains(server.id) && !(server.tags ?? []).filter(selectedMCPtags.contains).isEmpty
+        return Toggle(server.name, isOn: tagCovered ? .constant(true) : serverBinding(server.id)).toggleStyle(.checkbox)
+            .disabled(tagCovered).help(tagCovered ? "Wybrany przez tag MCP" : "")
+    }
     private func tagGrid(_ tags: [String], selection: Binding<Set<String>>) -> some View { Group { if tags.isEmpty { Text("Brak tagów.").foregroundStyle(.secondary).padding(6) } else { LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], alignment: .leading) { ForEach(tags, id: \.self) { tag in Toggle("#\(tag)", isOn: Binding(get: { selection.wrappedValue.contains(tag) }, set: { if $0 { selection.wrappedValue.insert(tag) } else { selection.wrappedValue.remove(tag) } })).toggleStyle(.checkbox) } }.padding(6) } } }
     private func chooseFolder() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; if panel.runModal() == .OK { path = panel.url?.path ?? path } }
 }

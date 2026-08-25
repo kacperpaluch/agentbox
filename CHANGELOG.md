@@ -6,6 +6,16 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-25
+
+### Dodano
+
+- W edytorze projektu zaznaczenie tagu — skilla albo MCP — zaznacza i blokuje od razu odpowiednie pozycje na liście `Pojedyncze skille`/`Pojedyncze serwery MCP`, więc widać, co dokładnie wchodzi przez tag, bez zaglądania do osobnej sekcji.
+
+### Naprawiono
+
+- Status projektów w zakładce `Projekty` nie był odświeżany po dodaniu tagu do skilla, edycji tagów serwera MCP ani dodaniu/usunięciu serwera — badge pokazywał stary stan (np. `Aktualny`), dopóki użytkownik nie kliknął `Sprawdź stan` albo nie zrobił czegoś bezpośrednio na projekcie. Sama synchronizacja zawsze liczyła się poprawnie na świeżo; teraz status odświeża się automatycznie po każdej takiej zmianie.
+
 ## [0.7.2] - 2026-08-24
 
 ### Naprawiono

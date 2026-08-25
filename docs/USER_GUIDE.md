@@ -76,7 +76,7 @@ Tagi dodaje się w szczegółach serwera MCP. Menu `Używane tagi` pokazuje istn
 
 ### Wykluczenia w projekcie
 
-Projekt może wciągać skille tagiem i jednocześnie pomijać wybrane pozycje. W edytorze projektu sekcja `Wykluczenia` pokazuje skille, które wchodzą przez zaznaczone tagi; zaznaczenie skilla pomija go w tym jednym projekcie. Skille wybrane pojedynczo usuwa się po prostu odznaczając je na liście.
+Projekt może wciągać skille tagiem i jednocześnie pomijać wybrane pozycje. W edytorze projektu zaznaczenie tagu — skilla albo MCP — od razu zaznacza i blokuje odpowiednie pozycje na liście `Pojedyncze skille`/`Pojedyncze serwery MCP`, więc widać, co wchodzi przez tag, bez otwierania osobnej listy. Sekcja `Wykluczenia` pokazuje te same skille jeszcze raz — zaznaczenie skilla tam pomija go w tym jednym projekcie. Skille wybrane pojedynczo usuwa się po prostu odznaczając je na liście.
 
 ### Usuwanie projektu i sprzątanie plików
 
