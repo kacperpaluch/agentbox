@@ -6,6 +6,26 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.8.0</title>
+      <pubDate>Tue, 25 Aug 2026 12:05:46 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.8.0</link>
+      <sparkle:version>16</sparkle:version>
+      <sparkle:shortVersionString>0.8.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.8.0</h2>
+        <ul>
+          <li>Zaznaczenie tagu w edytorze projektu zaznacza od razu pasujące skille i serwery MCP na liście pojedynczych pozycji.</li>
+          <li>Status projektów odświeża się teraz po każdej zmianie skilli, tagów albo serwerów MCP, nie tylko po akcjach na samym projekcie.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.8.0/Agentbox-0.8.0.dmg"
+        length="4912235"
+        type="application/octet-stream"
+        sparkle:edSignature="KZZM0yZyq8R//DQfWK/4G2G3FUX0YWKFZPboNwt4+nemqohTW2dP2hWrjpFLwZ8gMtxOFvveyLb4L6MIO3QZCQ==" />
+    </item>
+    <item>
       <title>Agentbox 0.7.2</title>
       <pubDate>Mon, 24 Aug 2026 19:49:42 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.7.2</link>
