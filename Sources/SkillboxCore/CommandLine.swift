@@ -11,7 +11,7 @@ public enum AgentboxCommand {
       agentbox list | tag <skill> <tag...> | update <skill|--all>
       agentbox new <id> [--name x] [--description y] [--tags a,b] [--file plik|-]
       agentbox project add|set|list|status|adopt|unsync ...
-      agentbox project root-add|roots|scan|adopt-new|ignore-new ...
+      agentbox project root-add|root-adopt|roots|scan|adopt-new|ignore-new ...
       agentbox sync project <name> [--dry-run]
       agentbox sync all [--dry-run]
       agentbox sync global [--skills a,b] [--tags x] [--tools claude,codex,opencode]
@@ -119,6 +119,19 @@ public enum AgentboxCommand {
             let root = ProjectRoot(name: rest[1], path: folderURL.path, tools: tools, skillIDs: csv("--skills", in: args), tags: csv("--tags", in: args), manageGitignore: args.contains("--gitignore"), watchesNewFolders: !args.contains("--no-watch"))
             let stored = try await service.addProjectRoot(root, folders: picked, serverIDs: [], serverTags: [])
             return ["Dodano folder nadrzędny \(stored.name) (\(picked.count) projektów)"]
+        case "root-adopt" where rest.count >= 3:
+            // Existing projects in the folder join it; --keep-own names the ones that stay on their
+            // own settings instead of the folder's.
+            let folderURL = URL(fileURLWithPath: rest[2]).standardizedFileURL
+            let inside = try await service.storedProjects().filter { URL(fileURLWithPath: $0.path).standardizedFileURL.deletingLastPathComponent().path == folderURL.path }
+            guard !inside.isEmpty else { throw SkillboxError.projectNotFound("brak projektów w \(folderURL.path)") }
+            let keepOwn = Set(csv("--keep-own", in: args))
+            let owners = inside.filter { keepOwn.contains($0.name) }.map(\.id)
+            let followers = inside.filter { !keepOwn.contains($0.name) }.map(\.id)
+            let tools = (option("--tools", in: args) ?? "").split(separator: ",").compactMap { Tool(rawValue: String($0)) }
+            let root = ProjectRoot(name: rest[1], path: folderURL.path, tools: tools.isEmpty ? Array(Set(inside.flatMap(\.tools))) : tools, skillIDs: csv("--skills", in: args), tags: csv("--tags", in: args), manageGitignore: args.contains("--gitignore"), watchesNewFolders: !args.contains("--no-watch"))
+            let stored = try await service.adoptProjectsIntoRoot(root, following: followers, keepingOwnSettings: owners, serverIDs: [], serverTags: [])
+            return ["Utworzono folder nadrzędny \(stored.name): \(followers.count) projektów na wspólnych ustawieniach, \(owners.count) z własnymi"]
         case "roots":
             let roots = try await service.projectRoots()
             guard !roots.isEmpty else { return ["Brak folderów nadrzędnych."] }
@@ -170,7 +183,7 @@ public enum AgentboxCommand {
         return found.filter { $0.rootID == root.id }
     }
 
-    private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode] | set <nazwa> [--skills a,b] [--tags web] | list | status | adopt <nazwa> [--yes] | unsync <nazwa> | root-add <nazwa> <folder> [--tools t] [--skills a,b] [--tags x] [--folders alpha,beta] [--no-watch] | roots | scan [--root nazwa] | adopt-new [--root nazwa] [--yes] [--sync] | ignore-new [--root nazwa] | unignore <folder>"
+    private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode] | set <nazwa> [--skills a,b] [--tags web] | list | status | adopt <nazwa> [--yes] | unsync <nazwa> | root-adopt <nazwa> <folder> [--skills a,b] [--tags x] [--keep-own projekt] | root-add <nazwa> <folder> [--tools t] [--skills a,b] [--tags x] [--folders alpha,beta] [--no-watch] | roots | scan [--root nazwa] | adopt-new [--root nazwa] [--yes] [--sync] | ignore-new [--root nazwa] | unignore <folder>"
 
     private static func sync(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
         guard let mode = rest.first else { return [syncUsage] }
@@ -213,9 +226,11 @@ public enum AgentboxCommand {
         if updates.isEmpty { lines.append("Wszystkie skille są aktualne") }
         else { for id in updates { _ = try await service.update(skillID: id); lines.append("Zaktualizowano \(id)") } }
         lines.append("2/4 Tworzenie pełnego backupu lokalnego…")
-        lines.append("Utworzono \(try await service.createFullBackup(applicationVersion: "CLI").name)")
+        let backupName = try await service.createFullBackup(applicationVersion: "CLI").name
+        lines.append("Utworzono \(backupName)")
         lines.append("3/4 Tworzenie backupu Git…")
-        lines.append(try await service.backup(remote: option("--remote", in: args), message: option("--message", in: args) ?? "Agentbox refresh", push: true, requireRemote: true))
+        let gitBackup = try await service.backup(remote: option("--remote", in: args), message: option("--message", in: args) ?? "Agentbox refresh", push: true, requireRemote: true)
+        lines.append(gitBackup)
         lines.append("4/4 Synchronizacja projektów…")
         let outcomes = try await service.syncAllProjectsTransactions()
         for outcome in outcomes {
@@ -226,10 +241,44 @@ public enum AgentboxCommand {
             case .skipped: lines.append("– \(outcome.plan.project.name) — pominięto")
             }
         }
-        let synced = outcomes.filter { $0.state == .synced }.count
-        let upToDate = outcomes.filter { $0.state == .upToDate }.count
-        lines.append("Gotowe: zaktualizowano \(updates.count) skilli, zsynchronizowano \(synced), bez zmian \(upToDate) z \(outcomes.count) projektów")
+        return lines + summary(updates: updates, backupName: backupName, gitBackup: gitBackup, outcomes: outcomes)
+    }
+
+    /// A closing block for `refresh`. The per-project lines above scroll away on a long run, and a
+    /// rolled-back or skipped project was reported only there — so the run could end looking fine
+    /// while a project had actually failed. The summary names those projects explicitly.
+    static func summary(updates: [String], backupName: String, gitBackup: String, outcomes: [ProjectSyncOutcome]) -> [String] {
+        let synced = outcomes.filter { $0.state == .synced }
+        let upToDate = outcomes.filter { $0.state == .upToDate }
+        let failed = outcomes.filter { if case .failed = $0.state { return true } else { return false } }
+        let skipped = outcomes.filter { $0.state == .skipped }
+        var counts = ["✓ \(synced.count) zsynchronizowano", "= \(upToDate.count) bez zmian"]
+        if !failed.isEmpty { counts.append("✗ \(failed.count) cofnięto") }
+        if !skipped.isEmpty { counts.append("– \(skipped.count) pominięto") }
+        var lines = [
+            String(repeating: "─", count: 52),
+            "PODSUMOWANIE",
+            "  Skille          \(updates.isEmpty ? "bez aktualizacji" : "zaktualizowano \(updates.count): \(updates.joined(separator: ", "))")",
+            "  Backup lokalny  \(backupName)",
+            "  Backup Git      \(compact(gitBackup))",
+            "  Projekty        \(outcomes.count) — \(counts.joined(separator: ", "))"
+        ]
+        if !failed.isEmpty {
+            lines.append("  Wymaga uwagi:")
+            for outcome in failed {
+                if case .failed(let reason) = outcome.state { lines.append("    ✗ \(outcome.plan.project.name) — \(reason)") }
+            }
+            for outcome in skipped { lines.append("    – \(outcome.plan.project.name) — nie próbowano po błędzie") }
+        }
         return lines
+    }
+
+    /// Git reports a push over several lines. The summary is a block of aligned one-liners, so the
+    /// raw output goes above and this keeps only its gist.
+    private static func compact(_ text: String, limit: Int = 88) -> String {
+        let joined = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " · ")
+        guard joined.count > limit else { return joined.isEmpty ? "bez zmian" : joined }
+        return String(joined.prefix(limit - 1)) + "…"
     }
 
     private static func mcp(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {

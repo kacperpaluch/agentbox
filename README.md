@@ -105,6 +105,8 @@ Projekt wskazuje istniejący folder na dysku oraz obsługiwane narzędzia. Możn
 
 Opcja `Dodaj wiele` przyjmuje folder nadrzędny, wykrywa jego bezpośrednie podfoldery i pozwala utworzyć z nich projekty. Foldery już dodane do Agentbox są pomijane. Ustawienia zapisują się domyślnie na samym folderze nadrzędnym, a jego projekty je dziedziczą — jedna zmiana w folderze obejmuje wszystkie. Pojedynczy projekt może przejść na własne ustawienia w swoim edytorze, a odznaczenie opcji przy dodawaniu daje każdemu projektowi niezależną kopię konfiguracji.
 
+Projekty dodane wcześniej można objąć wspólnymi ustawieniami przyciskiem `Wspólne ustawienia…` w nagłówku ich grupy.
+
 Folder nadrzędny może też obserwować nowe podfoldery. Świeżo sklonowane repozytorium pojawia się wtedy jako pytanie nad listą projektów: dodać i zsynchronizować, dodać bez synchronizacji, czy pomijać. Odmowa jest zapamiętywana.
 
 Lista projektów jest grupowana według folderu nadrzędnego, dzięki czemu projekty z jednego katalogu roboczego są widoczne razem. Każdą grupę można zwinąć osobno albo rozwinąć i zwinąć wszystkie grupy z menu pod listą.

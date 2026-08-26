@@ -117,6 +117,9 @@ struct OperationLogEntry: Identifiable {
             }
         }
     }
+    func adoptGroupIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], serverIDs: [UUID], serverTags: [String]) {
+        Task { await perform { _ = try await self.service?.adoptProjectsIntoRoot(root, following: following, keepingOwnSettings: keepingOwnSettings, serverIDs: serverIDs, serverTags: serverTags); self.message = "Utworzono folder \(root.name); wspólnych ustawień używa \(following.count) projektów" } }
+    }
     func saveRoot(_ root: ProjectRoot, serverIDs: [UUID], serverTags: [String]) async { await perform { try await self.service?.updateProjectRoot(root, serverIDs: serverIDs, serverTags: serverTags); self.message = "Zapisano ustawienia folderu \(root.name)" } }
     func deleteRoot(_ root: ProjectRoot) async { await perform { try await self.service?.deleteProjectRoot(id: root.id); self.message = "Usunięto ustawienia folderu \(root.name); projekty zachowały to, co dziedziczyły" } }
     func clearIgnoredFolders(_ root: ProjectRoot) async { await perform { try await self.service?.clearIgnoredFolders(rootID: root.id); self.message = "Wyczyszczono pominięte podfoldery w \(root.name)" } }
@@ -471,6 +474,7 @@ struct ProjectsView: View {
     @State private var collapsedGroups = Set<String>()
     @State private var editingRoot: ProjectRoot?
     @State private var deletingRoot: ProjectRoot?
+    @State private var settingUpRoot: ProjectGroup?
     @State private var showDetected = false
 
     private struct ProjectGroup: Identifiable {
@@ -512,6 +516,7 @@ struct ProjectsView: View {
         .navigationTitle("Projekty")
         .sheet(isPresented: $showBatch) { BatchProjectView(skills: model.skills, servers: model.mcp.servers, existingProjects: model.projects, existingRoots: model.projectRoots) { request in Task { await model.addBatch(request) } } }
         .sheet(isPresented: $showDetected) { DetectedFoldersView(model: model) }
+        .sheet(item: $settingUpRoot) { group in GroupRootSetupView(model: model, folderPath: group.path, projects: group.projects) }
         .sheet(item: $editingRoot) { root in ProjectRootEditor(skills: model.skills, servers: model.mcp.servers, root: root, followingProjects: model.storedProjects.filter { $0.rootID == root.id && $0.overridesRoot != true }.count, selectedServerIDs: model.selectedMCPServerIDs(selectionID: root.id), selectedServerTags: model.mcp.projectServerTags?[root.id.uuidString] ?? []) { updated, servers, tags in Task { await model.saveRoot(updated, serverIDs: servers, serverTags: tags) } } }
         .sheet(item: $editing) { project in ProjectEditor(skills: model.skills, servers: model.mcp.servers, project: model.storedProject(id: project.id) ?? project, root: model.root(for: project), inheritedFrom: model.inheritsRoot(project) ? model.projects.first { $0.id == project.id } : nil, selectedServerIDs: model.selectedMCPServerIDs(for: project), selectedServerTags: model.selectedMCPServerTags(for: project)) { updated, servers, tags in Task { await model.updateProject(updated, serverIDs: servers, serverTags: tags) } } }
         .sheet(item: $previewProject) { project in MCPPreviewView(model: model, project: project) }
@@ -568,6 +573,12 @@ struct ProjectsView: View {
                         if let root = group.root {
                             Button { editingRoot = root } label: { Label("Ustawienia folderu", systemImage: "gearshape") }.buttonStyle(.bordered).controlSize(.small)
                             Button { deletingRoot = root } label: { Image(systemName: "trash") }.buttonStyle(.borderless).controlSize(.small).help("Usuń wspólne ustawienia folderu")
+                        } else {
+                            // Projects added before parent folders existed, or added one by one, have
+                            // no folder to inherit from. This is where they get one.
+                            Button { settingUpRoot = group } label: { Label("Wspólne ustawienia…", systemImage: "folder.badge.gearshape") }
+                                .buttonStyle(.bordered).controlSize(.small)
+                                .help("Ustaw skille i MCP wspólne dla wszystkich projektów w tym folderze")
                         }
                     }
                     .textCase(nil)
@@ -1474,6 +1485,118 @@ struct BatchProjectView: View {
         }
         let folder = ProjectRoot(name: rootName, path: root, tools: Array(tools), skillIDs: Array(selectedSkills), tags: Array(selectedTags).sorted(), excludedSkillIDs: exclusions, manageGitignore: manageGitignore, watchesNewFolders: watchesNewFolders)
         onSave(BatchProjectRequest(root: folder, folders: chosen.map(\.path), serverIDs: Array(selectedServers), serverTags: Array(selectedMCPtags).sorted()))
+    }
+}
+
+/// Turns a folder that already holds projects into a parent folder with shared settings.
+///
+/// Adopting existing projects is not a neutral operation — a project that starts following the
+/// folder synchronizes what the folder says, not what it said before. The form therefore starts
+/// from everything the group already uses together and spells out, per project, what would change.
+struct GroupRootSetupView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var model: AppModel
+    let folderPath: String
+    let projects: [Project]
+    @State private var name = ""
+    @State private var tools = Set<Tool>()
+    @State private var selectedSkills = Set<String>()
+    @State private var selectedTags = Set<String>()
+    @State private var selectedServers = Set<UUID>()
+    @State private var selectedMCPtags = Set<String>()
+    @State private var excluded = Set<String>()
+    @State private var manageGitignore = false
+    @State private var watchesNewFolders = true
+    @State private var following = Set<UUID>()
+    @State private var loaded = false
+
+    private var nameTaken: Bool { model.projectRoots.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame } }
+
+    var body: some View {
+        ScrollView { VStack(alignment: .leading, spacing: 14) {
+            Text("Wspólne ustawienia folderu").font(.title2.bold())
+            Text(folderPath).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            Text("Skille, tagi i serwery MCP ustawione tutaj obowiązują wszystkie zaznaczone projekty. Późniejsza zmiana w folderze obejmuje je wszystkie naraz.").foregroundStyle(.secondary)
+            TextField("Nazwa folderu", text: $name)
+            if nameTaken { Label("Folder nadrzędny o tej nazwie już istnieje.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }
+            GroupBox("Projekty w tym folderze") { VStack(alignment: .leading, spacing: 7) {
+                Text("Zaznaczone przechodzą na wspólne ustawienia. Odznaczone zostają w folderze, ale zachowują to, co mają dziś.").font(.caption).foregroundStyle(.secondary)
+                ForEach(projects) { project in
+                    Toggle(isOn: setBinding(project.id, in: $following)) {
+                        HStack {
+                            Text(project.name)
+                            Spacer()
+                            Text(change(for: project)).font(.caption).foregroundStyle(following.contains(project.id) ? .secondary : .tertiary)
+                        }
+                    }.toggleStyle(.checkbox)
+                }
+                HStack { Button("Zaznacz wszystkie") { following = Set(projects.map(\.id)) }; Button("Odznacz wszystkie") { following.removeAll() } }
+            }.padding(6) }
+            GroupBox("Nowe podfoldery") { VStack(alignment: .leading, spacing: 6) {
+                Toggle("Pytaj, gdy w tym folderze pojawi się nowy podfolder", isOn: $watchesNewFolders).toggleStyle(.checkbox)
+                Text("Nowy podfolder — na przykład świeżo sklonowane repozytorium — pojawi się jako pytanie nad listą projektów.").font(.caption).foregroundStyle(.secondary)
+            }.padding(6) }
+            SharedSettingsForm(skills: model.skills, servers: model.mcp.servers, tools: $tools, selectedSkills: $selectedSkills, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, excluded: $excluded, manageGitignore: $manageGitignore)
+            HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Utwórz folder nadrzędny") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || nameTaken || tools.isEmpty) }
+        }.padding(24) }
+        .frame(width: 760, height: 900)
+        .onAppear { load() }
+    }
+
+    /// Starts from everything the projects in the folder already use together, so creating the
+    /// folder does not quietly take anything away from any of them.
+    private func load() {
+        guard !loaded else { return }
+        loaded = true
+        name = URL(fileURLWithPath: folderPath).lastPathComponent
+        following = Set(projects.map(\.id))
+        tools = Set(projects.flatMap(\.tools))
+        selectedSkills = Set(projects.flatMap(\.skillIDs))
+        selectedTags = Set(projects.flatMap(\.tags))
+        // Only what every project already excludes stays excluded; anything else would drop a skill
+        // that one of them deliberately keeps.
+        excluded = projects.dropFirst().reduce(Set(projects.first?.excludedSkillIDs ?? [])) { $0.intersection(Set($1.excludedSkillIDs ?? [])) }
+        manageGitignore = !projects.isEmpty && projects.allSatisfy { $0.manageGitignore == true }
+        selectedServers = Set(projects.flatMap { model.selectedMCPServerIDs(for: $0) })
+        selectedMCPtags = Set(projects.flatMap { model.selectedMCPServerTags(for: $0) })
+    }
+
+    /// What the project would gain or lose, counted the same way synchronization resolves it.
+    private func change(for project: Project) -> String {
+        guard following.contains(project.id) else { return "zachowa własne" }
+        let before = resolvedSkills(ids: Set(project.skillIDs), tags: Set(project.tags), excluded: Set(project.excludedSkillIDs ?? []))
+        let after = resolvedSkills(ids: selectedSkills, tags: selectedTags, excluded: excluded)
+        let beforeServers = resolvedServers(ids: Set(model.selectedMCPServerIDs(for: project)), tags: Set(model.selectedMCPServerTags(for: project)))
+        let afterServers = resolvedServers(ids: selectedServers, tags: selectedMCPtags)
+        var parts: [String] = []
+        let addedSkills = after.subtracting(before).count, removedSkills = before.subtracting(after).count
+        let addedServers = afterServers.subtracting(beforeServers).count, removedServers = beforeServers.subtracting(afterServers).count
+        if addedSkills > 0 { parts.append("+\(addedSkills) skilli") }
+        if removedSkills > 0 { parts.append("−\(removedSkills) skilli") }
+        if addedServers > 0 { parts.append("+\(addedServers) MCP") }
+        if removedServers > 0 { parts.append("−\(removedServers) MCP") }
+        return parts.isEmpty ? "bez zmian" : parts.joined(separator: ", ")
+    }
+
+    private func resolvedSkills(ids: Set<String>, tags: Set<String>, excluded: Set<String>) -> Set<String> {
+        let wanted = Set(tags.map { $0.lowercased() })
+        return Set(model.skills.filter { skill in
+            (ids.contains(skill.id) || !wanted.isDisjoint(with: skill.tags.map { $0.lowercased() })) && !excluded.contains(skill.id)
+        }.map(\.id))
+    }
+
+    private func resolvedServers(ids: Set<UUID>, tags: Set<String>) -> Set<UUID> {
+        let wanted = Set(tags.map { $0.lowercased() })
+        return Set(model.mcp.servers.filter { server in
+            server.enabled && (ids.contains(server.id) || !wanted.isDisjoint(with: (server.tags ?? []).map { $0.lowercased() }))
+        }.map(\.id))
+    }
+
+    private func save() {
+        let root = ProjectRoot(name: name, path: folderPath, tools: Array(tools), skillIDs: Array(selectedSkills), tags: Array(selectedTags).sorted(), excludedSkillIDs: excluded.isEmpty ? nil : Array(excluded).sorted(), manageGitignore: manageGitignore, watchesNewFolders: watchesNewFolders)
+        let followers = projects.map(\.id).filter { following.contains($0) }
+        let owners = projects.map(\.id).filter { !following.contains($0) }
+        model.adoptGroupIntoRoot(root, following: followers, keepingOwnSettings: owners, serverIDs: Array(selectedServers), serverTags: Array(selectedMCPtags).sorted())
     }
 }
 

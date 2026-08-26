@@ -6,6 +6,17 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-08-26
+
+### Naprawiono
+
+- Wspólne ustawienia folderu nadrzędnego z 0.9.0 były nieosiągalne dla projektów dodanych wcześniej. Folder nadrzędny mogła utworzyć wyłącznie opcja `Dodaj wiele`, więc kto miał już projekty na liście, nie widział przycisku `Ustawienia folderu` i nie miał jak ustawić wspólnych skilli ani MCP. Nagłówek grupy projektów ma teraz przycisk `Wspólne ustawienia…`, który zamienia istniejący folder w nadrzędny. Formularz startuje od sumy tego, czego projekty w folderze już używają, a przy każdym z nich widać, co się zmieni; odznaczony projekt zostaje w folderze z własnymi ustawieniami.
+- CLI: `agentbox project root-adopt <nazwa> <folder> [--skills a,b] [--tags x] [--keep-own projekt]`.
+
+### Zmieniono
+
+- `agentbox refresh` kończy się blokiem `PODSUMOWANIE` zamiast pojedynczej linii gubiącej się na końcu długiej listy. Blok pokazuje zaktualizowane skille, nazwę backupu lokalnego, skrót wyniku backupu Git i bilans projektów. Projekt cofnięty po błędzie oraz projekty pominięte po nim są teraz wymienione z nazwy — wcześniej widać je było wyłącznie w środku listy, więc długi przebieg mógł skończyć się wyglądając na udany.
+
 ## [0.9.0] - 2026-08-26
 
 ### Dodano

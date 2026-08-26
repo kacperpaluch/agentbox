@@ -6,6 +6,27 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.9.1</title>
+      <pubDate>Wed, 26 Aug 2026 08:26:37 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.9.1</link>
+      <sparkle:version>19</sparkle:version>
+      <sparkle:shortVersionString>0.9.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.9.1</h2>
+        <ul>
+          <li>Wspólne ustawienia folderu z 0.9.0 były nieosiągalne dla projektów dodanych wcześniej — folder nadrzędny mogła utworzyć tylko opcja „Dodaj wiele”. Nagłówek grupy projektów ma teraz przycisk „Wspólne ustawienia…”.</li>
+          <li>Formularz startuje od sumy tego, czego projekty w folderze już używają, a przy każdym widać, co się zmieni. Odznaczony projekt zostaje w folderze z własnymi ustawieniami.</li>
+          <li><code>agentbox refresh</code> kończy się blokiem „PODSUMOWANIE” z bilansem całości. Projekt cofnięty po błędzie jest wymieniony z nazwy, zamiast być widoczny wyłącznie w środku listy.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.9.1/Agentbox-0.9.1.dmg"
+        length="5259705"
+        type="application/octet-stream"
+        sparkle:edSignature="JFGfAL3l9mlj8at/wMHIp8c7s+u+st8kyStiyWzF1uqqR8U00KkcdE9SkEaqdgyUrfMS16yeAChC2z32VKBoCg==" />
+    </item>
+    <item>
       <title>Agentbox 0.9.0</title>
       <pubDate>Wed, 26 Aug 2026 08:16:50 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.9.0</link>

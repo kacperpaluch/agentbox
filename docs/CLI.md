@@ -59,6 +59,7 @@ agentbox project unsync sklep
 
 ```bash
 agentbox project root-add workspace ~/Projekty --tools claude --skills styl --folders sklep,blog
+agentbox project root-adopt workspace ~/Projekty --skills styl [--keep-own blog]
 agentbox project roots
 agentbox project scan [--root workspace]
 agentbox project adopt-new [--root workspace] --yes [--sync]
@@ -67,6 +68,8 @@ agentbox project unignore workspace
 ```
 
 `project root-add` tworzy folder nadrzędny z ustawieniami wspólnymi dla jego podfolderów — tak samo jak `Dodaj wiele` w aplikacji. `--folders` wybiera podfoldery, które od razu stają się projektami; pominięcie tej opcji dodaje sam folder, a jego podfoldery zaproponuje `project scan`. `--no-watch` wyłącza wykrywanie nowych podfolderów, a `--gitignore` włącza dopisywanie plików MCP do `.gitignore` projektów.
+
+`project root-adopt` robi to samo dla folderu, którego projekty są już w Agentbox: wszystkie przechodzą na wspólne ustawienia, a `--keep-own` wymienia te, które mają zachować własne. Bez `--tools` folder dostaje sumę narzędzi swoich projektów.
 
 `project roots` wypisuje foldery nadrzędne dodane w aplikacji przez `Dodaj wiele`: ścieżkę, liczbę projektów, czy folder jest obserwowany i jego narzędzia.
 
@@ -100,6 +103,22 @@ agentbox refresh --remote git@github.com:user/agentbox-backup.git --message "Akt
 ```
 
 `refresh` wykonuje kolejno: sprawdzenie i pobranie aktualizacji skilli Git, pełny backup lokalny, commit i push backupu Git oraz transakcyjną synchronizację skilli i MCP we wszystkich projektach. Push jest obowiązkowy; jeśli biblioteka nie ma skonfigurowanego `origin`, podaj `--remote`. Błąd zatrzymuje workflow, a synchronizacja aktualnie przetwarzanego projektu korzysta z automatycznego rollbacku. Projekty zakończone wcześniej pozostają zsynchronizowane.
+
+Przebieg kończy blok `PODSUMOWANIE` z bilansem całości:
+
+```text
+────────────────────────────────────────────────────
+PODSUMOWANIE
+  Skille          zaktualizowano 1: docx
+  Backup lokalny  2026-08-26T06-24-18.361Z-2EA9FA54
+  Backup Git      To github.com:user/repo.git · abc..def  main -> main
+  Projekty        4 — ✓ 1 zsynchronizowano, = 1 bez zmian, ✗ 1 cofnięto, – 1 pominięto
+  Wymaga uwagi:
+    ✗ gamma — niezarządzany katalog .claude/skills/docx
+    – delta — nie próbowano po błędzie
+```
+
+Sekcja `Wymaga uwagi` pojawia się tylko wtedy, gdy któryś projekt został cofnięty. Kod wyjścia nie zmienia się z tego powodu — `refresh` kończy się zerem, dopóki sam workflow nie rzuci błędem.
 
 ## MCP
 

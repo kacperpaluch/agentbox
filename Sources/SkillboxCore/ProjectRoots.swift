@@ -103,6 +103,57 @@ extension SkillboxService {
         try await store.save(config, mcp)
     }
 
+    /// Turns a folder that already holds projects into a parent folder.
+    ///
+    /// Projects added one by one — or in a batch before parent folders existed — have no folder to
+    /// inherit from, so without this the shared settings would be reachable only for folders added
+    /// from scratch. Every project passed in joins the folder; `following` says which ones drop
+    /// their own settings for the folder's, and the rest keep exactly what they synchronize today.
+    @discardableResult
+    public func adoptProjectsIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], serverIDs: [UUID], serverTags: [String]) async throws -> ProjectRoot {
+        var isDirectory: ObjCBool = false
+        let rootURL = URL(fileURLWithPath: root.path).standardizedFileURL
+        guard FileManager.default.fileExists(atPath: rootURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw SkillboxError.projectNotFound(root.path)
+        }
+        var config = try await store.configuration()
+        guard !config.roots.contains(where: { $0.name.caseInsensitiveCompare(root.name) == .orderedSame }) else {
+            throw SkillboxError.invalidSkill("folder nadrzędny o nazwie \(root.name) już istnieje")
+        }
+        guard !config.roots.contains(where: { URL(fileURLWithPath: $0.path).standardizedFileURL.path == rootURL.path }) else {
+            throw SkillboxError.invalidSkill("folder \(rootURL.path) jest już dodany jako nadrzędny")
+        }
+        let followers = Set(following), owners = Set(keepingOwnSettings)
+        for id in followers.union(owners) where !config.projects.contains(where: { $0.id == id }) {
+            throw SkillboxError.projectNotFound(id.uuidString)
+        }
+        var stored = Self.pruned(root, in: try await store.catalog())
+        stored.path = rootURL.path
+        stored.ignoredPaths = Self.standardized(stored.ignoredPaths)
+        var mcp = try await store.mcpConfiguration()
+        for index in config.projects.indices {
+            let id = config.projects[index].id
+            guard followers.contains(id) || owners.contains(id) else { continue }
+            config.projects[index].rootID = stored.id
+            config.projects[index].overridesRoot = owners.contains(id) ? true : nil
+            guard followers.contains(id) else { continue }
+            // The folder answers for these projects now. Leaving their old selections behind would
+            // be a second source of truth that nothing reads.
+            config.projects[index].tools = []
+            config.projects[index].skillIDs = []
+            config.projects[index].tags = []
+            config.projects[index].excludedSkillIDs = nil
+            config.projects[index].manageGitignore = nil
+            var servers = mcp.projectServerIDs ?? [:]; servers.removeValue(forKey: id.uuidString); mcp.projectServerIDs = servers
+            var tags = mcp.projectServerTags ?? [:]; tags.removeValue(forKey: id.uuidString); mcp.projectServerTags = tags
+            mcp.projectPresetIDs.removeValue(forKey: id.uuidString)
+        }
+        config.projectRoots = config.roots + [stored]
+        Self.assign(&mcp, projectID: stored.id, serverIDs: serverIDs, tags: serverTags)
+        try await store.save(config, mcp)
+        return stored
+    }
+
     /// Removes the shared settings. The projects stay exactly as they are synchronized today: each
     /// one that was following the folder keeps a copy of what it inherited, so deleting a folder is
     /// never a silent change to what lands in the user's repositories.

@@ -1339,4 +1339,87 @@ final class SkillboxCoreTests: XCTestCase {
         let remaining = try await service.listSkills()
         XCTAssertTrue(remaining.isEmpty)
     }
+
+    /// Projects added before parent folders existed must be able to get one, otherwise the shared
+    /// settings are reachable only for folders created from scratch.
+    func testExistingProjectsCanBeTurnedIntoAParentFolderWithSharedSettings() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let workspace = root.appending(path: "workspace")
+        for name in ["alpha", "beta"] { try FileManager.default.createDirectory(at: workspace.appending(path: name), withIntermediateDirectories: true) }
+        for name in ["demo", "extra"] {
+            let source = root.appending(path: "source/\(name)")
+            try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+            try "---\nname: \(name)\ndescription: Demo\n---\n".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        }
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: root.appending(path: "source/demo").path)
+        _ = try await service.addLocal(path: root.appending(path: "source/extra").path)
+        try await service.saveMCPServer(MCPServer(name: "probe", transport: .stdio, command: "echo"))
+        let server = try await service.mcpConfiguration().servers.first { $0.name == "probe" }!
+
+        // Two projects added the old way, each with its own settings.
+        let alpha = try await service.addProject(Project(name: "alpha", path: workspace.appending(path: "alpha").path, tools: [.claude], skillIDs: ["demo"]), serverIDs: [server.id], serverTags: [])
+        let beta = try await service.addProject(Project(name: "beta", path: workspace.appending(path: "beta").path, tools: [.codex], skillIDs: ["extra"]), serverIDs: [], serverTags: [])
+
+        let folder = ProjectRoot(name: "workspace", path: workspace.path, tools: [.claude, .codex], skillIDs: ["demo", "extra"])
+        let stored = try await service.adoptProjectsIntoRoot(folder, following: [alpha.id], keepingOwnSettings: [beta.id], serverIDs: [server.id], serverTags: [])
+
+        let resolved = try await service.listProjects()
+        let adopted = resolved.first { $0.id == alpha.id }!
+        XCTAssertEqual(adopted.rootID, stored.id)
+        XCTAssertEqual(adopted.skillIDs.sorted(), ["demo", "extra"], "projekt przechodzi na ustawienia folderu")
+        XCTAssertEqual(adopted.tools.sorted { $0.rawValue < $1.rawValue }, [.claude, .codex])
+        let untouched = resolved.first { $0.id == beta.id }!
+        XCTAssertEqual(untouched.rootID, stored.id, "projekt należy do folderu…")
+        XCTAssertEqual(untouched.skillIDs, ["extra"], "…ale zachowuje własne ustawienia")
+        XCTAssertEqual(untouched.tools, [.codex])
+
+        // The folder answers for MCP of the project that follows it; the other keeps its own record.
+        let mcp = try await service.mcpConfiguration()
+        XCTAssertEqual(mcp.projectServerIDs?[stored.id.uuidString], [server.id])
+        XCTAssertNil(mcp.projectServerIDs?[alpha.id.uuidString], "stary wybór MCP nie zostaje jako druga prawda")
+        let previews = try await service.previewMCP(projectID: alpha.id)
+        XCTAssertTrue(previews.contains { $0.added.contains("probe") }, "\(previews.map(\.added))")
+
+        // One edit on the folder reaches the project that follows it.
+        var updated = stored
+        updated.skillIDs = ["demo"]
+        try await service.updateProjectRoot(updated, serverIDs: [server.id], serverTags: [])
+        let afterEdit = try await service.listProjects()
+        XCTAssertEqual(afterEdit.first { $0.id == alpha.id }?.skillIDs, ["demo"])
+        XCTAssertEqual(afterEdit.first { $0.id == beta.id }?.skillIDs, ["extra"])
+
+        // The same folder cannot become a second parent folder.
+        do { _ = try await service.adoptProjectsIntoRoot(ProjectRoot(name: "inna", path: workspace.path, tools: [.claude]), following: [], keepingOwnSettings: [], serverIDs: [], serverTags: []); XCTFail("oczekiwano błędu") }
+        catch { XCTAssertTrue("\(error)".contains("już dodany jako nadrzędny"), "\(error)") }
+    }
+
+    /// The closing block of `refresh`. A rolled-back project used to be reported only in the middle
+    /// of a long run, so the summary has to name it — this is the case that is hard to reach by
+    /// hand, because a project that fails validation stops the run before any write.
+    func testRefreshSummaryNamesRolledBackAndSkippedProjects() throws {
+        func outcome(_ name: String, _ state: ProjectSyncOutcome.State) -> ProjectSyncOutcome {
+            ProjectSyncOutcome(plan: ProjectSyncPlan(project: Project(name: name, path: "/tmp/\(name)", tools: [.claude]), preview: ProjectSyncPreview(skills: [], mcp: [])), state: state)
+        }
+        let lines = AgentboxCommand.summary(
+            updates: ["docx"],
+            backupName: "2026-08-26-abc",
+            gitBackup: "To github.com:user/repo.git\n   abc..def  main -> main",
+            outcomes: [outcome("alpha", .synced), outcome("beta", .upToDate), outcome("gamma", .failed("konflikt")), outcome("delta", .skipped)])
+        let text = lines.joined(separator: "\n")
+
+        XCTAssertTrue(text.contains("zaktualizowano 1: docx"), text)
+        XCTAssertTrue(text.contains("2026-08-26-abc"), text)
+        XCTAssertTrue(text.contains("4 — ✓ 1 zsynchronizowano, = 1 bez zmian, ✗ 1 cofnięto, – 1 pominięto"), text)
+        XCTAssertTrue(text.contains("✗ gamma — konflikt"), text)
+        XCTAssertTrue(text.contains("– delta"), text)
+        // Multi-line Git output must not break the aligned block.
+        XCTAssertFalse(lines.contains { $0.contains("\n") })
+        XCTAssertTrue(text.contains("To github.com:user/repo.git · abc..def  main -> main"), text)
+
+        // A clean run says so without a "wymaga uwagi" section.
+        let clean = AgentboxCommand.summary(updates: [], backupName: "b", gitBackup: "Everything up-to-date", outcomes: [outcome("alpha", .upToDate)]).joined(separator: "\n")
+        XCTAssertTrue(clean.contains("bez aktualizacji"), clean)
+        XCTAssertFalse(clean.contains("Wymaga uwagi"), clean)
+    }
 }
