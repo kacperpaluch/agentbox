@@ -327,8 +327,20 @@ struct ContentView: View {
         NavigationSplitView { VStack(spacing: 0) { List(SectionKind.allCases, selection: $section) { item in
             // The detected-folders banner lives in the Projects tab, so without this the question
             // would wait unseen for whoever happens to open that tab.
-            Label(item.rawValue, systemImage: item.icon).tag(item)
-                .badge(item == .projects ? model.detectedFolders.count : 0)
+            HStack {
+                Label(item.rawValue, systemImage: item.icon)
+                Spacer()
+                if item == .projects, !model.detectedFolders.isEmpty {
+                    Text(model.detectedFolders.count, format: .number)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(.quaternary, in: Capsule())
+                }
+            }
+            .contentShape(Rectangle())
+            .tag(Optional(item))
         }.navigationTitle("Agentbox"); Divider(); Text(AppVersion.display).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(12) }.navigationSplitViewColumnWidth(min: 180, ideal: 210) } detail: {
             Group {
                 if let serviceError = model.serviceError, section != .settings {

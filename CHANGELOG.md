@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-08-26
+
+### Naprawiono
+
+- Po dodaniu plakietki wykrytych projektów boczne menu przestało reagować na kliknięcia w sekcje, między innymi MCP, Backup i Ustawienia. Plakietka jest teraz zwykłym, warunkowym elementem wiersza i nie przechwytuje obszaru klikalnego nawigacji.
+
 ## [0.9.3] - 2026-08-26
 
 ### Naprawiono

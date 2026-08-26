@@ -6,6 +6,26 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.9.4</title>
+      <pubDate>Wed, 26 Aug 2026 09:23:43 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.9.4</link>
+      <sparkle:version>22</sparkle:version>
+      <sparkle:shortVersionString>0.9.4</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.9.4</h2>
+        <ul>
+          <li>Boczne menu ponownie reaguje na kliknięcia w sekcje MCP, Backup, Odzyskiwanie i Ustawienia.</li>
+          <li>Licznik wykrytych projektów pozostaje widoczny przy „Projekty”, ale nie przechwytuje już obszaru klikalnego nawigacji.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.9.4/Agentbox-0.9.4.dmg"
+        length="5286517"
+        type="application/octet-stream"
+        sparkle:edSignature="w8mJJfNmTgnITrayB+qbk+ejt3sOLqRVk08hLFkt0LhvnT1y0BgoJt0xv7YOC7bmUSVWWdqAMkGbFuyyJW2lDA==" />
+    </item>
+    <item>
       <title>Agentbox 0.9.3</title>
       <pubDate>Wed, 26 Aug 2026 09:05:06 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.9.3</link>
