@@ -6,6 +6,19 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-08-26
+
+### Naprawiono
+
+- Przejęcie skilla z projektu nie odblokowywało synchronizacji tego projektu. Skill po `Przejmij skille z projektu…` był w bibliotece, ale jego katalog w projekcie nadal liczył się jako obcy — przypisanie przejętego skilla kończyło się błędem `istnieje i nie jest zarządzany przez Agentbox`, a projekt pokazywał status `Zablokowany`. Katalog identyczny bajt w bajt z kopią biblioteczną przechodzi teraz pod zarząd Agentbox przy pierwszej synchronizacji, dokładnie tak, jak obiecywała dokumentacja. Katalog o innej zawartości nadal zatrzymuje synchronizację. Pliki `.DS_Store` nie wpływają na porównanie.
+- Synchronizacja tworzyła puste pliki w każdym projekcie, także bez wybranych skilli i serwerów MCP: `.mcp.json` z pustym `mcpServers`, `opencode.json`, `.codex/config.toml` z samymi znacznikami oraz puste manifesty. `Usuń i posprzątaj pliki` zostawiało je w repozytorium, wbrew własnej obietnicy. Pliki i manifesty powstają teraz tylko wtedy, gdy jest co do nich zapisać; puste szkielety pozostawione przez starsze wersje znikają przy najbliższej synchronizacji, a sprzątanie usuwa plik, który w całości pochodził z Agentbox. Wpisy użytkownika w tych plikach pozostają nietknięte, a plik, w którym Agentbox niczym nie zarządza, nie jest już przepisywany ani formatowany na nowo.
+- Odznaczenie narzędzia w projekcie osierocało jego pliki: katalogi skilli, manifesty i wpisy MCP odznaczonego narzędzia zostawały w repozytorium na zawsze. Podgląd i synchronizacja obejmują teraz także narzędzia z pozostałym po sobie manifestem — najbliższa synchronizacja sprząta ich pliki, a `Usuń i posprzątaj pliki` czyści je razem z resztą.
+- Wyszukiwarka w Bibliotece nie znajdowała skilla po nazwie, tylko po identyfikatorze i tagach — wbrew podpowiedzi `Nazwa lub tag` w polu wyszukiwania.
+
+### Dodano
+
+- Edytor serwera MCP ostrzega, gdy pole z zapisanym sekretem zmienia typ na `Zwykła wartość`: dotychczasowy sekret zostałby przeniesiony jawnym tekstem do `mcp.json`, który trafia do backupu Git.
+
 ## [0.9.2] - 2026-08-26
 
 ### Naprawiono

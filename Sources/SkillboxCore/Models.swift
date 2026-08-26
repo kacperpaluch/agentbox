@@ -276,6 +276,8 @@ public struct MCPManagedField: Identifiable, Hashable, Sendable {
 public struct MCPPreview: Sendable {
     public var tool: Tool
     public var file: String
+    /// The full new content of `file`. Empty means the file should not exist at all: it is never
+    /// created, and an existing one is removed when the preview is applied.
     public var content: String
     public var added: [String]
     public var removed: [String]

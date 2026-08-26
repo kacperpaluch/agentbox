@@ -64,7 +64,7 @@ Skille pochodzące z Git są tylko do odczytu. `Aktualizuj` zastępuje taki skil
 
 ### Przejmowanie skilli z projektu
 
-Jeśli w projekcie leży ręcznie napisany katalog ze `SKILL.md`, którego nie ma w bibliotece, wybierz `⋯ → Przejmij skille z projektu…`. Agentbox skopiuje wskazane katalogi do biblioteki jako skille lokalne — nic nie znika z projektu. To jest sposób na odblokowanie projektu ze statusem `Zablokowany` bez kasowania własnej pracy.
+Jeśli w projekcie leży ręcznie napisany katalog ze `SKILL.md`, którego nie ma w bibliotece, wybierz `⋯ → Przejmij skille z projektu…`. Agentbox skopiuje wskazane katalogi do biblioteki jako skille lokalne — nic nie znika z projektu. To jest sposób na odblokowanie projektu ze statusem `Zablokowany` bez kasowania własnej pracy. Przejęty skill można od razu przypisać do projektów — także tego, z którego pochodzi: jego katalog jest identyczny z kopią biblioteczną, więc pierwsza synchronizacja przejmuje go pod zarząd Agentbox zamiast zgłaszać konflikt.
 
 ### Skille, których Agentbox nie zarządza
 
@@ -86,7 +86,9 @@ Projekt może wciągać skille tagiem i jednocześnie pomijać wybrane pozycje. 
 
 ### Usuwanie projektu i sprzątanie plików
 
-Usunięcie projektu daje dwie możliwości. `Usuń tylko z Agentbox` zostawia folder projektu nietknięty. `Usuń i posprzątaj pliki w projekcie` dodatkowo kasuje katalogi skilli i wpisy MCP wymienione w manifestach Agentbox — wyłącznie je. Ręcznie dodane skille i serwery MCP zostają. Przed sprzątaniem powstaje backup, który można cofnąć w sekcji `Odzyskiwanie`.
+Usunięcie projektu daje dwie możliwości. `Usuń tylko z Agentbox` zostawia folder projektu nietknięty. `Usuń i posprzątaj pliki w projekcie` dodatkowo kasuje katalogi skilli i wpisy MCP wymienione w manifestach Agentbox — wyłącznie je. Plik konfiguracyjny, który w całości pochodził z Agentbox, znika razem z wpisami; ręcznie dodane skille i serwery MCP zostają. Przed sprzątaniem powstaje backup, który można cofnąć w sekcji `Odzyskiwanie`.
+
+Pliki i manifesty powstają tylko wtedy, gdy projekt ma co synchronizować — projekt bez wybranych skilli i serwerów MCP pozostaje nietknięty, a odznaczenie narzędzia sprząta jego pliki przy kolejnej synchronizacji.
 
 ### Ochrona przez .gitignore projektu
 

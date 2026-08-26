@@ -490,6 +490,13 @@ public actor SkillboxService {
             let target = URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath)
             results[tool] = try await sync(skills: selected, to: target, dryRun: dryRun)
         }
+        // A tool unticked in the project keeps its manifest until this cleanup runs; syncing an
+        // empty selection into its target removes everything the manifest lists and the manifest
+        // itself, instead of leaving orphaned files in the repository.
+        for tool in Self.abandonedTools(project: project) {
+            let target = URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath)
+            results[tool] = try await sync(skills: [], to: target, dryRun: dryRun)
+        }
         return results
     }
 
@@ -527,18 +534,24 @@ public actor SkillboxService {
     /// A directory that exists in the target but is not listed in the Agentbox manifest belongs
     /// to the user. Replacing it would destroy hand-written skills, so synchronization stops
     /// instead — the same rule that already protects unmanaged MCP entries.
-    static func assertNoUnmanagedSkillConflict(ids: [String], target: URL, managed: Set<String>) throws {
+    ///
+    /// The one exception is a directory whose content is byte-identical to the library copy:
+    /// that is exactly what `Przejmij skille z projektu` leaves behind, and replacing identical
+    /// bytes destroys nothing, so the sync takes it over instead of blocking the very project the
+    /// skill was adopted from.
+    static func assertNoUnmanagedSkillConflict(ids: [String], target: URL, managed: Set<String>, library: URL) throws {
         let fm = FileManager.default
         for id in ids where !managed.contains(id) && fm.fileExists(atPath: target.appending(path: id).path) {
+            guard !directoryMatches(library.appending(path: id), target.appending(path: id)) else { continue }
             throw SkillboxError.skillConflict("\(id) istnieje w \(target.path) i nie jest zarządzany przez Agentbox")
         }
     }
 
-    static func skillPreview(tool: Tool, target: URL, current: [Skill]) throws -> SkillSyncPreview {
+    static func skillPreview(tool: Tool, target: URL, current: [Skill], library: URL) throws -> SkillSyncPreview {
         let manifest = skillManifest(at: target)
         let previous = Set(manifest.skills.keys)
         let ids = Set(current.map(\.id))
-        try assertNoUnmanagedSkillConflict(ids: Array(ids), target: target, managed: previous)
+        try assertNoUnmanagedSkillConflict(ids: Array(ids), target: target, managed: previous, library: library)
         let fm = FileManager.default
         // Outdated means the library copy moved on, or the directory disappeared from the project.
         // Both timestamps originate from the same `Skill.updatedAt` and are stored with ISO8601
@@ -579,7 +592,7 @@ public actor SkillboxService {
         let previous = Self.managedSkillIDs(at: target)
         let current = skills.map(\.id).sorted(); var result = SyncResult()
         // Checked before the first removal so a conflict never leaves a half-synchronized target.
-        try Self.assertNoUnmanagedSkillConflict(ids: current, target: target, managed: previous)
+        try Self.assertNoUnmanagedSkillConflict(ids: current, target: target, managed: previous, library: await store.skillsDirectory)
         for stale in previous.subtracting(current) {
             result.removed.append(stale)
             let staleURL = target.appending(path: stale)
@@ -590,8 +603,19 @@ public actor SkillboxService {
             if !dryRun { try fm.createDirectory(at: target, withIntermediateDirectories: true); try copyReplacing(from: await store.skillsDirectory.appending(path: skill.id), to: target.appending(path: skill.id)) }
         }
         if !dryRun {
-            try fm.createDirectory(at: target, withIntermediateDirectories: true)
-            try Self.writeSkillManifest(skills, to: target)
+            // An empty selection leaves no manifest behind: a target holding nothing managed is
+            // the user's directory again, and a manifest-only directory would be clutter in
+            // every repository that never chose any skills.
+            if skills.isEmpty {
+                let manifest = target.appending(path: ".skillbox.json")
+                if fm.fileExists(atPath: manifest.path) { try fm.removeItem(at: manifest) }
+                if let leftovers = try? fm.contentsOfDirectory(atPath: target.path), leftovers.allSatisfy({ $0 == ".DS_Store" }) {
+                    try? fm.removeItem(at: target)
+                }
+            } else {
+                try fm.createDirectory(at: target, withIntermediateDirectories: true)
+                try Self.writeSkillManifest(skills, to: target)
+            }
         }
         return result
     }

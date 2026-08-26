@@ -74,7 +74,7 @@ swift run agentbox add https://github.com/user/repo.git --path skills/seo --bran
 
 Skille dodane z dysku można edytować w aplikacji przyciskiem `Edytuj SKILL.md`; zapis oznacza projekty z tym skillem jako nieaktualne. Skille z Git są tylko do odczytu, bo `Aktualizuj` zastąpiłoby zmiany zawartością repozytorium.
 
-Ręcznie napisany katalog ze `SKILL.md`, który leży w projekcie i blokuje synchronizację, można przejąć do biblioteki przez `⋯ → Przejmij skille z projektu…` albo `agentbox project adopt <nazwa> --yes`.
+Ręcznie napisany katalog ze `SKILL.md`, który leży w projekcie i blokuje synchronizację, można przejąć do biblioteki przez `⋯ → Przejmij skille z projektu…` albo `agentbox project adopt <nazwa> --yes`. Po przejęciu katalog w projekcie jest identyczny z kopią biblioteczną, więc pierwsza synchronizacja przejmuje go pod zarząd Agentbox — przejęty skill można od razu przypisać i synchronizować także w projekcie, z którego pochodzi.
 
 ### Tagi, filtrowanie i aktualizacje
 
@@ -159,7 +159,9 @@ GUI pokazuje również pełny plan zmian skilli dla każdego narzędzia. Synchro
 
 `Sprawdź stan` sprawdza wszystkie projekty naraz i oznacza każdy z nich: aktualny, liczba zmian do synchronizacji, zablokowany albo brak folderu. To samo w terminalu daje `agentbox project status`.
 
-Agentbox zastępuje wyłącznie katalogi skilli wymienione w swoim manifeście `.skillbox.json`. Katalog o tej samej nazwie, który nie pochodzi z Agentbox, zatrzymuje synchronizację zamiast zostać nadpisany — tak samo jak ręcznie dodany serwer MCP.
+Agentbox zastępuje wyłącznie katalogi skilli wymienione w swoim manifeście `.skillbox.json`. Katalog o tej samej nazwie, który nie pochodzi z Agentbox, zatrzymuje synchronizację zamiast zostać nadpisany — tak samo jak ręcznie dodany serwer MCP. Jedyny wyjątek to katalog identyczny bajt w bajt z kopią biblioteczną, czyli skill świeżo przejęty z projektu: nadpisanie identycznej zawartości niczego nie niszczy, więc synchronizacja przejmuje go zamiast się zatrzymać.
+
+Pliki konfiguracyjne i manifesty powstają tylko wtedy, gdy projekt ma co synchronizować. Projekt bez wybranych skilli i serwerów MCP pozostaje nietknięty, a puste szkielety (`.mcp.json` z pustym `mcpServers`, `config.toml` z samymi znacznikami) pozostawione przez starsze wersje znikają przy najbliższej synchronizacji. Odznaczenie narzędzia w projekcie również sprząta jego pliki przy kolejnej synchronizacji, zamiast zostawiać je osierocone.
 
 `Synchronizuj wszystkie projekty` liczy plan dla wszystkich projektów przed pierwszym zapisem, a po zakończeniu pokazuje wynik dla każdego projektu osobno: zsynchronizowany, cofnięty po błędzie albo pominięty.
 

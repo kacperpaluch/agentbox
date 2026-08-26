@@ -81,7 +81,9 @@ extension SkillboxService {
         let projectURL = URL(fileURLWithPath: project.path)
         Self.removeLegacyBackupDirectories(projectURL)
         let fm = FileManager.default
-        var targets = project.tools.map { projectURL.appending(path: $0.projectSkillsPath) }
+        // Including tools the project no longer lists, so their manifests are cleaned up too.
+        let tools = project.tools + Self.abandonedTools(project: project)
+        var targets = tools.map { projectURL.appending(path: $0.projectSkillsPath) }
         let mcpPreviews = try await previewMCPRemovingEverything(project: project)
         targets += mcpPreviews.map { URL(fileURLWithPath: $0.file) }
         // Only the manifest — backing up the whole .skillbox directory would copy the backup
@@ -94,7 +96,7 @@ extension SkillboxService {
         let (backup, metadata) = try Self.makeSyncBackup(project: projectURL, targets: unique, in: scratch)
         var removed: [String] = []
         do {
-            for tool in project.tools {
+            for tool in tools {
                 let target = projectURL.appending(path: tool.projectSkillsPath)
                 for skillID in SkillboxService.managedSkillIDs(at: target).sorted() {
                     let directory = target.appending(path: skillID)
@@ -161,7 +163,21 @@ extension SkillboxService {
 
     private func previewMCPRemovingEverything(project: Project) async throws -> [MCPPreview] {
         let secrets = try await store.secrets()
-        return try project.tools.map { try MCPRenderer.preview(tool: $0, project: URL(fileURLWithPath: project.path), servers: [], secrets: secrets) }
+        let tools = project.tools + Self.abandonedTools(project: project)
+        return try tools.map { try MCPRenderer.preview(tool: $0, project: URL(fileURLWithPath: project.path), servers: [], secrets: secrets) }
+    }
+
+    /// Tools the project no longer lists but whose targets still hold Agentbox manifests.
+    /// They stay part of every preview and sync until nothing managed remains, so unticking a
+    /// tool removes its files instead of orphaning them in the repository forever.
+    static func abandonedTools(project: Project) -> [Tool] {
+        let url = URL(fileURLWithPath: project.path)
+        let mcpManaged = MCPRenderer.managedTools(url)
+        return Tool.allCases.filter { tool in
+            guard !project.tools.contains(tool) else { return false }
+            if FileManager.default.fileExists(atPath: url.appending(path: tool.projectSkillsPath).appending(path: ".skillbox.json").path) { return true }
+            return mcpManaged.contains(tool)
+        }
     }
 
     public func previewProjectSync(projectID: UUID) async throws -> ProjectSyncPreview {
@@ -169,8 +185,10 @@ extension SkillboxService {
         guard let project = config.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
         let catalog = try await store.catalog()
         let selected = SkillboxService.selectedSkills(in: catalog, for: project)
-        let skills = try project.tools.map { tool in
-            try SkillboxService.skillPreview(tool: tool, target: URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath), current: selected)
+        let library = await store.skillsDirectory
+        let perTool: [(Tool, [Skill])] = project.tools.map { ($0, selected) } + Self.abandonedTools(project: project).map { ($0, []) }
+        let skills = try perTool.map { tool, current in
+            try SkillboxService.skillPreview(tool: tool, target: URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath), current: current, library: library)
         }
         return ProjectSyncPreview(skills: skills, mcp: try await previewMCP(projectID: projectID))
     }
@@ -190,17 +208,22 @@ extension SkillboxService {
             for skill in skills where !Self.directoryMatches(library.appending(path: skill.id), target.appending(path: skill.id)) { return false }
         }
         return preview.mcp.allSatisfy { item in
-            item.staleFile == nil && (try? String(contentsOf: URL(fileURLWithPath: item.file), encoding: .utf8)) == item.content
+            guard item.staleFile == nil else { return false }
+            let existing = try? String(contentsOf: URL(fileURLWithPath: item.file), encoding: .utf8)
+            // Empty content means "this file should not exist", so a missing file is up to date.
+            return item.content.isEmpty ? existing == nil : existing == item.content
         }
     }
 
-    /// Recursive byte comparison of two skill directories.
+    /// Recursive byte comparison of two skill directories. `.DS_Store` files are ignored: Finder
+    /// drops them at will, and they must not turn an adopted skill back into a conflict.
     static func directoryMatches(_ source: URL, _ copy: URL) -> Bool {
         let fm = FileManager.default
         func files(_ root: URL) -> [String: URL] {
             guard let enumerator = fm.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey]) else { return [:] }
             var result: [String: URL] = [:]
             for case let item as URL in enumerator {
+                guard item.lastPathComponent != ".DS_Store" else { continue }
                 guard (try? item.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { continue }
                 let path = item.standardizedFileURL.path, base = root.standardizedFileURL.path
                 guard path.hasPrefix(base + "/") else { continue }
@@ -235,9 +258,13 @@ extension SkillboxService {
         if await isUpToDate(preview, skills: selected) {
             // The files already match, but the manifest still records the timestamps from the last
             // write. Restamping it — Agentbox's own bookkeeping, no backup needed — keeps the
-            // project's status honest instead of reporting drift that does not exist.
-            for item in preview.skills {
-                try SkillboxService.writeSkillManifest(selected, to: URL(fileURLWithPath: item.target))
+            // project's status honest instead of reporting drift that does not exist. An empty
+            // selection has no manifest to restamp; writing one would recreate the clutter the
+            // sync path just learned not to leave behind.
+            if !selected.isEmpty {
+                for tool in project.tools {
+                    try SkillboxService.writeSkillManifest(selected, to: projectURL.appending(path: tool.projectSkillsPath))
+                }
             }
             return preview
         }

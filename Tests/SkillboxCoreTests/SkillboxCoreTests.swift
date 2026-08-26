@@ -326,7 +326,11 @@ final class SkillboxCoreTests: XCTestCase {
         try "version two".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
         _ = try await service.update(skillID: "demo")
 
-        var changedProject = project; changedProject.tools = [.claude, .codex]
+        // The stored record, not the stale local copy: updateProject would otherwise wipe the
+        // skill selection and the codex target would have nothing to fail on.
+        let storedRecords = try await service.storedProjects()
+        var changedProject = try XCTUnwrap(storedRecords.first { $0.id == project.id })
+        changedProject.tools = [.claude, .codex]
         try await service.updateProject(changedProject)
         try "blocks directory creation".write(to: projectURL.appending(path: ".codex"), atomically: true, encoding: .utf8)
         do { _ = try await service.syncProjectTransaction(projectID: project.id); XCTFail("Oczekiwano błędu zapisu") } catch {}
@@ -697,7 +701,9 @@ final class SkillboxCoreTests: XCTestCase {
         try "{ \"mcp\": {} }".write(to: projectURL.appending(path: "opencode.jsonc"), atomically: true, encoding: .utf8)
         _ = try await service.syncMCP(projectID: project.id)
         XCTAssertTrue(try String(contentsOf: projectURL.appending(path: "opencode.jsonc"), encoding: .utf8).contains("api"))
-        XCTAssertFalse(try String(contentsOf: projectURL.appending(path: "opencode.json"), encoding: .utf8).contains("api"), "wpis został osierocony w opencode.json")
+        // The old file held nothing beyond the managed entry, so it disappears entirely instead
+        // of lingering as an empty scaffold.
+        XCTAssertFalse(FileManager.default.fileExists(atPath: projectURL.appending(path: "opencode.json").path), "opencode.json zawierał tylko wpisy Agentbox, więc znika w całości")
     }
 
     func testProjectStatusReportsSyncedOutdatedBlockedAndMissing() async throws {
@@ -787,6 +793,118 @@ final class SkillboxCoreTests: XCTestCase {
         // Po przejęciu skill jest już znany, więc nie jest ponownie kandydatem.
         let after = try await service.adoptableSkills(projectID: project.id)
         XCTAssertTrue(after.isEmpty)
+
+        // Sedno przejęcia: przejęty skill można przypisać i zsynchronizować w projekcie, z którego
+        // pochodzi. Katalog w projekcie jest identyczny z kopią biblioteczną, więc przestaje być
+        // konfliktem i przechodzi pod zarząd Agentbox.
+        try await service.configureProject(id: project.id, skillIDs: ["reczny"], tags: [])
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        XCTAssertEqual(try String(contentsOf: manual.appending(path: "SKILL.md"), encoding: .utf8), "napisane ręcznie")
+        XCTAssertTrue(SkillboxService.managedSkillIDs(at: projectURL.appending(path: ".claude/skills")).contains("reczny"))
+        let statuses = try await service.projectStatuses()
+        XCTAssertEqual(statuses.first { $0.projectID == project.id }?.state, .synced)
+    }
+
+    func testUnmanagedSkillDirectoryWithDifferentContentStillBlocksSync() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/inny")
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try "wersja biblioteczna".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let manual = projectURL.appending(path: ".claude/skills/inny")
+        try FileManager.default.createDirectory(at: manual, withIntermediateDirectories: true)
+        try "inna treść użytkownika".write(to: manual.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        let project = try await service.addProject(name: "app", path: projectURL.path, tools: [.claude])
+        try await service.configureProject(id: project.id, skillIDs: ["inny"], tags: [])
+        do {
+            _ = try await service.syncProjectTransaction(projectID: project.id)
+            XCTFail("Oczekiwano konfliktu skilla")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("nie jest zarządzany"), error.localizedDescription)
+        }
+        XCTAssertEqual(try String(contentsOf: manual.appending(path: "SKILL.md"), encoding: .utf8), "inna treść użytkownika")
+    }
+
+    func testProjectWithNothingSelectedGetsNoGeneratedFiles() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let project = try await service.addProject(name: "czysty", path: projectURL.path, tools: Tool.allCases)
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        let files = try FileManager.default.subpathsOfDirectory(atPath: projectURL.path)
+        XCTAssertTrue(files.isEmpty, "projekt bez skilli i MCP musi pozostać nietknięty, a jest: \(files)")
+        let statuses = try await service.projectStatuses()
+        XCTAssertEqual(statuses.first { $0.projectID == project.id }?.state, .synced)
+    }
+
+    func testSyncRemovesEmptyScaffoldsLeftByOlderVersions() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        // Stan, jaki zostawiały wersje do 0.9.2 w projekcie bez wybranych skilli i MCP.
+        try FileManager.default.createDirectory(at: projectURL.appending(path: ".claude/skills"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectURL.appending(path: ".codex"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectURL.appending(path: ".skillbox"), withIntermediateDirectories: true)
+        try #"{"skills" : {},"version" : 2}"#.write(to: projectURL.appending(path: ".claude/skills/.skillbox.json"), atomically: true, encoding: .utf8)
+        try "{\n  \"mcpServers\" : {\n\n  }\n}\n".write(to: projectURL.appending(path: ".mcp.json"), atomically: true, encoding: .utf8)
+        try "# >>> skillbox managed MCP >>>\n# <<< skillbox managed MCP <<<\n".write(to: projectURL.appending(path: ".codex/config.toml"), atomically: true, encoding: .utf8)
+        try #"{"claude" : [],"codex" : []}"#.write(to: projectURL.appending(path: ".skillbox/mcp-manifest.json"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let project = try await service.addProject(name: "legacy", path: projectURL.path, tools: [.claude, .codex])
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        let files = try FileManager.default.subpathsOfDirectory(atPath: projectURL.path).filter { !$0.hasSuffix(".DS_Store") }
+        XCTAssertTrue(files.allSatisfy { !$0.contains(".skillbox") && !$0.contains(".mcp.json") && !$0.contains("config.toml") }, "puste szkielety mają zniknąć, a zostało: \(files)")
+    }
+
+    func testUnsyncRemovesGeneratedFileThatHoldsOnlyManagedEntries() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let project = try await service.addProject(name: "app", path: projectURL.path, tools: [.claude])
+        try await service.saveMCPServer(MCPServer(name: "api", transport: .stdio, command: "npx"))
+        let servers = try await service.mcpConfiguration().servers.map(\.id)
+        try await service.setMCPServers(projectID: project.id, serverIDs: servers, tags: [])
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        XCTAssertTrue(try String(contentsOf: projectURL.appending(path: ".mcp.json"), encoding: .utf8).contains("api"))
+        _ = try await service.unsyncProject(id: project.id)
+        // Plik powstał w całości w Agentbox, więc sprzątanie usuwa go razem z manifestami.
+        XCTAssertFalse(FileManager.default.fileExists(atPath: projectURL.appending(path: ".mcp.json").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: projectURL.appending(path: ".skillbox").path))
+    }
+
+    func testUntickingToolCleansItsFilesOnNextSync() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/demo")
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        try "demo".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        let project = try await service.addProject(name: "app", path: projectURL.path, tools: [.claude, .codex])
+        try await service.configureProject(id: project.id, skillIDs: ["demo"], tags: [])
+        try await service.saveMCPServer(MCPServer(name: "api", transport: .stdio, command: "npx"))
+        let servers = try await service.mcpConfiguration().servers.map(\.id)
+        try await service.setMCPServers(projectID: project.id, serverIDs: servers, tags: [])
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: projectURL.appending(path: ".codex/skills/demo").path))
+        XCTAssertTrue(try String(contentsOf: projectURL.appending(path: ".codex/config.toml"), encoding: .utf8).contains("api"))
+
+        let storedRecords = try await service.storedProjects()
+        var changed = try XCTUnwrap(storedRecords.first { $0.id == project.id })
+        changed.tools = [.claude]
+        try await service.updateProject(changed)
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        // Odznaczone narzędzie nie zostawia po sobie osieroconych plików.
+        XCTAssertFalse(FileManager.default.fileExists(atPath: projectURL.appending(path: ".codex/skills").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: projectURL.appending(path: ".codex/config.toml").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: projectURL.appending(path: ".claude/skills/demo").path))
+        XCTAssertTrue(try String(contentsOf: projectURL.appending(path: ".mcp.json"), encoding: .utf8).contains("api"))
+        let manifest = try JSONDecoder().decode([String: [String]].self, from: Data(contentsOf: projectURL.appending(path: ".skillbox/mcp-manifest.json")))
+        XCTAssertNil(manifest["codex"], "manifest nie może dalej twierdzić, że codex ma wpisy")
     }
 
     func testTagSelectedSkillCanBeExcludedFromOneProject() async throws {

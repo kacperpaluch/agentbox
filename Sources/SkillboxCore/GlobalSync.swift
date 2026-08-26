@@ -30,7 +30,8 @@ extension SkillboxService {
     public func previewGlobalSync(home: URL = FileManager.default.homeDirectoryForCurrentUser) async throws -> [SkillSyncPreview] {
         let selection = try await globalSelection()
         let current = try await selectedSkills(ids: selection.skillIDs, tags: selection.tags)
-        return try selection.tools.map { try Self.skillPreview(tool: $0, target: $0.globalSkillsURL(home: home), current: current) }
+        let library = await store.skillsDirectory
+        return try selection.tools.map { try Self.skillPreview(tool: $0, target: $0.globalSkillsURL(home: home), current: current, library: library) }
     }
 
     /// Applies the stored selection. Every tool is previewed first, so an unmanaged skill directory

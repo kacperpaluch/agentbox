@@ -131,7 +131,11 @@ extension SkillboxService {
         var servers = mcp.servers.filter { serverIDs.contains($0.id) || !tags.isDisjoint(with: ($0.tags ?? []).map { $0.lowercased() }) }.filter(\.enabled)
         servers.sort { $0.name < $1.name }
         let secrets = try await store.secrets()
-        return try project.tools.map { try MCPRenderer.preview(tool: $0, project: URL(fileURLWithPath: project.path), servers: servers, secrets: secrets) }
+        let projectURL = URL(fileURLWithPath: project.path)
+        var previews = try project.tools.map { try MCPRenderer.preview(tool: $0, project: projectURL, servers: servers, secrets: secrets) }
+        // Tools unticked in the project still have managed entries until this cleanup lands.
+        previews += try SkillboxService.abandonedTools(project: project).map { try MCPRenderer.preview(tool: $0, project: projectURL, servers: [], secrets: secrets) }
+        return previews
     }
 
     public func syncMCP(projectID: UUID) async throws -> [MCPPreview] {
@@ -147,6 +151,14 @@ enum MCPRenderer {
     private static let start = "# >>> skillbox managed MCP >>>"
     private static let end = "# <<< skillbox managed MCP <<<"
 
+    /// Every tool the project-local MCP manifest still has entries for.
+    static func managedTools(_ project: URL) -> Set<Tool> {
+        Set(((try? manifest(project)) ?? [:]).filter { !$0.value.isEmpty }.keys.compactMap(Tool.init(rawValue:)))
+    }
+
+    /// In the returned preview, empty `content` means the file should not exist: it is never
+    /// created, and an existing one is removed. That covers a project with no MCP selection —
+    /// which used to get an empty scaffold in every repository — and cleans such scaffolds up.
     static func preview(tool: Tool, project: URL, servers: [MCPServer], secrets: [String: String] = [:]) throws -> MCPPreview {
         let names = servers.map(\.name)
         let previous = try manifest(project)[tool.rawValue] ?? []
@@ -156,15 +168,15 @@ enum MCPRenderer {
         switch tool {
         case .claude:
             file = project.appending(path: ".mcp.json")
-            content = try jsonMerged(file: file, path: ["mcpServers"], servers: servers, tool: tool, previouslyManaged: Set(previous), secrets: secrets)
+            content = try renderedJSON(file: file, path: ["mcpServers"], servers: servers, tool: tool, previouslyManaged: Set(previous), secrets: secrets)
         case .codex:
             file = project.appending(path: ".codex/config.toml")
-            content = try codexMerged(file: file, servers: servers, previouslyManaged: Set(previous), secrets: secrets)
+            content = try renderedTOML(file: file, servers: servers, previouslyManaged: Set(previous), secrets: secrets)
         case .opencode:
             let jsonc = project.appending(path: "opencode.jsonc")
             let json = project.appending(path: "opencode.json")
             file = FileManager.default.fileExists(atPath: jsonc.path) ? jsonc : json
-            content = try jsonMerged(file: file, path: ["mcp"], servers: servers, tool: tool, previouslyManaged: Set(previous), secrets: secrets)
+            content = try renderedJSON(file: file, path: ["mcp"], servers: servers, tool: tool, previouslyManaged: Set(previous), secrets: secrets)
             // Adding opencode.jsonc later moves the target file. Without this, every entry
             // Agentbox had written to opencode.json would stay there forever, unmanaged.
             if file == jsonc, !previous.isEmpty, FileManager.default.fileExists(atPath: json.path) {
@@ -173,6 +185,37 @@ enum MCPRenderer {
             }
         }
         return MCPPreview(tool: tool, file: file.path, content: content, added: Array(Set(names).subtracting(previous)).sorted(), removed: Array(Set(previous).subtracting(names)).sorted(), staleFile: stale?.path, staleContent: stale?.content)
+    }
+
+    /// The full new content of one managed JSON file, or "" when it should not exist.
+    ///
+    /// With nothing managed now or before, an existing file is the user's alone and is returned
+    /// byte for byte — re-serializing a configuration Agentbox does not own would only churn
+    /// their diff. The exception is a file holding nothing beyond the empty scaffold: it is
+    /// reported as removable, which also cleans up what versions before 0.9.3 left behind.
+    private static func renderedJSON(file: URL, path: [String], servers: [MCPServer], tool: Tool, previouslyManaged: Set<String>, secrets: [String: String]) throws -> String {
+        if servers.isEmpty, previouslyManaged.isEmpty {
+            guard FileManager.default.fileExists(atPath: file.path) else { return "" }
+            let raw = try String(contentsOf: file, encoding: .utf8)
+            // An unparseable file is deliberately left alone here instead of throwing:
+            // nothing is managed in it, so there is nothing to protect.
+            let cleaned = try? jsonMerged(file: file, path: path, servers: [], tool: tool, previouslyManaged: [], secrets: [:])
+            return cleaned == "" ? "" : raw
+        }
+        return try jsonMerged(file: file, path: path, servers: servers, tool: tool, previouslyManaged: previouslyManaged, secrets: secrets)
+    }
+
+    /// The Codex counterpart of `renderedJSON`. A stray managed block that the manifest no longer
+    /// knows about is still ours by its markers, so it is stripped rather than kept forever.
+    private static func renderedTOML(file: URL, servers: [MCPServer], previouslyManaged: Set<String>, secrets: [String: String]) throws -> String {
+        if servers.isEmpty, previouslyManaged.isEmpty {
+            guard FileManager.default.fileExists(atPath: file.path) else { return "" }
+            let raw = try String(contentsOf: file, encoding: .utf8)
+            let stripped = strippedManagedBlock(raw)
+            if stripped.isEmpty { return "" }
+            return stripped == raw ? raw : stripped + "\n"
+        }
+        return try codexMerged(file: file, servers: servers, previouslyManaged: previouslyManaged, secrets: secrets)
     }
 
     static func apply(previews: [MCPPreview], project: URL) throws {
@@ -185,40 +228,58 @@ enum MCPRenderer {
         try protectGeneratedFiles(project)
         do {
             for preview in previews {
-                let file = URL(fileURLWithPath: preview.file)
-                try fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-                let existed = fm.fileExists(atPath: file.path)
-                var backupFile: URL?
-                if existed {
-                    try fm.createDirectory(at: backup, withIntermediateDirectories: true)
-                    let copy = backup.appending(path: preview.tool.rawValue + "-" + file.lastPathComponent)
-                    try fm.copyItem(at: file, to: copy); backupFile = copy
-                }
-                originals.append((file, backupFile, existed))
-                guard let data = preview.content.data(using: .utf8) else { throw SkillboxError.mcpConflict("nie można zakodować \(file.lastPathComponent)") }
-                try data.write(to: file, options: .atomic)
+                try writeManaged(preview.content, to: URL(fileURLWithPath: preview.file), backupPrefix: preview.tool.rawValue + "-", backup: backup, originals: &originals)
                 if let stalePath = preview.staleFile, let staleContent = preview.staleContent {
-                    let staleURL = URL(fileURLWithPath: stalePath)
-                    try fm.createDirectory(at: backup, withIntermediateDirectories: true)
-                    let copy = backup.appending(path: preview.tool.rawValue + "-stale-" + staleURL.lastPathComponent)
-                    try fm.copyItem(at: staleURL, to: copy)
-                    originals.append((staleURL, copy, true))
-                    guard let staleData = staleContent.data(using: .utf8) else { throw SkillboxError.mcpConflict("nie można zakodować \(staleURL.lastPathComponent)") }
-                    try staleData.write(to: staleURL, options: .atomic)
+                    try writeManaged(staleContent, to: URL(fileURLWithPath: stalePath), backupPrefix: preview.tool.rawValue + "-stale-", backup: backup, originals: &originals)
                 }
                 let names = Set(state[preview.tool.rawValue] ?? []).subtracting(preview.removed).union(preview.added)
                 state[preview.tool.rawValue] = Array(names).sorted()
             }
+            // A manifest with nothing managed anywhere is clutter, exactly like the files above;
+            // it disappears together with an emptied .skillbox directory.
+            state = state.filter { !$0.value.isEmpty }
             let manifestURL = project.appending(path: ".skillbox/mcp-manifest.json")
-            try fm.createDirectory(at: manifestURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let data = try JSONSerialization.data(withJSONObject: state, options: [.prettyPrinted, .sortedKeys])
-            try data.write(to: manifestURL, options: .atomic)
+            if state.isEmpty {
+                if fm.fileExists(atPath: manifestURL.path) { try fm.removeItem(at: manifestURL) }
+                let directory = manifestURL.deletingLastPathComponent()
+                if let leftovers = try? fm.contentsOfDirectory(atPath: directory.path), leftovers.allSatisfy({ $0 == ".DS_Store" }) {
+                    try? fm.removeItem(at: directory)
+                }
+            } else {
+                try fm.createDirectory(at: manifestURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                let data = try JSONSerialization.data(withJSONObject: state, options: [.prettyPrinted, .sortedKeys])
+                try data.write(to: manifestURL, options: .atomic)
+            }
         } catch {
             for original in originals.reversed() {
                 try? fm.removeItem(at: original.file)
                 if original.existed, let saved = original.backup { try? fm.copyItem(at: saved, to: original.file) }
             }
             throw error
+        }
+    }
+
+    /// One managed file for `apply`: backed up first, skipped when already identical, removed when
+    /// the content is empty. Skipping identical writes keeps a no-op sync from churning files, and
+    /// removal is what retires an empty scaffold instead of leaving it in the repository.
+    private static func writeManaged(_ content: String, to file: URL, backupPrefix: String, backup: URL, originals: inout [(file: URL, backup: URL?, existed: Bool)]) throws {
+        let fm = FileManager.default
+        let existed = fm.fileExists(atPath: file.path)
+        if existed, (try? String(contentsOf: file, encoding: .utf8)) == content { return }
+        if !existed, content.isEmpty { return }
+        var backupFile: URL?
+        if existed {
+            try fm.createDirectory(at: backup, withIntermediateDirectories: true)
+            let copy = backup.appending(path: backupPrefix + file.lastPathComponent)
+            try fm.copyItem(at: file, to: copy); backupFile = copy
+        }
+        originals.append((file, backupFile, existed))
+        if content.isEmpty {
+            try fm.removeItem(at: file)
+        } else {
+            try fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            guard let data = content.data(using: .utf8) else { throw SkillboxError.mcpConflict("nie można zakodować \(file.lastPathComponent)") }
+            try data.write(to: file, options: .atomic)
         }
     }
 
@@ -237,16 +298,22 @@ enum MCPRenderer {
             root = object
         }
         var current = root
+        // An emptied entries map takes its key with it, and a file left with nothing at all is
+        // reported as "" so the caller removes it instead of writing an empty scaffold.
         if path.count == 1 {
             var entries = current[path[0]] as? [String: Any] ?? [:]
             try mergeJSONEntries(&entries, servers: servers, tool: tool, previouslyManaged: previouslyManaged, secrets: secrets)
-            current[path[0]] = entries; root = current
+            if entries.isEmpty { current.removeValue(forKey: path[0]) } else { current[path[0]] = entries }
+            root = current
         } else {
             var parent = current[path[0]] as? [String: Any] ?? [:]
             var entries = parent[path[1]] as? [String: Any] ?? [:]
             try mergeJSONEntries(&entries, servers: servers, tool: tool, previouslyManaged: previouslyManaged, secrets: secrets)
-            parent[path[1]] = entries; current[path[0]] = parent; root = current
+            if entries.isEmpty { parent.removeValue(forKey: path[1]) } else { parent[path[1]] = entries }
+            if parent.isEmpty { current.removeValue(forKey: path[0]) } else { current[path[0]] = parent }
+            root = current
         }
+        guard !root.isEmpty else { return "" }
         let data = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         return String(decoding: data, as: UTF8.self) + "\n"
     }
@@ -286,10 +353,21 @@ enum MCPRenderer {
         return value
     }
 
+    /// The text with the managed marker block removed; unchanged when there is no block.
+    private static func strippedManagedBlock(_ text: String) -> String {
+        guard let startRange = text.range(of: start), let endRange = text.range(of: end), startRange.lowerBound < endRange.upperBound else { return text }
+        var result = text
+        result.removeSubrange(startRange.lowerBound..<endRange.upperBound)
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private static func codexMerged(file: URL, servers: [MCPServer], previouslyManaged: Set<String>, secrets: [String: String]) throws -> String {
         var existing = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
-        if let startRange = existing.range(of: start), let endRange = existing.range(of: end), startRange.lowerBound < endRange.upperBound { existing.removeSubrange(startRange.lowerBound..<endRange.upperBound); existing = existing.trimmingCharacters(in: .whitespacesAndNewlines) }
+        existing = strippedManagedBlock(existing)
         for server in servers where !previouslyManaged.contains(server.name) && declaresCodexServer(existing, name: server.name) { throw SkillboxError.mcpConflict("\(server.name) istnieje w config.toml poza blokiem Skillbox") }
+        // With nothing left to manage the block disappears entirely; a file that held only the
+        // block is reported as "" and removed by the caller.
+        guard !servers.isEmpty else { return existing.isEmpty ? "" : existing + "\n" }
         var block = [start]
         for server in servers {
             block.append("[mcp_servers.\(tomlKey(server.name))]")
