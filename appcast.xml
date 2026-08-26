@@ -6,6 +6,29 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.11.0</title>
+      <pubDate>Wed, 26 Aug 2026 20:55:54 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.11.0</link>
+      <sparkle:version>25</sparkle:version>
+      <sparkle:shortVersionString>0.11.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.11.0</h2>
+        <ul>
+          <li>Nowość: w zakładce MCP można zaznaczyć kilka serwerów naraz i dodać im tagi jedną operacją, tak jak w Bibliotece.</li>
+          <li>„Edytuj wszystko jako JSON” zapisuje teraz jednym kliknięciem, bez kroku analizy i klasyfikacji pól.</li>
+          <li>Tryb JSON edytora serwera zastępuje sekcję „Zmienne i nagłówki” zamiast pokazywać ją obok.</li>
+          <li>Zakładka Globalne używa teraz tych samych komponentów wyboru skilli/tagów co Projekty.</li>
+          <li>Naprawiono: okno dodawania tagów mówiło „skilli” nawet przy zaznaczeniu serwerów MCP.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.11.0/Agentbox-0.11.0.dmg"
+        length="5354304"
+        type="application/octet-stream"
+        sparkle:edSignature="6vH07MFMJ4MLmaONR4AyfYd+iPNe1BAPQdoTNk4XRa6rCICJHQoal6cVgxxKWemm/csc7Ecjc/qdONXJsK3xBg==" />
+    </item>
+    <item>
       <title>Agentbox 0.10.0</title>
       <pubDate>Wed, 26 Aug 2026 20:34:22 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.10.0</link>

@@ -131,6 +131,8 @@ Obsługiwane są lokalne serwery STDIO i zdalne HTTP, argumenty, zmienne środow
 
 Usunięcie serwera usuwa jego bezpośrednie przypisania i kasuje jego wartości z lokalnego pliku sekretów. Wynikowe pliki projektów są aktualizowane podczas kolejnej synchronizacji.
 
+Checkboxy przy serwerach pozwalają zaznaczyć kilka naraz i dodać im tagi jedną operacją — `Dodaj tagi (N)` w pasku akcji, tak samo jak w Bibliotece.
+
 ### Import JSON
 
 `Importuj lub użyj AI → Mam JSON` obsługuje cały obiekt z `mcpServers`, samą mapę serwerów oraz plik JSON. Po analizie pokazuje typy i liczbę sekretów. Można zaznaczyć tylko wybrane serwery do importu, a po imporcie przypisać im tagi.
@@ -139,7 +141,9 @@ Agentbox proponuje również klasyfikację każdej zmiennej i każdego nagłówk
 
 ### Edycja jako JSON
 
-`MCP → Szczegóły → JSON` pokazuje `command`/`args`/`url`/`env`/`headers` jednego serwera jako zwykły tekst do ręcznej edycji — łącznie z wartościami dotąd oznaczonymi jako sekret, bez maskowania: Agentbox działa lokalnie dla jednej osoby, więc nie ma czego ukrywać na ekranie. Zapis ponownie klasyfikuje każde pole tą samą heurystyką co import; klucz wyglądający na token, hasło czy API key automatycznie zostaje tylko na tym Macu, reszta trafia do backupu Git. Przycisk `Edytuj wszystko jako JSON` na liście serwerów otwiera ten sam widok dla całej konfiguracji naraz, wypełniony aktualnym stanem — poprawki nadpisują serwery o tej samej nazwie, reszta zostaje bez zmian.
+`MCP → Szczegóły → JSON` pokazuje `command`/`args`/`url`/`env`/`headers` jednego serwera jako zwykły tekst do ręcznej edycji — łącznie z wartościami dotąd oznaczonymi jako sekret, bez maskowania: Agentbox działa lokalnie dla jednej osoby, więc nie ma czego ukrywać na ekranie. Zapis ponownie klasyfikuje każde pole tą samą heurystyką co import; klucz wyglądający na token, hasło czy API key automatycznie zostaje tylko na tym Macu, reszta trafia do backupu Git. Ten tryb zastępuje sekcję `Zmienne i nagłówki`, zamiast pokazywać ją obok — te same wartości nie pojawiają się dwa razy.
+
+Przycisk `Edytuj wszystko jako JSON` na liście serwerów otwiera osobny, prosty widok dla całej konfiguracji naraz, wypełniony aktualnym stanem: popraw i `Zapisz` — bez kroku analizy i zaznaczania serwerów, bo to edycja własnej konfiguracji, a nie import z zewnątrz. Poprawki nadpisują serwery o tej samej nazwie, reszta zostaje bez zmian. Ta ceremonia (analiza, wybór serwerów, klasyfikacja pól) zostaje tam, gdzie faktycznie jest potrzebna — w `Importuj lub użyj AI`.
 
 ### Konfiguracja z AI
 

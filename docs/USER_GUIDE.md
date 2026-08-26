@@ -35,7 +35,9 @@ Automatyczne rozpoznawanie jest tylko sugestią. Agentbox uznaje za podejrzane n
 
 Sekret przechowywany poza backupem biblioteki może zostać zapisany jawnie w wynikowym pliku MCP projektu, jeśli format klienta tego wymaga. Przed synchronizacją Agentbox pokazuje pełną treść wynikowych konfiguracji. Preferuj zmienne systemowe, jeśli klient je obsługuje.
 
-Po imporcie klasyfikacją nadal można zarządzać w `MCP → Szczegóły`. Sekcja `Zmienne i nagłówki` pokazuje każdą wartość wprost, łącznie z sekretami — Agentbox jest lokalną aplikacją dla jednej osoby, więc nie ma powodu jej maskować na ekranie; typ pola decyduje wyłącznie o tym, czy wartość trafia do backupu Git. Tam samo `MCP → Szczegóły → JSON` daje pełną konfigurację jednego serwera jako tekst do ręcznej edycji, a `Edytuj wszystko jako JSON` na liście serwerów — tę samą edycję dla całej konfiguracji naraz. Zapis z JSON-a klasyfikuje każde pole od nowa tą samą heurystyką co import.
+Po imporcie klasyfikacją nadal można zarządzać w `MCP → Szczegóły`. Sekcja `Zmienne i nagłówki` pokazuje każdą wartość wprost, łącznie z sekretami — Agentbox jest lokalną aplikacją dla jednej osoby, więc nie ma powodu jej maskować na ekranie; typ pola decyduje wyłącznie o tym, czy wartość trafia do backupu Git. Tam samo `MCP → Szczegóły → JSON` daje pełną konfigurację jednego serwera jako tekst do ręcznej edycji i zastępuje wtedy sekcję `Zmienne i nagłówki`, zamiast pokazywać ją obok. Zapis z JSON-a klasyfikuje każde pole od nowa tą samą heurystyką co import.
+
+`Edytuj wszystko jako JSON` na liście serwerów otwiera osobny, prosty widok dla całej konfiguracji naraz: popraw i `Zapisz`, bez kroku analizy i zaznaczania — to edycja własnej konfiguracji, nie import czegoś nowego. Checkboxy przy serwerach pozwalają zaznaczyć kilka naraz i dodać im tagi jedną operacją, tak jak w Bibliotece.
 
 ## Podgląd i synchronizacja
 

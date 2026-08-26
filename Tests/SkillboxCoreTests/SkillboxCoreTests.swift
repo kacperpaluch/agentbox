@@ -279,6 +279,19 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: first, encoding: .utf8), "original")
     }
 
+    func testAddMCPServerTagsMergesWithExistingAndNormalizesCase() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let service = try SkillboxService(root: root)
+        let one = MCPServer(name: "one", transport: .http, url: "https://one.example", tags: ["seo"])
+        let two = MCPServer(name: "two", transport: .http, url: "https://two.example")
+        try await service.saveMCPServer(one); try await service.saveMCPServer(two)
+        try await service.addMCPServerTags(serverIDs: [one.id, two.id], tags: ["Audit", "seo"])
+        let servers = try await service.mcpConfiguration().servers
+        XCTAssertEqual(servers.first { $0.id == one.id }?.tags?.sorted(), ["audit", "seo"])
+        XCTAssertEqual(servers.first { $0.id == two.id }?.tags?.sorted(), ["audit", "seo"])
+        await XCTAssertThrowsErrorAsync(try await service.addMCPServerTags(serverIDs: [UUID()], tags: ["x"]))
+    }
+
     func testDuplicateProjectAndRenamedServerAreRejected() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let folder = root.appending(path: "project")

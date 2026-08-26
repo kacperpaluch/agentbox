@@ -231,6 +231,7 @@ struct OperationLogEntry: Identifiable {
         } catch { message = error.localizedDescription; record(.error, message); await reload(); return false }
     }
     func deleteMCPServer(_ id: UUID) async { await perform(autoBackup: true) { try await self.service?.deleteMCPServer(id: id); self.message = "Usunięto serwer MCP" } }
+    func addMCPServerTags(_ ids: Set<UUID>, text: String) async { await perform(autoBackup: true) { try await self.service?.addMCPServerTags(serverIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) serwerów MCP" } }
     func exportMCPServerJSON(_ id: UUID) async -> String { (try? await service?.exportMCPServerJSON(id)) ?? "" }
     func exportMCPConfigurationJSON() async -> String { (try? await service?.exportMCPConfigurationJSON(mcp.servers)) ?? "" }
     func updateMCPServerJSON(_ id: UUID, name: String, json: String, enabled: Bool, tags: [String]) async -> Bool {
@@ -289,6 +290,9 @@ struct OperationLogEntry: Identifiable {
     }
     func analyzeMCP(_ text: String) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.analyzeMCPJSON(text) }
     func importMCP(_ text: String, serverNames: Set<String>, classifications: [String: MCPValueClassification]) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text, serverNames: serverNames, classifications: classifications); await reload(); scheduleAutomaticBackup(); message = "Zaimportowano \(result.servers.count) serwerów MCP"; record(.success, message); return result }
+    /// Applies every server the JSON describes — no selection step, because this text is a re-edit
+    /// of the library's own configuration rather than something pasted in from elsewhere.
+    func importMCPJSONAll(_ text: String) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text); await reload(); scheduleAutomaticBackup(); message = "Zapisano \(result.servers.count) serwerów MCP"; record(.success, message); return result }
     func generateMCP(_ instructions: String, settings: MCPAISettings, key: String?) async throws -> String { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; try await service.saveMCPAISettings(settings, apiKey: key); return try await service.generateMCPConfiguration(instructions: instructions, settings: settings) }
     func saveAIProvider(_ provider: MCPAIProvider, model: String, key: String?) async { await perform { try await self.service?.saveMCPAIProvider(provider, model: model, apiKey: key); self.message = "Zapisano ustawienia \(provider == .openAI ? "OpenAI" : "Anthropic")" } }
     func moveLibrary(to url: URL) async {
@@ -875,19 +879,13 @@ struct GlobalSyncView: View {
             Text("Te skille trafiają do katalogu użytkownika i są widoczne we wszystkich sesjach wybranego klienta, niezależnie od projektu.").foregroundStyle(.secondary)
             GroupBox("Narzędzia") { VStack(alignment: .leading, spacing: 6) {
                 ForEach(Tool.allCases, id: \.self) { tool in
-                    Toggle(isOn: binding(tool, in: $tools)) {
+                    Toggle(isOn: setBinding(tool, in: $tools)) {
                         HStack { Text(tool.rawValue.capitalized); Text(tool.globalSkillsURL().path).font(.caption).foregroundStyle(.secondary) }
                     }.toggleStyle(.checkbox)
                 }
             }.padding(6) }
-            GroupBox("Pojedyncze skille") {
-                if model.skills.isEmpty { Text("Biblioteka jest pusta.").foregroundStyle(.secondary).padding(6) }
-                else { LazyVGrid(columns: [GridItem(.adaptive(minimum: 180))], alignment: .leading) { ForEach(model.skills) { skill in Toggle(skill.name, isOn: binding(skill.id, in: $skillIDs)).toggleStyle(.checkbox) } }.padding(6) }
-            }
-            GroupBox("Tagi dynamiczne") {
-                if availableTags.isEmpty { Text("Brak tagów.").foregroundStyle(.secondary).padding(6) }
-                else { LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], alignment: .leading) { ForEach(availableTags, id: \.self) { tag in Toggle("#\(tag)", isOn: binding(tag, in: $tags)).toggleStyle(.checkbox) } }.padding(6) }
-            }
+            SkillCheckGrid(title: "Pojedyncze skille", skills: model.skills, selection: $skillIDs)
+            TagCheckGrid(title: "Tagi dynamiczne", tags: availableTags, selection: $tags)
             if !error.isEmpty { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).textSelection(.enabled) }
             if !previews.isEmpty {
                 GroupBox("Podgląd") { VStack(alignment: .leading, spacing: 10) { ForEach(previews, id: \.tool) { item in
@@ -915,9 +913,6 @@ struct GlobalSyncView: View {
         do { previews = try await model.previewGlobalSync(); error = "" }
         catch { previews = []; self.error = error.localizedDescription }
     }
-    private func binding<T: Hashable>(_ value: T, in set: Binding<Set<T>>) -> Binding<Bool> {
-        Binding(get: { set.wrappedValue.contains(value) }, set: { if $0 { set.wrappedValue.insert(value) } else { set.wrappedValue.remove(value) } })
-    }
 }
 
 struct MCPView: View {
@@ -926,25 +921,56 @@ struct MCPView: View {
     @State private var serverToDelete: MCPServer?
     @State private var showImport = false
     @State private var bulkJSON: String?
+    @State private var checked = Set<UUID>()
+    @State private var showBatchTags = false
+    private var existingTags: [String] { Array(Set(model.mcp.servers.flatMap { $0.tags ?? [] })).sorted() }
     var body: some View { VStack(spacing: 0) { ActionBar {
         Button { showImport = true } label: { Label("Importuj lub użyj AI", systemImage: "sparkles") }.buttonStyle(.borderedProminent)
         Button { editingServer = MCPServer(name: "", transport: .stdio) } label: { Label("Nowy serwer", systemImage: "plus") }.buttonStyle(.bordered)
         Button { Task { bulkJSON = await model.exportMCPConfigurationJSON() } } label: { Label("Edytuj wszystko jako JSON", systemImage: "curlybraces") }.buttonStyle(.bordered).disabled(model.mcp.servers.isEmpty)
+        if !checked.isEmpty {
+            Button { showBatchTags = true } label: { Label("Dodaj tagi (\(checked.count))", systemImage: "tag") }.buttonStyle(.bordered)
+            Button("Wyczyść") { checked.removeAll() }.buttonStyle(.bordered)
+        }
         Spacer()
         Text("\(model.mcp.servers.count) serwerów").font(.caption).foregroundStyle(.secondary)
     }; List {
-        Section("Serwery") { ForEach(model.mcp.servers) { server in HStack { Image(systemName: server.transport == .stdio ? "terminal" : "globe").foregroundStyle(.tint); VStack(alignment: .leading, spacing: 5) { HStack { Text(server.name).fontWeight(.medium); Text(server.transport == .stdio ? "Lokalny" : "HTTP").font(.caption2.weight(.semibold)).padding(.horizontal, 7).padding(.vertical, 2).background((server.transport == .stdio ? Color.blue : Color.green).opacity(0.14), in: Capsule()); ForEach(server.tags ?? [], id: \.self) { TagPill(tag: $0) } }; let secretCount = (server.secretEnvironment?.count ?? 0) + (server.secretHeaders?.count ?? 0); Text("\(server.arguments.count) argumentów · \((server.environment.count) + (server.literalEnvironment?.count ?? 0) + (server.secretEnvironment?.count ?? 0)) zmiennych\(secretCount > 0 ? " · \(secretCount) sekretów lokalnych" : "")").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Szczegóły") { editingServer = server }; Button(role: .destructive) { serverToDelete = server } label: { Image(systemName: "trash") } } } }
+        Section("Serwery") { ForEach(model.mcp.servers) { server in HStack(alignment: .top, spacing: 9) { Toggle("", isOn: checkBinding(server.id)).labelsHidden().toggleStyle(.checkbox).padding(.top, 5); Image(systemName: server.transport == .stdio ? "terminal" : "globe").foregroundStyle(.tint); VStack(alignment: .leading, spacing: 5) { HStack { Text(server.name).fontWeight(.medium); Text(server.transport == .stdio ? "Lokalny" : "HTTP").font(.caption2.weight(.semibold)).padding(.horizontal, 7).padding(.vertical, 2).background((server.transport == .stdio ? Color.blue : Color.green).opacity(0.14), in: Capsule()); ForEach(server.tags ?? [], id: \.self) { TagPill(tag: $0) } }; let secretCount = (server.secretEnvironment?.count ?? 0) + (server.secretHeaders?.count ?? 0); Text("\(server.arguments.count) argumentów · \((server.environment.count) + (server.literalEnvironment?.count ?? 0) + (server.secretEnvironment?.count ?? 0)) zmiennych\(secretCount > 0 ? " · \(secretCount) sekretów lokalnych" : "")").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Szczegóły") { editingServer = server }; Button(role: .destructive) { serverToDelete = server } label: { Image(systemName: "trash") } } } }
     } }.navigationTitle("MCP")
         .sheet(isPresented: $showImport) { MCPImportView(model: model) }
-        .sheet(item: $editingServer) { server in MCPServerEditor(model: model, server: server, existingTags: Array(Set(model.mcp.servers.flatMap { $0.tags ?? [] })).sorted()) }
-        .sheet(item: Binding(get: { bulkJSON.map(IdentifiableString.init) }, set: { bulkJSON = $0?.value })) { text in MCPImportView(model: model, prefill: text.value) }
+        .sheet(item: $editingServer) { server in MCPServerEditor(model: model, server: server, existingTags: existingTags) }
+        .sheet(item: Binding(get: { bulkJSON.map(IdentifiableString.init) }, set: { bulkJSON = $0?.value })) { text in MCPBulkJSONView(model: model, text: text.value) }
+        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: "serwerów MCP") { text in Task { await model.addMCPServerTags(checked, text: text); checked.removeAll() } } }
         .confirmationDialog("Usunąć serwer \(serverToDelete?.name ?? "")?", isPresented: Binding(get: { serverToDelete != nil }, set: { if !$0 { serverToDelete = nil } })) { Button("Usuń", role: .destructive) { if let serverToDelete { Task { await model.deleteMCPServer(serverToDelete.id) } }; serverToDelete = nil }; Button("Anuluj", role: .cancel) { serverToDelete = nil } } message: { Text("Serwer zostanie usunięty także z bezpośrednich przypisań projektów.") }
     }
+    private func checkBinding(_ id: UUID) -> Binding<Bool> { Binding(get: { checked.contains(id) }, set: { if $0 { checked.insert(id) } else { checked.remove(id) } }) }
 }
 
 /// Wraps a `String` so it can back a `.sheet(item:)` — used to present the bulk JSON editor
 /// pre-filled with a freshly generated export instead of an always-empty `.sheet(isPresented:)`.
 struct IdentifiableString: Identifiable { let value: String; var id: String { value } }
+
+/// Edit-and-save for the whole MCP configuration as JSON: no analyze/select/classify step, because
+/// this text already came straight out of the library — every server in it is meant to be applied.
+/// That ceremony stays in `MCPImportView`, which is for a config pasted in from somewhere else.
+struct MCPBulkJSONView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var model: AppModel
+    @State var text: String
+    @State private var error = ""
+    @State private var working = false
+    var body: some View { VStack(alignment: .leading, spacing: 14) {
+        Text("Edytuj konfigurację MCP jako JSON").font(.title2.bold())
+        Text("Wartości wprost, łącznie z sekretami. Zapis nadpisuje po nazwie serwery obecne w tekście, resztę zostawia bez zmian — usunięcie serwera z tekstu go tu nie kasuje. Klucze wyglądające na token/hasło/API key automatycznie zostają tylko na tym Macu.").font(.caption).foregroundStyle(.secondary)
+        TextEditor(text: $text).font(.system(.body, design: .monospaced)).frame(minHeight: 420).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+        if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+        HStack { if working { ProgressView() }; Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { Task { await save() } }.buttonStyle(.borderedProminent).disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working) }
+    }.padding(24).frame(width: 720, height: 600) }
+    private func save() async {
+        working = true; error = ""; defer { working = false }
+        do { _ = try await model.importMCPJSONAll(text); dismiss() } catch { self.error = error.localizedDescription; model.reportError(error) }
+    }
+}
 
 struct MCPServerEditor: View {
     @Environment(\.dismiss) private var dismiss
@@ -962,12 +988,16 @@ struct MCPServerEditor: View {
         if isExisting { Picker("Widok", selection: $editingJSON) { Text("Formularz").tag(false); Text("JSON").tag(true) }.pickerStyle(.segmented).onChange(of: editingJSON) { if editingJSON { Task { jsonText = await model.exportMCPServerJSON(original.id) } } } }
         if editingJSON && isExisting {
             Text("Pełna konfiguracja tego serwera, wartości wprost — łącznie z sekretami. ${VAR} to odczyt zmiennej systemowej; klucze wyglądające na token/hasło/API key automatycznie zostają tylko na tym Macu, reszta trafia do backupu Git.").font(.caption).foregroundStyle(.secondary)
-            TextEditor(text: $jsonText).font(.system(.body, design: .monospaced)).frame(height: 220).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+            TextEditor(text: $jsonText).font(.system(.body, design: .monospaced)).frame(height: 340).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
         } else {
             Picker("Transport", selection: $transport) { Text("Lokalny STDIO").tag(MCPTransport.stdio); Text("Zdalny HTTP").tag(MCPTransport.http) }.pickerStyle(.segmented)
             if transport == .stdio { TextField("Polecenie, np. npx", text: $command); Text("Argumenty — jeden na linię").font(.caption).foregroundStyle(.secondary); TextEditor(text: $arguments).font(.system(.body, design: .monospaced)).frame(height: 75) } else { TextField("URL", text: $url) }
         }
-        GroupBox("Zmienne i nagłówki") { VStack(alignment: .leading, spacing: 10) { Text("Wartości widać wprost — to lokalna apka na tym Macu. Typ pola decyduje, czy wartość trafia do backupu Git: „Tylko na tym Macu” nigdy nie wychodzi poza mcp-secrets.json.").font(.caption).foregroundStyle(.secondary); ForEach($fields) { $field in MCPManagedFieldRow(field: $field) { fields.removeAll { $0.id == field.id } } }; HStack { Button("Dodaj zmienną") { fields.append(MCPManagedField(location: .environment, key: "", classification: .environment)) }; Button("Dodaj nagłówek") { fields.append(MCPManagedField(location: .header, key: "", classification: .environment)) } } }.padding(7) }
+        // The JSON view already shows env/header values in plain text, so showing this section too
+        // would just be the same fields twice in two formats — it appears only in form mode.
+        if !(editingJSON && isExisting) {
+            GroupBox("Zmienne i nagłówki") { VStack(alignment: .leading, spacing: 10) { Text("Wartości widać wprost — to lokalna apka na tym Macu. Typ pola decyduje, czy wartość trafia do backupu Git: „Tylko na tym Macu” nigdy nie wychodzi poza mcp-secrets.json.").font(.caption).foregroundStyle(.secondary); ForEach($fields) { $field in MCPManagedFieldRow(field: $field) { fields.removeAll { $0.id == field.id } } }; HStack { Button("Dodaj zmienną") { fields.append(MCPManagedField(location: .environment, key: "", classification: .environment)) }; Button("Dodaj nagłówek") { fields.append(MCPManagedField(location: .header, key: "", classification: .environment)) } } }.padding(7) }
+        }
         HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { Task { if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(name.isEmpty || (editingJSON && isExisting ? jsonText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty : (transport == .stdio ? command.isEmpty : url.isEmpty)) || model.isWorking) }
     }.padding(24) }.frame(width: 760, height: 760).task { fields = await model.managedFields(for: original) } }
     private func save() async -> Bool {
@@ -986,7 +1016,6 @@ struct MCPManagedFieldRow: View {
 struct MCPImportView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var model: AppModel
-    var prefill: String = ""
     @State private var source = ""
     @State private var summary: MCPImportSummary?
     @State private var error = ""
@@ -999,8 +1028,7 @@ struct MCPImportView: View {
     @State private var selected = Set<String>()
     @State private var classifications: [String: MCPValueClassification] = [:]
     var body: some View { VStack(alignment: .leading, spacing: 0) { ScrollView { VStack(alignment: .leading, spacing: 14) {
-        Text(prefill.isEmpty ? "Import konfiguracji MCP" : "Edytuj konfigurację MCP jako JSON").font(.title2.bold())
-        if !prefill.isEmpty { Text("Poniżej jest aktualna konfiguracja, wartości wprost — łącznie z sekretami. Popraw co trzeba i kliknij „Analizuj”, potem zaznacz serwery do zapisania — istniejące o tej samej nazwie zostaną nadpisane, reszta zostanie bez zmian. Klucze wyglądające na token/hasło/API key automatycznie zostają tylko na tym Macu.").font(.caption).foregroundStyle(.secondary) }
+        Text("Import konfiguracji MCP").font(.title2.bold())
         Picker("Tryb", selection: $useAI) { Text("Mam JSON").tag(false); Text("Mam instrukcję — przygotuj z AI").tag(true) }.pickerStyle(.segmented)
         if useAI {
             HStack { Picker("Dostawca", selection: $provider) { Text("OpenAI").tag(MCPAIProvider.openAI); Text("Anthropic").tag(MCPAIProvider.claude) }.frame(width: 210); TextField("Model", text: provider == .openAI ? $openAIModel : $claudeModel); SecureField("Klucz API (puste = użyj zapisanego)", text: $apiKey) }
@@ -1021,7 +1049,7 @@ struct MCPImportView: View {
         }
         if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
     }.padding(24) }; Divider(); HStack { if working { ProgressView() }; if summary != nil { Text("Wybrano: \(selected.count)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Anuluj") { dismiss() }; Button(useAI ? "Przygotuj z AI" : "Analizuj") { Task { await prepare() } }.disabled(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working); Button("Importuj wybrane") { Task { await importNow() } }.buttonStyle(.borderedProminent).disabled(summary == nil || selected.isEmpty || working) }.padding(16).background(.bar)
-    }.frame(width: 760, height: 680).onAppear { if source.isEmpty { source = prefill }; if let settings = model.mcp.aiSettings { provider = settings.provider; openAIModel = settings.openAIModel; claudeModel = settings.claudeModel } } }
+    }.frame(width: 760, height: 680).onAppear { if let settings = model.mcp.aiSettings { provider = settings.provider; openAIModel = settings.openAIModel; claudeModel = settings.claudeModel } } }
     private func prepare() async { working = true; error = ""; summary = nil; selected.removeAll(); classifications.removeAll(); defer { working = false }; do { if useAI { let settings = MCPAISettings(provider: provider, openAIModel: openAIModel, claudeModel: claudeModel); source = try await model.generateMCP(source, settings: settings, key: apiKey.isEmpty ? nil : apiKey) }; let analyzed = try await model.analyzeMCP(source); summary = analyzed; selected = Set(analyzed.servers.map(\.name)); classifications = Dictionary(uniqueKeysWithValues: analyzed.fields.map { ($0.id, $0.classification) }) } catch { self.error = error.localizedDescription; model.reportError(error) } }
     private func importNow() async { working = true; error = ""; defer { working = false }; do { _ = try await model.importMCP(source, serverNames: selected, classifications: classifications); dismiss() } catch { self.error = error.localizedDescription; model.reportError(error) } }
     private func classificationBinding(_ field: MCPImportField) -> Binding<MCPValueClassification> { Binding(get: { classifications[field.id] ?? field.classification }, set: { classifications[field.id] = $0 }) }
@@ -1255,9 +1283,10 @@ struct AIProviderSettingsCard: View {
 struct BatchTagView: View {
     @Environment(\.dismiss) private var dismiss
     let count: Int; let existingTags: [String]
+    var noun = "skilli"
     let onSave: (String) -> Void
     @State private var tags = ""
-    var body: some View { VStack(alignment: .leading, spacing: 16) { Text("Dodaj tagi").font(.title2.bold()); Text("Wybrano \(count) skilli. Nowe tagi zostaną dopisane do już istniejących.").foregroundStyle(.secondary); HStack { TextField("np. seo, marketing, audit", text: $tags).textFieldStyle(.roundedBorder); ExistingTagMenu(tags: existingTags, text: $tags) }; HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Dodaj") { onSave(tags); dismiss() }.buttonStyle(.borderedProminent).disabled(AppModel.csv(tags).isEmpty) } }.padding(24).frame(width: 520) }
+    var body: some View { VStack(alignment: .leading, spacing: 16) { Text("Dodaj tagi").font(.title2.bold()); Text("Wybrano \(count) \(noun). Nowe tagi zostaną dopisane do już istniejących.").foregroundStyle(.secondary); HStack { TextField("np. seo, marketing, audit", text: $tags).textFieldStyle(.roundedBorder); ExistingTagMenu(tags: existingTags, text: $tags) }; HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Dodaj") { onSave(tags); dismiss() }.buttonStyle(.borderedProminent).disabled(AppModel.csv(tags).isEmpty) } }.padding(24).frame(width: 520) }
 }
 
 struct ExistingTagMenu: View {
@@ -1293,10 +1322,10 @@ struct SharedSettingsForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             GroupBox("Narzędzia") { HStack { ForEach(Tool.allCases, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: setBinding(tool, in: $tools)).toggleStyle(.checkbox) } }.padding(6) }
-            GroupBox("Pojedyncze skille") { ScrollView { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(skills) { skill in skillToggle(skill) } }.padding(6) }.frame(height: 150) }
-            GroupBox("Tagi skilli") { tagGrid(availableTags, selection: $selectedTags) }
+            ScrollView { SkillCheckGrid(title: "Pojedyncze skille", skills: skills, selection: $selectedSkills, locked: Set(tagMatched.map(\.id)), lockedHelp: "Wybrany przez tag — odznacz go w sekcji Wykluczenia, by pominąć") }.frame(height: 150)
+            TagCheckGrid(title: "Tagi skilli", tags: availableTags, selection: $selectedTags)
             GroupBox("Pojedyncze serwery MCP") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(servers) { server in serverToggle(server) } }.padding(6) }
-            GroupBox("Tagi MCP") { tagGrid(mcpTags, selection: $selectedMCPtags) }
+            TagCheckGrid(title: "Tagi MCP", tags: mcpTags, selection: $selectedMCPtags)
             exclusionsBox
             GroupBox("Git") { VStack(alignment: .leading, spacing: 6) { Toggle("Dopisuj wygenerowane pliki MCP do .gitignore projektu", isOn: $manageGitignore).toggleStyle(.checkbox); Text(".gitignore jedzie z repozytorium, więc chroni też zespół. Agentbox dopisuje tylko własny blok i nigdy nie usuwa istniejących wpisów.").font(.caption).foregroundStyle(.secondary) }.padding(6) }
         }
@@ -1325,26 +1354,60 @@ struct SharedSettingsForm: View {
             }.padding(6)
         }
     }
-    // A selected tag pulls the skill/server in on its own; showing it checked-but-locked here makes
-    // that visible right on the list instead of only in the separate "Wykluczenia" box. The tag wins
-    // even over an earlier individual tick, so an item tagged later looks the same as one the tag
-    // pulled in from the start. Unticking the tag before saving brings the individual tick back;
-    // saving hands the item to the tag, because the store drops ids a tag already covers.
-    private func skillToggle(_ skill: Skill) -> some View {
-        let tagCovered = covered(skill.tags, by: selectedTags)
-        return Toggle(skill.name, isOn: tagCovered ? .constant(true) : setBinding(skill.id, in: $selectedSkills)).toggleStyle(.checkbox)
-            .disabled(tagCovered).help(tagCovered ? "Wybrany przez tag — odznacz go w sekcji Wykluczenia, by pominąć" : "")
-    }
+    // A selected tag pulls the server in on its own; showing it checked-but-locked here makes that
+    // visible right on the list. Skills get the same treatment via `SkillCheckGrid`'s `locked` set —
+    // servers have no exclusions box, so there is nowhere else a tag-covered one could be dropped.
     private func serverToggle(_ server: MCPServer) -> some View {
         let tagCovered = covered(server.tags ?? [], by: selectedMCPtags)
         return Toggle(server.name, isOn: tagCovered ? .constant(true) : setBinding(server.id, in: $selectedServers)).toggleStyle(.checkbox)
             .disabled(tagCovered).help(tagCovered ? "Wybrany przez tag MCP" : "")
     }
-    private func tagGrid(_ tags: [String], selection: Binding<Set<String>>) -> some View { Group { if tags.isEmpty { Text("Brak tagów.").foregroundStyle(.secondary).padding(6) } else { LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], alignment: .leading) { ForEach(tags, id: \.self) { tag in Toggle("#\(tag)", isOn: setBinding(tag, in: selection)).toggleStyle(.checkbox) } }.padding(6) } } }
 }
 
 func setBinding<T: Hashable>(_ value: T, in set: Binding<Set<T>>) -> Binding<Bool> {
     Binding(get: { set.wrappedValue.contains(value) }, set: { enabled in if enabled { set.wrappedValue.insert(value) } else { set.wrappedValue.remove(value) } })
+}
+
+/// Titled grid of "pick a skill" checkboxes — the same visual language everywhere skills are
+/// selected: Projects, folders, batch add, and Global. A skill whose id is in `locked` shows fixed
+/// as checked, because something else (a tag) already pulls it in, with `lockedHelp` as its tooltip.
+struct SkillCheckGrid: View {
+    let title: String
+    let skills: [Skill]
+    @Binding var selection: Set<String>
+    var locked: Set<String> = []
+    var lockedHelp: String = ""
+    var body: some View {
+        GroupBox(title) {
+            if skills.isEmpty { Text("Biblioteka jest pusta.").foregroundStyle(.secondary).padding(6) }
+            else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) {
+                    ForEach(skills) { skill in
+                        let isLocked = locked.contains(skill.id)
+                        Toggle(skill.name, isOn: isLocked ? .constant(true) : setBinding(skill.id, in: $selection))
+                            .toggleStyle(.checkbox).disabled(isLocked).help(isLocked ? lockedHelp : "")
+                    }
+                }.padding(6)
+            }
+        }
+    }
+}
+
+/// Titled grid of `#tag` checkboxes — shared by every "select by tag" section in the app.
+struct TagCheckGrid: View {
+    let title: String
+    let tags: [String]
+    @Binding var selection: Set<String>
+    var body: some View {
+        GroupBox(title) {
+            if tags.isEmpty { Text("Brak tagów.").foregroundStyle(.secondary).padding(6) }
+            else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], alignment: .leading) {
+                    ForEach(tags, id: \.self) { tag in Toggle("#\(tag)", isOn: setBinding(tag, in: $selection)).toggleStyle(.checkbox) }
+                }.padding(6)
+            }
+        }
+    }
 }
 
 struct ProjectEditor: View {
@@ -1609,7 +1672,7 @@ struct GroupRootSetupView: View {
                         }
                     }.toggleStyle(.checkbox)
                 }
-                HStack { Button("Zaznacz wszystkie") { following = Set(projects.map(\.id)) }; Button("Odznacz wszystkie") { following.removeAll() } }
+                HStack { Button("Zaznacz wszystkie") { following = Set(projects.map(\.id)) }; Button("Wyczyść") { following.removeAll() } }
             }.padding(6) }
             GroupBox("Nowe podfoldery") { VStack(alignment: .leading, spacing: 6) {
                 Toggle("Pytaj, gdy w tym folderze pojawi się nowy podfolder", isOn: $watchesNewFolders).toggleStyle(.checkbox)

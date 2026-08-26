@@ -76,6 +76,20 @@ extension SkillboxService {
         try await store.save(config, replacingSecrets: secrets)
     }
 
+    /// Adds tags to several servers at once, merging with whatever each one already has — the MCP
+    /// counterpart of `addTags(skillIDs:tags:)` in the Library tab.
+    public func addMCPServerTags(serverIDs: [UUID], tags: [String]) async throws {
+        var config = try await store.mcpConfiguration()
+        let normalized = SkillboxService.normalizedTags(tags)
+        var found = Set<UUID>()
+        for index in config.servers.indices where serverIDs.contains(config.servers[index].id) {
+            config.servers[index].tags = Array(Set((config.servers[index].tags ?? []) + normalized)).sorted()
+            found.insert(config.servers[index].id)
+        }
+        if let missing = serverIDs.first(where: { !found.contains($0) }) { throw SkillboxError.mcpConflict("serwer MCP nie istnieje: \(missing)") }
+        try await store.save(config)
+    }
+
     public func saveMCPPreset(_ preset: MCPPreset) async throws {
         var config = try await store.mcpConfiguration()
         if let index = config.presets.firstIndex(where: { $0.id == preset.id }) { config.presets[index] = preset }

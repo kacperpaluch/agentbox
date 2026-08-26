@@ -6,6 +6,23 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-08-26
+
+### Dodano
+
+- W zakładce MCP checkboxy przy serwerach pozwalają zaznaczyć kilka naraz i dodać im tagi jedną operacją — `Dodaj tagi (N)` w pasku akcji, tak samo jak w Bibliotece.
+
+### Zmieniono
+
+- `Edytuj wszystko jako JSON` zapisuje teraz jednym kliknięciem — bez kroku analizy, zaznaczania serwerów i klasyfikacji pól. Ta ceremonia zostaje tam, gdzie jest potrzebna: w `Importuj lub użyj AI`, czyli przy wklejaniu configu z zewnątrz.
+- W trybie JSON edytora pojedynczego serwera znika sekcja `Zmienne i nagłówki` — te same wartości nie pokazują się już drugi raz w dwóch formatach naraz.
+- Zakładka Globalne korzysta teraz z tych samych komponentów wyboru skilli i tagów co Projekty, foldery nadrzędne i `Dodaj wiele` — spójny wygląd zamiast osobnej implementacji.
+- Ujednolicono nazwę przycisku czyszczenia zaznaczenia (`Wyczyść`) we wszystkich miejscach, gdzie można zaznaczać wiele pozycji.
+
+### Naprawiono
+
+- Okno dodawania tagów pokazywało „Wybrano N skilli” nawet przy zaznaczeniu serwerów MCP.
+
 ## [0.10.0] - 2026-08-26
 
 ### Dodano
