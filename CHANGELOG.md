@@ -6,6 +6,19 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-08-26
+
+### Naprawiono
+
+- Wykrywanie nowych podfolderów z 0.9.0 działało tylko przy uruchomieniu aplikacji i po zmianie danych. Repozytorium sklonowane przy otwartym Agentbox nie pojawiało się aż do restartu, a przycisk `Sprawdź stan` sprawdzał wyłącznie stan projektów względem biblioteki i nowych folderów nie szukał. Skanowanie odpala się teraz także po powrocie do aplikacji z innego okna — czyli dokładnie wtedy, gdy użytkownik wraca z terminala po `git clone` — oraz na żądanie przyciskiem `Sprawdź stan`.
+- `Sprawdź stan` był nieaktywny, gdy na liście nie było jeszcze żadnego projektu. Folder nadrzędny bez projektów nie miał jak zaproponować swoich podfolderów; przycisk działa teraz, gdy jest choć jeden folder nadrzędny.
+
+- Podfolder odznaczony w `Dodaj wiele` był proponowany ponownie zaraz po dodaniu, mimo że odznaczenie jest odpowiedzią, a nie odłożonym pytaniem. Podfoldery obecne w chwili tworzenia folderu nadrzędnego są teraz uznawane za znane; `nowy` znaczy `pojawił się od tej chwili`. Zachowanie wyłącza opcja `Pytaj tylko o podfoldery, które pojawią się od teraz`, a `Przywróć pominięte` przywraca je wszystkie.
+
+### Dodano
+
+- Liczba wykrytych podfolderów jest widoczna jako plakietka przy `Projekty` w menu bocznym, więc pytanie nie czeka niezauważone w zakładce, do której nikt akurat nie zagląda.
+
 ## [0.9.1] - 2026-08-26
 
 ### Naprawiono

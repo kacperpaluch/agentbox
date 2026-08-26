@@ -46,7 +46,7 @@ extension SkillboxService {
     /// save, so a single user action takes a single recovery snapshot and never leaves a folder
     /// without its projects.
     @discardableResult
-    public func addProjectRoot(_ root: ProjectRoot, folders: [String], serverIDs: [UUID], serverTags: [String]) async throws -> ProjectRoot {
+    public func addProjectRoot(_ root: ProjectRoot, folders: [String], serverIDs: [UUID], serverTags: [String], treatingExistingAsKnown: Bool = true) async throws -> ProjectRoot {
         var isDirectory: ObjCBool = false
         let rootURL = URL(fileURLWithPath: root.path).standardizedFileURL
         guard FileManager.default.fileExists(atPath: rootURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -72,6 +72,10 @@ extension SkillboxService {
             let name = Self.uniqueProjectName(URL(fileURLWithPath: folder).lastPathComponent, taken: taken)
             taken.insert(name.lowercased())
             projects.append(Project(name: name, path: folder, tools: stored.tools, rootID: stored.id))
+        }
+        if treatingExistingAsKnown {
+            let projectPaths = (config.projects + projects).map { URL(fileURLWithPath: $0.path).standardizedFileURL.path }
+            stored.ignoredPaths = Self.knownSubfolders(of: rootURL, besides: stored.ignoredPaths, excluding: projectPaths)
         }
         config.projectRoots = config.roots + [stored]
         config.projects.append(contentsOf: projects)
@@ -110,7 +114,7 @@ extension SkillboxService {
     /// from scratch. Every project passed in joins the folder; `following` says which ones drop
     /// their own settings for the folder's, and the rest keep exactly what they synchronize today.
     @discardableResult
-    public func adoptProjectsIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], serverIDs: [UUID], serverTags: [String]) async throws -> ProjectRoot {
+    public func adoptProjectsIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], serverIDs: [UUID], serverTags: [String], treatingExistingAsKnown: Bool = true) async throws -> ProjectRoot {
         var isDirectory: ObjCBool = false
         let rootURL = URL(fileURLWithPath: root.path).standardizedFileURL
         guard FileManager.default.fileExists(atPath: rootURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -147,6 +151,9 @@ extension SkillboxService {
             var servers = mcp.projectServerIDs ?? [:]; servers.removeValue(forKey: id.uuidString); mcp.projectServerIDs = servers
             var tags = mcp.projectServerTags ?? [:]; tags.removeValue(forKey: id.uuidString); mcp.projectServerTags = tags
             mcp.projectPresetIDs.removeValue(forKey: id.uuidString)
+        }
+        if treatingExistingAsKnown {
+            stored.ignoredPaths = Self.knownSubfolders(of: rootURL, besides: stored.ignoredPaths, excluding: config.projects.map { URL(fileURLWithPath: $0.path).standardizedFileURL.path })
         }
         config.projectRoots = config.roots + [stored]
         Self.assign(&mcp, projectID: stored.id, serverIDs: serverIDs, tags: serverTags)
@@ -256,6 +263,24 @@ extension SkillboxService {
         roots[index].ignoredPaths = []
         config.projectRoots = roots
         try await store.save(config)
+    }
+
+    /// Every subfolder the parent folder holds right now, so only what appears later counts as new.
+    ///
+    /// Without this, "nowy podfolder" would mean "każdy, który nie jest projektem": a folder the
+    /// user deliberately left unticked while adding the batch would be proposed again immediately,
+    /// and a folder full of unrelated directories would open with a list of all of them. Bringing
+    /// them back is one button — `Przywróć pominięte` in the folder's settings.
+    /// Folders that became projects are left out: they are not skipped, and listing them would tell
+    /// the user their folder skips a dozen subfolders when it skips none.
+    static func knownSubfolders(of root: URL, besides existing: [String], excluding projects: [String]) -> [String] {
+        let contents = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
+        let taken = Set(standardized(projects))
+        let subfolders = contents
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            .map { $0.standardizedFileURL.path }
+            .filter { !taken.contains($0) }
+        return standardized(existing + subfolders).sorted()
     }
 
     /// Normalizes a parent folder before it is stored, with the same rules a project follows.

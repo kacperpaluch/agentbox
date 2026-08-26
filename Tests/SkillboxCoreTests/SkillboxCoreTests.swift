@@ -1201,11 +1201,13 @@ final class SkillboxCoreTests: XCTestCase {
     func testDismissedAndDeletedSubfoldersAreNotOfferedAgain() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let workspace = root.appending(path: "workspace")
-        for name in ["alpha", "beta"] { try FileManager.default.createDirectory(at: workspace.appending(path: name), withIntermediateDirectories: true) }
+        try FileManager.default.createDirectory(at: workspace.appending(path: "alpha"), withIntermediateDirectories: true)
         let service = try SkillboxService(root: root.appending(path: "data"))
         let folder = ProjectRoot(name: "workspace", path: workspace.path, tools: [.claude])
         _ = try await service.addProjectRoot(folder, folders: [workspace.appending(path: "alpha").path], serverIDs: [], serverTags: [])
 
+        // Appears after the folder exists, so it is genuinely new.
+        try FileManager.default.createDirectory(at: workspace.appending(path: "beta"), withIntermediateDirectories: true)
         let detected = try await service.scanProjectRoots()
         XCTAssertEqual(detected.map(\.name), ["beta"])
         try await service.ignoreDetectedFolders(detected)
@@ -1220,7 +1222,7 @@ final class SkillboxCoreTests: XCTestCase {
         let watched = try await service.projectRoots()[0]
         try await service.clearIgnoredFolders(rootID: watched.id)
         let afterClearing = try await service.scanProjectRoots()
-        XCTAssertEqual(afterClearing.map(\.name).sorted(), ["alpha", "beta"])
+        XCTAssertEqual(afterClearing.map(\.name).sorted(), ["alpha", "beta"], "wyczyszczenie listy przywraca też folder usuniętego projektu")
     }
 
     /// Removing the shared settings must not change what any project synchronizes: each one that
@@ -1421,5 +1423,53 @@ final class SkillboxCoreTests: XCTestCase {
         let clean = AgentboxCommand.summary(updates: [], backupName: "b", gitBackup: "Everything up-to-date", outcomes: [outcome("alpha", .upToDate)]).joined(separator: "\n")
         XCTAssertTrue(clean.contains("bez aktualizacji"), clean)
         XCTAssertFalse(clean.contains("Wymaga uwagi"), clean)
+    }
+
+    /// "Nowy podfolder" must mean "pojawił się od kiedy folder istnieje". A subfolder deliberately
+    /// left unticked while adding the batch is an answer, not a pending question.
+    func testSubfoldersPresentWhenTheFolderIsCreatedAreNotProposedAsNew() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let workspace = root.appending(path: "workspace")
+        for name in ["alpha", "beta", "archiwum"] { try FileManager.default.createDirectory(at: workspace.appending(path: name), withIntermediateDirectories: true) }
+        let service = try SkillboxService(root: root.appending(path: "data"))
+
+        // Only alpha becomes a project; beta and archiwum were seen and left out.
+        let stored = try await service.addProjectRoot(ProjectRoot(name: "workspace", path: workspace.path, tools: [.claude]), folders: [workspace.appending(path: "alpha").path], serverIDs: [], serverTags: [])
+        let rightAfter = try await service.scanProjectRoots()
+        XCTAssertTrue(rightAfter.isEmpty, "odznaczone podfoldery nie wracają jako pytanie: \(rightAfter.map(\.name))")
+        XCTAssertEqual(stored.ignoredPaths.map { URL(fileURLWithPath: $0).lastPathComponent }.sorted(), ["archiwum", "beta"])
+        XCTAssertFalse(stored.ignoredPaths.contains { $0.hasSuffix("/alpha") }, "projekt nie jest folderem pominiętym")
+
+        // Only what shows up later counts as new.
+        try FileManager.default.createDirectory(at: workspace.appending(path: "gamma"), withIntermediateDirectories: true)
+        let detected = try await service.scanProjectRoots()
+        XCTAssertEqual(detected.map(\.name), ["gamma"])
+
+        // And the folders left out at the start can be brought back deliberately.
+        try await service.clearIgnoredFolders(rootID: stored.id)
+        let afterClearing = try await service.scanProjectRoots()
+        XCTAssertEqual(afterClearing.map(\.name).sorted(), ["archiwum", "beta", "gamma"])
+    }
+
+    /// The same rule when an existing folder is turned into a parent folder.
+    func testAdoptingAnExistingFolderDoesNotProposeItsCurrentSubfolders() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let workspace = root.appending(path: "workspace")
+        for name in ["alpha", "notatki"] { try FileManager.default.createDirectory(at: workspace.appending(path: name), withIntermediateDirectories: true) }
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let alpha = try await service.addProject(name: "alpha", path: workspace.appending(path: "alpha").path, tools: [.claude])
+
+        let stored = try await service.adoptProjectsIntoRoot(ProjectRoot(name: "workspace", path: workspace.path, tools: [.claude]), following: [alpha.id], keepingOwnSettings: [], serverIDs: [], serverTags: [])
+        XCTAssertEqual(stored.ignoredPaths.map { URL(fileURLWithPath: $0).lastPathComponent }, ["notatki"])
+        let rightAfter = try await service.scanProjectRoots()
+        XCTAssertTrue(rightAfter.isEmpty, "\(rightAfter.map(\.name))")
+
+        // Opting out asks about what is already there.
+        let other = root.appending(path: "inny")
+        try FileManager.default.createDirectory(at: other.appending(path: "stare"), withIntermediateDirectories: true)
+        let asking = try await service.adoptProjectsIntoRoot(ProjectRoot(name: "inny", path: other.path, tools: [.claude]), following: [], keepingOwnSettings: [], serverIDs: [], serverTags: [], treatingExistingAsKnown: false)
+        XCTAssertTrue(asking.ignoredPaths.isEmpty)
+        let asked = try await service.scanProjectRoots()
+        XCTAssertEqual(asked.map(\.name), ["stare"])
     }
 }

@@ -81,6 +81,7 @@ struct OperationLogEntry: Identifiable {
     /// lost data.
     @Published var serviceError: String?
     private var automaticBackupTask: Task<Void, Never>?
+    private var lastActivationScan = Date.distantPast
     var service: SkillboxService?
     init() {
         let saved = UserDefaults.standard.string(forKey: "SkillboxLibraryRoot")
@@ -103,13 +104,24 @@ struct OperationLogEntry: Identifiable {
     /// every reload, so a project cloned into the folder outside Agentbox shows up on its own
     /// instead of waiting for the user to remember to add it.
     func scanRoots() async { detectedFolders = (try? await service?.scanProjectRoots()) ?? [] }
+    /// What `Sprawdź stan` does: look at the world again. Statuses alone answered "czy projekty
+    /// odpowiadają bibliotece" but never noticed a folder cloned in while Agentbox was open.
+    func refreshProjects() async { await scanRoots(); await loadStatuses() }
+    /// Repositories are cloned in a terminal, not in Agentbox, so the moment the user comes back to
+    /// the app is exactly when a new subfolder should be waiting for them. The scan is a directory
+    /// listing per watched folder; the interval only keeps window switching from repeating it.
+    func scanRootsOnActivation() async {
+        guard !projectRoots.isEmpty, Date.now.timeIntervalSince(lastActivationScan) > 5 else { return }
+        lastActivationScan = .now
+        await scanRoots()
+    }
     func root(for project: Project) -> ProjectRoot? { project.rootID.flatMap { id in projectRoots.first { $0.id == id } } }
     func inheritsRoot(_ project: Project) -> Bool { project.overridesRoot != true && root(for: project) != nil }
     func storedProject(id: UUID) -> Project? { storedProjects.first { $0.id == id } }
     func addBatch(_ request: BatchProjectRequest) async {
         await perform {
             if let root = request.root {
-                _ = try await self.service?.addProjectRoot(root, folders: request.folders, serverIDs: request.serverIDs, serverTags: request.serverTags)
+                _ = try await self.service?.addProjectRoot(root, folders: request.folders, serverIDs: request.serverIDs, serverTags: request.serverTags, treatingExistingAsKnown: request.treatingExistingAsKnown)
                 self.message = "Dodano folder \(root.name) i \(request.folders.count) projektów"
             } else {
                 for project in request.projects { _ = try await self.service?.addProject(project, serverIDs: request.serverIDs, serverTags: request.serverTags) }
@@ -117,8 +129,8 @@ struct OperationLogEntry: Identifiable {
             }
         }
     }
-    func adoptGroupIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], serverIDs: [UUID], serverTags: [String]) {
-        Task { await perform { _ = try await self.service?.adoptProjectsIntoRoot(root, following: following, keepingOwnSettings: keepingOwnSettings, serverIDs: serverIDs, serverTags: serverTags); self.message = "Utworzono folder \(root.name); wspólnych ustawień używa \(following.count) projektów" } }
+    func adoptGroupIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], serverIDs: [UUID], serverTags: [String], treatingExistingAsKnown: Bool) {
+        Task { await perform { _ = try await self.service?.adoptProjectsIntoRoot(root, following: following, keepingOwnSettings: keepingOwnSettings, serverIDs: serverIDs, serverTags: serverTags, treatingExistingAsKnown: treatingExistingAsKnown); self.message = "Utworzono folder \(root.name); wspólnych ustawień używa \(following.count) projektów" } }
     }
     func saveRoot(_ root: ProjectRoot, serverIDs: [UUID], serverTags: [String]) async { await perform { try await self.service?.updateProjectRoot(root, serverIDs: serverIDs, serverTags: serverTags); self.message = "Zapisano ustawienia folderu \(root.name)" } }
     func deleteRoot(_ root: ProjectRoot) async { await perform { try await self.service?.deleteProjectRoot(id: root.id); self.message = "Usunięto ustawienia folderu \(root.name); projekty zachowały to, co dziedziczyły" } }
@@ -312,7 +324,12 @@ struct ContentView: View {
     @State private var showHistory = false
     init(updater: SPUUpdater) { self.updater = updater; _model = StateObject(wrappedValue: AppModel()) }
     var body: some View {
-        NavigationSplitView { VStack(spacing: 0) { List(SectionKind.allCases, selection: $section) { item in Label(item.rawValue, systemImage: item.icon).tag(item) }.navigationTitle("Agentbox"); Divider(); Text(AppVersion.display).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(12) }.navigationSplitViewColumnWidth(min: 180, ideal: 210) } detail: {
+        NavigationSplitView { VStack(spacing: 0) { List(SectionKind.allCases, selection: $section) { item in
+            // The detected-folders banner lives in the Projects tab, so without this the question
+            // would wait unseen for whoever happens to open that tab.
+            Label(item.rawValue, systemImage: item.icon).tag(item)
+                .badge(item == .projects ? model.detectedFolders.count : 0)
+        }.navigationTitle("Agentbox"); Divider(); Text(AppVersion.display).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(12) }.navigationSplitViewColumnWidth(min: 180, ideal: 210) } detail: {
             Group {
                 if let serviceError = model.serviceError, section != .settings {
                     ContentUnavailableView {
@@ -333,6 +350,7 @@ struct ContentView: View {
         .sheet(isPresented: $showGit) { AddGitView { url, path in Task { await model.addGit(url, subpath: path) } } }
         .sheet(isPresented: $showProject) { ProjectEditor(skills: model.skills, servers: model.mcp.servers, project: nil, selectedServerIDs: [], selectedServerTags: []) { project, servers, tags in Task { await model.addProject(project, serverIDs: servers, serverTags: tags) } } }
         .sheet(isPresented: $showHistory) { OperationHistoryView(entries: model.operationLog) }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in Task { await model.scanRootsOnActivation() } }
         .toolbar { Button { showHistory = true } label: { Label("Historia operacji", systemImage: "clock.arrow.circlepath") } }
     }
 }
@@ -593,9 +611,10 @@ struct ProjectsView: View {
             Button { showAllSync = true } label: { Label("Synchronizuj wszystkie", systemImage: "arrow.triangle.2.circlepath") }
                 .buttonStyle(.borderedProminent)
                 .disabled(model.projects.isEmpty || model.isWorking)
-            Button { Task { await model.loadStatuses() } } label: { Label("Sprawdź stan", systemImage: "arrow.clockwise") }
+            Button { Task { await model.refreshProjects() } } label: { Label("Sprawdź stan", systemImage: "arrow.clockwise") }
                 .buttonStyle(.bordered)
-                .disabled(model.projects.isEmpty || model.isCheckingStatuses)
+                .disabled((model.projects.isEmpty && model.projectRoots.isEmpty) || model.isCheckingStatuses)
+                .help("Sprawdza, czy projekty odpowiadają bibliotece, i szuka nowych podfolderów w obserwowanych folderach")
             Button { showProject = true } label: { Label("Dodaj projekt", systemImage: "plus") }.buttonStyle(.bordered)
             Button { showBatch = true } label: { Label("Dodaj wiele", systemImage: "folder.badge.plus") }.buttonStyle(.bordered)
             Menu {
@@ -1428,6 +1447,8 @@ struct BatchProjectRequest {
     var projects: [Project] = []
     var serverIDs: [UUID] = []
     var serverTags: [String] = []
+    /// Subfolders left unticked are an answer too, so by default they are not proposed again.
+    var treatingExistingAsKnown = true
 }
 
 struct BatchProjectView: View {
@@ -1436,7 +1457,7 @@ struct BatchProjectView: View {
     let onSave: (BatchProjectRequest) -> Void
     @State private var root = ""; @State private var folders: [URL] = []; @State private var selectedFolders = Set<String>()
     @State private var tools = Set(Tool.allCases); @State private var selectedSkills = Set<String>(); @State private var selectedTags = Set<String>(); @State private var selectedServers = Set<UUID>(); @State private var selectedMCPtags = Set<String>(); @State private var excluded = Set<String>(); @State private var manageGitignore = true; @State private var scanError = ""
-    @State private var sharedSettings = true; @State private var watchesNewFolders = true; @State private var rootName = ""
+    @State private var sharedSettings = true; @State private var watchesNewFolders = true; @State private var onlyFutureFolders = true; @State private var rootName = ""
     private var existingPaths: Set<String> { Set(existingProjects.map { URL(fileURLWithPath: $0.path).standardizedFileURL.path }) }
     private var availableFolders: [URL] { folders.filter { !existingPaths.contains($0.standardizedFileURL.path) } }
     private var rootAlreadyAdded: Bool { !root.isEmpty && existingRoots.contains { URL(fileURLWithPath: $0.path).standardizedFileURL.path == URL(fileURLWithPath: root).standardizedFileURL.path } }
@@ -1451,6 +1472,8 @@ struct BatchProjectView: View {
         GroupBox("Ustawienia wspólne") { VStack(alignment: .leading, spacing: 6) {
             Toggle("Zapisz ustawienia na folderze nadrzędnym i dziedzicz je w podfolderach", isOn: $sharedSettings).toggleStyle(.checkbox)
             Toggle("Pytaj, gdy w folderze pojawi się nowy podfolder", isOn: $watchesNewFolders).toggleStyle(.checkbox).disabled(!sharedSettings)
+            Toggle("Pytaj tylko o podfoldery, które pojawią się od teraz", isOn: $onlyFutureFolders).toggleStyle(.checkbox).disabled(!sharedSettings || !watchesNewFolders)
+                .help("Odznaczone podfoldery z listy poniżej zostaną uznane za znane, więc Agentbox nie zapyta o nie ponownie")
             if sharedSettings {
                 TextField("Nazwa folderu nadrzędnego", text: $rootName)
                 if rootNameTaken { Text("Folder nadrzędny o tej nazwie już istnieje.").font(.caption).foregroundStyle(.orange) }
@@ -1484,7 +1507,7 @@ struct BatchProjectView: View {
             return
         }
         let folder = ProjectRoot(name: rootName, path: root, tools: Array(tools), skillIDs: Array(selectedSkills), tags: Array(selectedTags).sorted(), excludedSkillIDs: exclusions, manageGitignore: manageGitignore, watchesNewFolders: watchesNewFolders)
-        onSave(BatchProjectRequest(root: folder, folders: chosen.map(\.path), serverIDs: Array(selectedServers), serverTags: Array(selectedMCPtags).sorted()))
+        onSave(BatchProjectRequest(root: folder, folders: chosen.map(\.path), serverIDs: Array(selectedServers), serverTags: Array(selectedMCPtags).sorted(), treatingExistingAsKnown: onlyFutureFolders))
     }
 }
 
@@ -1507,6 +1530,7 @@ struct GroupRootSetupView: View {
     @State private var excluded = Set<String>()
     @State private var manageGitignore = false
     @State private var watchesNewFolders = true
+    @State private var onlyFutureFolders = true
     @State private var following = Set<UUID>()
     @State private var loaded = false
 
@@ -1534,7 +1558,12 @@ struct GroupRootSetupView: View {
             }.padding(6) }
             GroupBox("Nowe podfoldery") { VStack(alignment: .leading, spacing: 6) {
                 Toggle("Pytaj, gdy w tym folderze pojawi się nowy podfolder", isOn: $watchesNewFolders).toggleStyle(.checkbox)
-                Text("Nowy podfolder — na przykład świeżo sklonowane repozytorium — pojawi się jako pytanie nad listą projektów.").font(.caption).foregroundStyle(.secondary)
+                Text("Nowy podfolder — na przykład świeżo sklonowane repozytorium — pojawi się jako pytanie nad listą projektów oraz jako plakietka przy `Projekty`.").font(.caption).foregroundStyle(.secondary)
+                Toggle("Pytaj tylko o podfoldery, które pojawią się od teraz", isOn: $onlyFutureFolders).toggleStyle(.checkbox).disabled(!watchesNewFolders)
+                Text(onlyFutureFolders
+                     ? "Podfoldery, które są w tym folderze teraz i nie są projektami, zostają uznane za znane. Wrócą po kliknięciu `Przywróć pominięte` w ustawieniach folderu."
+                     : "Agentbox zapyta także o podfoldery, które już tam leżą i nie są projektami.")
+                    .font(.caption).foregroundStyle(.secondary)
             }.padding(6) }
             SharedSettingsForm(skills: model.skills, servers: model.mcp.servers, tools: $tools, selectedSkills: $selectedSkills, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, excluded: $excluded, manageGitignore: $manageGitignore)
             HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Utwórz folder nadrzędny") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || nameTaken || tools.isEmpty) }
@@ -1596,7 +1625,7 @@ struct GroupRootSetupView: View {
         let root = ProjectRoot(name: name, path: folderPath, tools: Array(tools), skillIDs: Array(selectedSkills), tags: Array(selectedTags).sorted(), excludedSkillIDs: excluded.isEmpty ? nil : Array(excluded).sorted(), manageGitignore: manageGitignore, watchesNewFolders: watchesNewFolders)
         let followers = projects.map(\.id).filter { following.contains($0) }
         let owners = projects.map(\.id).filter { !following.contains($0) }
-        model.adoptGroupIntoRoot(root, following: followers, keepingOwnSettings: owners, serverIDs: Array(selectedServers), serverTags: Array(selectedMCPtags).sorted())
+        model.adoptGroupIntoRoot(root, following: followers, keepingOwnSettings: owners, serverIDs: Array(selectedServers), serverTags: Array(selectedMCPtags).sorted(), treatingExistingAsKnown: onlyFutureFolders)
     }
 }
 

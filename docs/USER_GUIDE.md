@@ -120,7 +120,18 @@ Usunięcie ustawień folderu (kosz w nagłówku grupy) nie rusza projektów. Ka�
 
 ### Nowe podfoldery
 
-Folder nadrzędny z włączoną opcją `Pytaj, gdy w tym folderze pojawi się nowy podfolder` jest sprawdzany przy każdym odświeżeniu listy projektów. Nowy podfolder — na przykład świeżo sklonowane repozytorium — pojawia się jako baner nad listą projektów. `Przejrzyj…` otwiera listę wykrytych folderów, w której można:
+Folder nadrzędny z włączoną opcją `Pytaj, gdy w tym folderze pojawi się nowy podfolder` jest sprawdzany:
+
+- przy uruchomieniu aplikacji,
+- po każdym powrocie do Agentbox z innej aplikacji — repozytoria klonuje się w terminalu, więc nowy podfolder czeka już po przełączeniu okna,
+- po każdej zmianie danych w aplikacji,
+- na żądanie, przyciskiem `Sprawdź stan` w sekcji `Projekty`.
+
+Wykrywanie jest własnością folderu nadrzędnego, nie listy projektów: dopóki folder nie istnieje, nie ma czego skanować. Projekty pogrupowane po ścieżce dostają go przyciskiem `Wspólne ustawienia…` w nagłówku grupy.
+
+Podfoldery, które leżą w folderze w chwili jego tworzenia i nie stają się projektami, są uznawane za znane — odznaczenie podfolderu przy dodawaniu jest odpowiedzią, a nie odłożonym pytaniem. Wyłącza to opcja `Pytaj tylko o podfoldery, które pojawią się od teraz`, a `Przywróć pominięte` w ustawieniach folderu przywraca je wszystkie.
+
+Nowy podfolder — na przykład świeżo sklonowane repozytorium — pojawia się jako baner nad listą projektów, a liczba wykrytych folderów jest widoczna jako plakietka przy `Projekty` w menu bocznym. `Przejrzyj…` otwiera listę wykrytych folderów, w której można:
 
 - `Dodaj i synchronizuj` — dodaje projekty i od razu synchronizuje je ustawieniami folderu,
 - `Dodaj bez synchronizacji` — dodaje projekty i zostawia synchronizację na później,

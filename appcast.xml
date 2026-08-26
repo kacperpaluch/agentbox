@@ -6,6 +6,28 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.9.2</title>
+      <pubDate>Wed, 26 Aug 2026 08:39:53 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.9.2</link>
+      <sparkle:version>20</sparkle:version>
+      <sparkle:shortVersionString>0.9.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.9.2</h2>
+        <ul>
+          <li>Wykrywanie nowych podfolderów działało tylko przy starcie aplikacji. Repozytorium sklonowane przy otwartym Agentbox nie pojawiało się aż do restartu.</li>
+          <li>Skanowanie odpala się teraz po powrocie do aplikacji z innego okna — czyli po wyjściu z terminala — oraz na żądanie przyciskiem „Sprawdź stan”.</li>
+          <li>Liczba wykrytych podfolderów jest widoczna jako plakietka przy „Projekty” w menu bocznym.</li>
+          <li>Podfolder odznaczony w „Dodaj wiele” nie jest już proponowany ponownie zaraz po dodaniu. „Nowy” znaczy „pojawił się od tej chwili”.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.9.2/Agentbox-0.9.2.dmg"
+        length="5260230"
+        type="application/octet-stream"
+        sparkle:edSignature="Xr3nCvDq0b98QLB67VRbgE5PdiAz87GB2Vxp1DcmOmKsbQXRajMpWcmj74miRLf0g0ZeTHrjRj1deGfKn69WCA==" />
+    </item>
+    <item>
       <title>Agentbox 0.9.1</title>
       <pubDate>Wed, 26 Aug 2026 08:26:37 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.9.1</link>
