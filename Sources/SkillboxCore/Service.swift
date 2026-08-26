@@ -62,7 +62,7 @@ public actor SkillboxService {
         return skill
     }
 
-    public func addGitCollection(url: String, subpath: String? = nil, branch: String? = nil, id: String? = nil) async throws -> [Skill] {
+    public func addGitCollection(url: String, subpath: String? = nil, branch: String? = nil, id: String? = nil) async throws -> GitImportResult {
         let input = Self.normalizeGitInput(url: url, subpath: subpath, branch: branch)
         guard Self.isAllowedGitLocation(input.url) else { throw SkillboxError.invalidSkill("dozwolone źródła Git: https, http, ssh, git, file lub składnia user@host:path") }
         let temp = fm.temporaryDirectory.appending(path: "skillbox-\(UUID().uuidString)")
@@ -81,6 +81,7 @@ public actor SkillboxService {
         let skillsDirectory = await store.skillsDirectory
         var catalog = try await store.catalog()
         var imported: [Skill] = []
+        var skipped: [SkippedSkill] = []
         for candidate in candidates {
             let tempPath = temp.resolvingSymlinksInPath().path
             let candidatePath = candidate.resolvingSymlinksInPath().path
@@ -90,20 +91,24 @@ public actor SkillboxService {
             else { throw SkillboxError.unsafePath(candidatePath) }
             let source = SkillSource(kind: .git, location: input.url, subpath: relative, branch: input.branch, revision: revision)
             let skillID = id ?? Self.defaultSkillID(relative: relative, candidate: candidate, repository: input.url)
-            if let index = catalog.skills.firstIndex(where: { $0.id == skillID }) {
-                let existingLocation = catalog.skills[index].source.location.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                let newLocation = input.url.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                guard catalog.skills[index].source.kind == .git, existingLocation == newLocation else { throw SkillboxError.duplicateSkill(skillID) }
-                try copyReplacing(from: candidate, to: skillsDirectory.appending(path: skillID))
-                catalog.skills[index].source = source
-                catalog.skills[index].updatedAt = .now
-                imported.append(catalog.skills[index])
-            } else {
-                imported.append(try importSkill(from: candidate, source: source, suppliedID: skillID, into: &catalog, skillsDirectory: skillsDirectory))
-            }
+            // One candidate conflicting with an unrelated existing skill (or being otherwise
+            // invalid) is recorded and skipped rather than aborting the batch — a repository with
+            // 25 skills should not fail to import 24 of them because one id collides.
+            do {
+                if let index = catalog.skills.firstIndex(where: { $0.id == skillID }) {
+                    guard catalog.skills[index].source.kind == .git, Self.sameGitLocation(catalog.skills[index].source.location, input.url) else { throw SkillboxError.duplicateSkill(skillID) }
+                    try copyReplacing(from: candidate, to: skillsDirectory.appending(path: skillID))
+                    catalog.skills[index].source = source
+                    catalog.skills[index].updatedAt = .now
+                    imported.append(catalog.skills[index])
+                } else {
+                    imported.append(try importSkill(from: candidate, source: source, suppliedID: skillID, into: &catalog, skillsDirectory: skillsDirectory))
+                }
+            } catch { skipped.append(SkippedSkill(id: skillID, reason: error.localizedDescription)) }
         }
+        guard !imported.isEmpty else { throw SkillboxError.invalidSkill(skipped.first?.reason ?? "nie zaimportowano żadnego skilla") }
         try await store.save(catalog)
-        return imported
+        return GitImportResult(imported: imported, skipped: skipped)
     }
 
     private func discoverSkills(in root: URL) -> [URL] {
@@ -676,6 +681,20 @@ public actor SkillboxService {
         if value.range(of: "^[^@\\s]+@[^:\\s]+:.+$", options: .regularExpression) != nil { return true }
         guard let scheme = URL(string: value)?.scheme?.lowercased() else { return false }
         return ["https", "http", "ssh", "git", "file"].contains(scheme)
+    }
+
+    /// Whether two Git source locations are the same repository, ignoring the surface differences
+    /// that show up depending on how a URL was copied — a trailing slash, or a `.git` suffix GitHub
+    /// includes in its "Copy" button but not in the address bar. Comparing raw strings here made
+    /// re-adding a repository with an equivalent-but-differently-typed URL look like a foreign
+    /// source, which turned an ordinary re-import into a hard conflict.
+    private static func sameGitLocation(_ a: String, _ b: String) -> Bool {
+        func normalized(_ value: String) -> String {
+            var trimmed = value.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            if trimmed.hasSuffix(".git") { trimmed = String(trimmed.dropLast(4)) }
+            return trimmed
+        }
+        return normalized(a) == normalized(b)
     }
 
     private static func defaultSkillID(relative: String?, candidate: URL, repository: String) -> String {

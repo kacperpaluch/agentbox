@@ -135,7 +135,11 @@ Usunięcie serwera usuwa jego bezpośrednie przypisania i kasuje jego wartości 
 
 `Importuj lub użyj AI → Mam JSON` obsługuje cały obiekt z `mcpServers`, samą mapę serwerów oraz plik JSON. Po analizie pokazuje typy i liczbę sekretów. Można zaznaczyć tylko wybrane serwery do importu, a po imporcie przypisać im tagi.
 
-Agentbox proponuje również klasyfikację każdej zmiennej i każdego nagłówka jako `Zmienna systemowa`, `Sekret lokalny` albo `Zwykła wartość`. Przed importem użytkownik może poprawić każdą propozycję. Automatyczne rozpoznawanie jest heurystyką i nie zastępuje sprawdzenia wartości.
+Agentbox proponuje również klasyfikację każdej zmiennej i każdego nagłówka jako `Zmienna systemowa`, `Tylko na tym Macu` albo `Zwykła wartość`. Przed importem użytkownik może poprawić każdą propozycję. Automatyczne rozpoznawanie jest heurystyką i nie zastępuje sprawdzenia wartości.
+
+### Edycja jako JSON
+
+`MCP → Szczegóły → JSON` pokazuje `command`/`args`/`url`/`env`/`headers` jednego serwera jako zwykły tekst do ręcznej edycji — łącznie z wartościami dotąd oznaczonymi jako sekret, bez maskowania: Agentbox działa lokalnie dla jednej osoby, więc nie ma czego ukrywać na ekranie. Zapis ponownie klasyfikuje każde pole tą samą heurystyką co import; klucz wyglądający na token, hasło czy API key automatycznie zostaje tylko na tym Macu, reszta trafia do backupu Git. Przycisk `Edytuj wszystko jako JSON` na liście serwerów otwiera ten sam widok dla całej konfiguracji naraz, wypełniony aktualnym stanem — poprawki nadpisują serwery o tej samej nazwie, reszta zostaje bez zmian.
 
 ### Konfiguracja z AI
 

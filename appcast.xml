@@ -6,6 +6,28 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.10.0</title>
+      <pubDate>Wed, 26 Aug 2026 20:34:22 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.10.0</link>
+      <sparkle:version>24</sparkle:version>
+      <sparkle:shortVersionString>0.10.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.10.0</h2>
+        <ul>
+          <li>Nowość: MCP → Szczegóły → JSON edytuje command/args/url/env/headers serwera jako zwykły tekst; „Edytuj wszystko jako JSON” robi to samo dla całej konfiguracji naraz.</li>
+          <li>Pola MCP, łącznie z sekretami, pokazują teraz wartość wprost zamiast maski — typ pola nadal decyduje, czy trafia do backupu Git.</li>
+          <li>Naprawiono: jeden konfliktujący skill przy imporcie z repozytorium Git nie kasuje już całego importu — reszta partii zapisuje się normalnie.</li>
+          <li>Naprawiono: ponowne dodanie tego samego repozytorium z inną, równoważną formą adresu (np. z końcówką .git) nie jest już traktowane jak inne źródło.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.10.0/Agentbox-0.10.0.dmg"
+        length="5330536"
+        type="application/octet-stream"
+        sparkle:edSignature="dW4XJLrZ4EMN4t/4u4Mucs7EyV2dsr7MT0uDxYtvBn4dnpki8NfXVQoVrAzwtMZt+fZH9+sxBCRykhgp1NfkAA==" />
+    </item>
+    <item>
       <title>Agentbox 0.9.5</title>
       <pubDate>Wed, 26 Aug 2026 09:31:10 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.9.5</link>

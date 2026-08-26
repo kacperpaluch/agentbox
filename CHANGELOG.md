@@ -6,6 +6,18 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-26
+
+### Dodano
+
+- `MCP → Szczegóły → JSON` edytuje `command`/`args`/`url`/`env`/`headers` jednego serwera jako zwykły tekst, a `Edytuj wszystko jako JSON` na liście serwerów robi to samo dla całej konfiguracji naraz, wypełnione aktualnym stanem. Zapis nadpisuje po nazwie serwery, których dotyczy, i zostawia resztę bez zmian.
+- Pola MCP — łącznie z sekretami — pokazują teraz wartość wprost zamiast maski `••••••••`. Agentbox jest lokalną aplikacją dla jednej osoby, więc nie ma powodu chować własnych danych przed sobą; typ pola (`Zmienna systemowa` / `Tylko na tym Macu` / `Zwykła wartość`) nadal decyduje, czy wartość może trafić do backupu Git, teraz widoczne wprost w samej nazwie typu zamiast w osobnym ostrzeżeniu.
+
+### Naprawiono
+
+- Import repozytorium Git z więcej niż jednym konfliktującym skillem tracił cały import: jeden identyfikator kolidujący z istniejącym skillem z innego źródła przerywał pętlę, zanim cokolwiek trafiło do zapisu, więc nawet poprawnie przetworzone wcześniej skille nigdy nie lądowały w bibliotece. Konfliktujący albo niepoprawny kandydat jest teraz pomijany z komunikatem, a reszta partii importuje się i zapisuje normalnie.
+- Ponowne dodanie tego samego repozytorium Git innym, równoważnym zapisem adresu (np. z końcówką `.git` zamiast bez niej) było traktowane jak zupełnie inne źródło i kończyło się odrzuceniem jako duplikat zamiast aktualizacji.
+
 ## [0.9.5] - 2026-08-26
 
 ### Naprawiono

@@ -45,8 +45,10 @@ public enum AgentboxCommand {
             guard let value = rest.first else { throw SkillboxError.invalidSkill("podaj ścieżkę lub URL") }
             let subpath = option("--path", in: args), branch = option("--branch", in: args), id = option("--id", in: args)
             if value.contains("://") || value.hasSuffix(".git") {
-                let skills = try await service.addGitCollection(url: value, subpath: subpath, branch: branch, id: id)
-                return ["Dodano \(skills.count): \(skills.map(\.id).joined(separator: ", "))"]
+                let result = try await service.addGitCollection(url: value, subpath: subpath, branch: branch, id: id)
+                var lines = ["Dodano \(result.imported.count): \(result.imported.map(\.id).joined(separator: ", "))"]
+                if !result.skipped.isEmpty { lines.append("Pominięto \(result.skipped.count): " + result.skipped.map { "\($0.id) (\($0.reason))" }.joined(separator: "; ")) }
+                return lines
             }
             return ["Dodano \(try await service.addLocal(path: value, id: id).id)"]
         case "tag":

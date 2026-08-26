@@ -28,14 +28,14 @@ Każdy obraz aktualizacji jest weryfikowany kluczem EdDSA osadzonym w aplikacji.
 Podczas analizy JSON Agentbox proponuje typ każdej zmiennej środowiskowej i każdego nagłówka. Przed importem można zmienić propozycję.
 
 - `Zmienna systemowa` — Agentbox zapisuje nazwę zmiennej, a wartość ma dostarczyć środowisko procesu klienta AI.
-- `Sekret lokalny` — wartość trafia do lokalnego `mcp-secrets.json`, który jest wyłączony z backupu Git. Plik nie jest obecnie szyfrowany.
+- `Tylko na tym Macu` — wartość trafia do lokalnego `mcp-secrets.json`, który jest wyłączony z backupu Git. Plik nie jest obecnie szyfrowany.
 - `Zwykła wartość` — wartość trafia do `mcp.json` i może znaleźć się w backupie Git.
 
 Automatyczne rozpoznawanie jest tylko sugestią. Agentbox uznaje za podejrzane nazwy lub wartości zawierające między innymi `token`, `password`, `api_key`, `cookie`, `secret`, `authorization` lub `bearer`. Nietypowo nazwany sekret może zostać błędnie uznany za zwykłą wartość, dlatego klasyfikację należy sprawdzić.
 
 Sekret przechowywany poza backupem biblioteki może zostać zapisany jawnie w wynikowym pliku MCP projektu, jeśli format klienta tego wymaga. Przed synchronizacją Agentbox pokazuje pełną treść wynikowych konfiguracji. Preferuj zmienne systemowe, jeśli klient je obsługuje.
 
-Po imporcie klasyfikacją nadal można zarządzać w `MCP → Szczegóły`. Sekcja `Zmienne i nagłówki` pozwala dodawać i usuwać pola oraz zmieniać ich typ. Zapisany sekret jest maskowany; pozostawienie pustej wartości zachowuje go, a wpisanie nowej zastępuje. Konwersja sekretu na zwykłą wartość przenosi jego bieżącą wartość do `mcp.json`, dlatego od tego momentu może ona trafić do backupu Git.
+Po imporcie klasyfikacją nadal można zarządzać w `MCP → Szczegóły`. Sekcja `Zmienne i nagłówki` pokazuje każdą wartość wprost, łącznie z sekretami — Agentbox jest lokalną aplikacją dla jednej osoby, więc nie ma powodu jej maskować na ekranie; typ pola decyduje wyłącznie o tym, czy wartość trafia do backupu Git. Tam samo `MCP → Szczegóły → JSON` daje pełną konfigurację jednego serwera jako tekst do ręcznej edycji, a `Edytuj wszystko jako JSON` na liście serwerów — tę samą edycję dla całej konfiguracji naraz. Zapis z JSON-a klasyfikuje każde pole od nowa tą samą heurystyką co import.
 
 ## Podgląd i synchronizacja
 

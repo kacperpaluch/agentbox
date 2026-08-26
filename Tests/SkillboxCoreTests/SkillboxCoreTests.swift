@@ -85,9 +85,60 @@ final class SkillboxCoreTests: XCTestCase {
         try runGit(["init"], in: repo); try runGit(["add", "."], in: repo)
         try runGit(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"], in: repo)
         let service = try SkillboxService(root: root.appending(path: "data"))
-        let imported = try await service.addGitCollection(url: repo.absoluteURL.absoluteString, subpath: "skills")
+        let imported = try await service.addGitCollection(url: repo.absoluteURL.absoluteString, subpath: "skills").imported
         XCTAssertEqual(imported.map(\.id).sorted(), ["seo", "seo-page"])
         XCTAssertEqual(imported.map(\.source.subpath).compactMap { $0 }.sorted(), ["skills/seo", "skills/seo-page"])
+    }
+
+    func testGitImportSkipsConflictingCandidateButSavesTheRestOfTheBatch() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let repo = root.appending(path: "repo")
+        for name in ["conflict", "seo-a", "seo-b"] {
+            let folder = repo.appending(path: "skills/\(name)")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try "---\nname: \(name)\ndescription: Demo\n---\n".write(to: folder.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        }
+        try runGit(["init"], in: repo); try runGit(["add", "."], in: repo)
+        try runGit(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"], in: repo)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        // A local, unrelated skill already occupies the id one of the repo's candidates wants.
+        let local = root.appending(path: "local/conflict")
+        try FileManager.default.createDirectory(at: local, withIntermediateDirectories: true)
+        try "---\nname: conflict\ndescription: Local\n---\n".write(to: local.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        _ = try await service.addLocal(path: local.path)
+
+        let result = try await service.addGitCollection(url: repo.absoluteURL.absoluteString, subpath: "skills")
+        XCTAssertEqual(result.imported.map(\.id).sorted(), ["seo-a", "seo-b"])
+        XCTAssertEqual(result.skipped.map(\.id), ["conflict"])
+        let afterSkills = try await service.listSkills()
+        XCTAssertEqual(afterSkills.map(\.id).sorted(), ["conflict", "seo-a", "seo-b"])
+        // The pre-existing local skill was left alone, not overwritten by the repo's copy.
+        XCTAssertEqual(afterSkills.first { $0.id == "conflict" }?.source.kind, .local)
+    }
+
+    func testReimportingRepositoryWithDifferentlyFormattedURLIsStillRecognizedAsTheSameSource() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        // Named with a trailing ".git" so the two ways of referring to it below — with and without
+        // that suffix — are both real, clonable paths, mirroring GitHub's "Copy" URL (with `.git`)
+        // versus the address-bar URL (without it) for the same repository.
+        let repo = root.appending(path: "demo.git")
+        let alias = root.appending(path: "demo")
+        let folder = repo.appending(path: "skills/one")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try "---\nname: one\ndescription: Demo\n---\n".write(to: folder.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        try runGit(["init"], in: repo); try runGit(["add", "."], in: repo)
+        try runGit(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"], in: repo)
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: repo)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+
+        _ = try await service.addGitCollection(url: repo.absoluteURL.absoluteString, subpath: "skills")
+        // Re-adding via the alias without ".git" must update in place, not throw a duplicate — it
+        // is the same repository, just typed differently.
+        let result = try await service.addGitCollection(url: alias.absoluteURL.absoluteString, subpath: "skills")
+        XCTAssertEqual(result.imported.map(\.id), ["one"])
+        XCTAssertTrue(result.skipped.isEmpty)
+        let ids = try await service.listSkills().map(\.id)
+        XCTAssertEqual(ids, ["one"])
     }
 
     func testImportsSkillFromGitRepositoryRoot() async throws {
@@ -98,7 +149,7 @@ final class SkillboxCoreTests: XCTestCase {
         try runGit(["init"], in: repo); try runGit(["add", "."], in: repo)
         try runGit(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"], in: repo)
         let service = try SkillboxService(root: root.appending(path: "data"))
-        let imported = try await service.addGitCollection(url: repo.absoluteURL.absoluteString)
+        let imported = try await service.addGitCollection(url: repo.absoluteURL.absoluteString).imported
         XCTAssertEqual(imported.count, 1)
         XCTAssertEqual(imported[0].id, "root-skill")
         XCTAssertNil(imported[0].source.subpath)
@@ -420,7 +471,7 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertTrue(preview.content.contains("\"n8n-tailscale\""))
     }
 
-    func testExistingMCPFieldCanBeReclassifiedWithoutRevealingStoredSecret() async throws {
+    func testExistingMCPFieldShowsRealSecretValueAndKeepsItWhenReclassified() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let service = try SkillboxService(root: root)
         let server = MCPServer(name: "api", transport: .http, url: "https://example.test/mcp", literalHeaders: ["Authorization": "initial"])
@@ -429,14 +480,48 @@ final class SkillboxCoreTests: XCTestCase {
         fields[0].classification = .secret
         fields[0].value = "dummy-secret"
         try await service.saveMCPServer(server, managedFields: fields)
+        // The editor shows the secret's real value — nothing is masked in this local, single-user app.
         let managed = try await service.managedFields(serverID: server.id)
         var secretField = try XCTUnwrap(managed.first)
-        XCTAssertTrue(secretField.hasStoredSecret); XCTAssertEqual(secretField.value, "")
+        XCTAssertEqual(secretField.value, "dummy-secret")
+        // Switching its type to "literal" carries the same visible value forward — it now goes
+        // into the Git-backed backup, which is the point of the classification.
         secretField.classification = .literal
         try await service.saveMCPServer(server, managedFields: [secretField])
         let config = try await service.mcpConfiguration()
         XCTAssertEqual(config.servers.first?.literalHeaders?["Authorization"], "dummy-secret")
         XCTAssertNil(config.servers.first?.secretHeaders?["Authorization"])
+    }
+
+    func testMCPServerJSONExportIncludesSecretsPlainlyAndReclassifiesOnSave() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let service = try SkillboxService(root: root)
+        let server = MCPServer(name: "api", transport: .stdio, command: "npx", arguments: ["-y", "pkg"], environment: ["TOKEN": "MY_TOKEN"], enabled: true, tags: ["seo"])
+        try await service.saveMCPServer(server)
+        var fields = try await service.managedFields(serverID: server.id)
+        fields.append(MCPManagedField(location: .environment, key: "API_KEY", value: "sk-secret", classification: .secret))
+        try await service.saveMCPServer(server, managedFields: fields)
+
+        // The exported JSON shows every value as it really is, secrets included.
+        let exported = try await service.exportMCPServerJSON(server.id)
+        XCTAssertTrue(exported.contains("sk-secret"))
+        XCTAssertTrue(exported.contains("API_KEY"))
+        XCTAssertTrue(exported.contains("${MY_TOKEN}"))
+
+        // Saving re-derives classification from scratch: API_KEY still looks like a secret, so it
+        // stays local-only (now under its own name-based account) even though nothing masked it.
+        let editedCommand = exported.replacingOccurrences(of: "\"npx\"", with: "\"npx2\"")
+        let updated = try await service.updateMCPServerJSON(server.id, name: "api", json: editedCommand, enabled: true, tags: ["seo"])
+        XCTAssertEqual(updated.command, "npx2")
+        XCTAssertEqual(updated.secretEnvironment?["API_KEY"], "mcp/api/env/API_KEY")
+        let managedAfterUpdate = try await service.managedFields(serverID: server.id)
+        XCTAssertEqual(managedAfterUpdate.first { $0.key == "API_KEY" }?.value, "sk-secret")
+
+        // Typing a value for a key that does not look like a secret keeps it a plain, backed-up value.
+        let plain = #"{"command":"npx2","args":["-y","pkg"],"env":{"REGION":"eu-west-1"}}"#
+        let final = try await service.updateMCPServerJSON(server.id, name: "api", json: plain, enabled: true, tags: ["seo"])
+        XCTAssertEqual(final.literalEnvironment?["REGION"], "eu-west-1")
+        XCTAssertNil(final.secretEnvironment)
     }
 
     func testFullLocalBackupRestoresSkillsProjectsMCPAndSecrets() async throws {
@@ -1223,7 +1308,7 @@ final class SkillboxCoreTests: XCTestCase {
         let service = try SkillboxService(root: root.appending(path: "data"))
         _ = try await service.addLocal(path: repo.appending(path: "skills/a").path, id: "seed")
         let before = try await service.librarySnapshots().count
-        let imported = try await service.addGitCollection(url: repo.absoluteURL.absoluteString, subpath: "skills")
+        let imported = try await service.addGitCollection(url: repo.absoluteURL.absoluteString, subpath: "skills").imported
         XCTAssertEqual(imported.count, 3)
         let after = try await service.librarySnapshots().count
         XCTAssertEqual(after - before, 1, "cały import to jeden zapis katalogu i jeden snapshot")

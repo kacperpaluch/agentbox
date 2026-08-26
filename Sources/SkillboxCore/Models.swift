@@ -233,8 +233,8 @@ public struct MCPImportSummary: Sendable {
 
 public enum MCPValueClassification: String, Codable, CaseIterable, Sendable {
     case environment = "Zmienna systemowa"
-    case secret = "Sekret lokalny"
-    case literal = "Zwykła wartość"
+    case secret = "Tylko na tym Macu (poza backupem Git)"
+    case literal = "Zwykła wartość (trafia do backupu Git)"
 }
 
 public struct MCPImportField: Identifiable, Hashable, Sendable {
@@ -263,13 +263,15 @@ public struct MCPManagedField: Identifiable, Hashable, Sendable {
     public var id: UUID
     public var location: MCPImportField.Location
     public var key: String
+    /// The real value — including a secret's plaintext. Agentbox is local and single-user, so the
+    /// field editor shows it as is instead of masking it; only `classification` decides whether it
+    /// ever leaves this Mac.
     public var value: String
     public var classification: MCPValueClassification
-    public var hasStoredSecret: Bool
 
-    public init(id: UUID = UUID(), location: MCPImportField.Location, key: String, value: String = "", classification: MCPValueClassification, hasStoredSecret: Bool = false) {
+    public init(id: UUID = UUID(), location: MCPImportField.Location, key: String, value: String = "", classification: MCPValueClassification) {
         self.id = id; self.location = location; self.key = key; self.value = value
-        self.classification = classification; self.hasStoredSecret = hasStoredSecret
+        self.classification = classification
     }
 }
 
@@ -351,6 +353,23 @@ public struct AdoptableSkill: Identifiable, Hashable, Sendable {
     public var path: String
     public var tool: Tool
     public init(suggestedID: String, path: String, tool: Tool) { self.suggestedID = suggestedID; self.path = path; self.tool = tool }
+}
+
+/// A candidate `addGitCollection` found a `SKILL.md` for but did not import — its id already
+/// belongs to a skill from a different source, so overwriting it silently would have been wrong.
+public struct SkippedSkill: Identifiable, Hashable, Sendable {
+    public var id: String
+    public var reason: String
+    public init(id: String, reason: String) { self.id = id; self.reason = reason }
+}
+
+/// The outcome of importing a Git collection. One conflicting or invalid candidate no longer sinks
+/// the whole batch — every other skill in the repository still gets imported and saved, and
+/// `skipped` says which ones did not and why.
+public struct GitImportResult: Sendable {
+    public var imported: [Skill]
+    public var skipped: [SkippedSkill]
+    public init(imported: [Skill], skipped: [SkippedSkill] = []) { self.imported = imported; self.skipped = skipped }
 }
 
 public struct ProjectSyncOutcome: Identifiable, Sendable {

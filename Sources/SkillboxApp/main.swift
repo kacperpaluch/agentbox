@@ -162,7 +162,12 @@ struct OperationLogEntry: Identifiable {
             self.message = "Utworzono skill \(draft.id)"
         }
     }
-    func addGit(_ url: String, subpath: String) async { await perform(autoBackup: true) { let urls = url.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }; var count = 0; for item in urls { count += try await self.service?.addGitCollection(url: item, subpath: subpath.isEmpty ? nil : subpath).count ?? 0 }; self.message = "Zaimportowano \(count) skilli" } }
+    func addGit(_ url: String, subpath: String) async { await perform(autoBackup: true) {
+        let urls = url.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        var count = 0; var skipped: [SkippedSkill] = []
+        for item in urls { if let result = try await self.service?.addGitCollection(url: item, subpath: subpath.isEmpty ? nil : subpath) { count += result.imported.count; skipped += result.skipped } }
+        self.message = skipped.isEmpty ? "Zaimportowano \(count) skilli" : "Zaimportowano \(count) skilli, pominięto \(skipped.count): " + skipped.map { "\($0.id) (\($0.reason))" }.joined(separator: "; ")
+    } }
     func checkUpdates() async { isWorking = true; defer { isWorking = false }; do { updateAvailable = try await service?.checkUpdates() ?? []; hasCheckedUpdates = true; message = updateAvailable.isEmpty ? "Wszystkie skille są aktualne" : "Dostępne aktualizacje: \(updateAvailable.count)" } catch { message = error.localizedDescription } }
     func update(_ id: String) async { await perform(autoBackup: true) { _ = try await self.service?.update(skillID: id); self.updateAvailable.remove(id); self.message = "Zaktualizowano \(id)" } }
     func saveSkillMarkdown(_ id: String, content: String) async -> Bool {
@@ -226,6 +231,15 @@ struct OperationLogEntry: Identifiable {
         } catch { message = error.localizedDescription; record(.error, message); await reload(); return false }
     }
     func deleteMCPServer(_ id: UUID) async { await perform(autoBackup: true) { try await self.service?.deleteMCPServer(id: id); self.message = "Usunięto serwer MCP" } }
+    func exportMCPServerJSON(_ id: UUID) async -> String { (try? await service?.exportMCPServerJSON(id)) ?? "" }
+    func exportMCPConfigurationJSON() async -> String { (try? await service?.exportMCPConfigurationJSON(mcp.servers)) ?? "" }
+    func updateMCPServerJSON(_ id: UUID, name: String, json: String, enabled: Bool, tags: [String]) async -> Bool {
+        isWorking = true; defer { isWorking = false }
+        do {
+            _ = try await service?.updateMCPServerJSON(id, name: name, json: json, enabled: enabled, tags: tags)
+            message = "Zapisano serwer MCP"; record(.success, message); await reload(); scheduleAutomaticBackup(); return true
+        } catch { message = error.localizedDescription; record(.error, message); await reload(); return false }
+    }
     func previewMCP(_ project: Project) async throws -> [MCPPreview] { try await service?.previewMCP(projectID: project.id) ?? [] }
     func previewProjectSync(_ project: Project) async throws -> ProjectSyncPreview { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewProjectSync(projectID: project.id) }
     func syncEverything(_ project: Project) async { await perform { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille i MCP dla \(project.name)" } }
@@ -911,9 +925,11 @@ struct MCPView: View {
     @State private var editingServer: MCPServer?
     @State private var serverToDelete: MCPServer?
     @State private var showImport = false
+    @State private var bulkJSON: String?
     var body: some View { VStack(spacing: 0) { ActionBar {
         Button { showImport = true } label: { Label("Importuj lub użyj AI", systemImage: "sparkles") }.buttonStyle(.borderedProminent)
         Button { editingServer = MCPServer(name: "", transport: .stdio) } label: { Label("Nowy serwer", systemImage: "plus") }.buttonStyle(.bordered)
+        Button { Task { bulkJSON = await model.exportMCPConfigurationJSON() } } label: { Label("Edytuj wszystko jako JSON", systemImage: "curlybraces") }.buttonStyle(.bordered).disabled(model.mcp.servers.isEmpty)
         Spacer()
         Text("\(model.mcp.servers.count) serwerów").font(.caption).foregroundStyle(.secondary)
     }; List {
@@ -921,9 +937,14 @@ struct MCPView: View {
     } }.navigationTitle("MCP")
         .sheet(isPresented: $showImport) { MCPImportView(model: model) }
         .sheet(item: $editingServer) { server in MCPServerEditor(model: model, server: server, existingTags: Array(Set(model.mcp.servers.flatMap { $0.tags ?? [] })).sorted()) }
+        .sheet(item: Binding(get: { bulkJSON.map(IdentifiableString.init) }, set: { bulkJSON = $0?.value })) { text in MCPImportView(model: model, prefill: text.value) }
         .confirmationDialog("Usunąć serwer \(serverToDelete?.name ?? "")?", isPresented: Binding(get: { serverToDelete != nil }, set: { if !$0 { serverToDelete = nil } })) { Button("Usuń", role: .destructive) { if let serverToDelete { Task { await model.deleteMCPServer(serverToDelete.id) } }; serverToDelete = nil }; Button("Anuluj", role: .cancel) { serverToDelete = nil } } message: { Text("Serwer zostanie usunięty także z bezpośrednich przypisań projektów.") }
     }
 }
+
+/// Wraps a `String` so it can back a `.sheet(item:)` — used to present the bulk JSON editor
+/// pre-filled with a freshly generated export instead of an always-empty `.sheet(isPresented:)`.
+struct IdentifiableString: Identifiable { let value: String; var id: String { value } }
 
 struct MCPServerEditor: View {
     @Environment(\.dismiss) private var dismiss
@@ -931,20 +952,41 @@ struct MCPServerEditor: View {
     let original: MCPServer; let existingTags: [String]
     @State private var name: String; @State private var transport: MCPTransport; @State private var command: String; @State private var arguments: String; @State private var url: String; @State private var enabled: Bool; @State private var tags: String
     @State private var fields: [MCPManagedField] = []
+    @State private var editingJSON = false
+    @State private var jsonText = ""
     init(model: AppModel, server: MCPServer, existingTags: [String]) { self.model = model; original = server; self.existingTags = existingTags; _name = State(initialValue: server.name); _transport = State(initialValue: server.transport); _command = State(initialValue: server.command); _arguments = State(initialValue: server.arguments.joined(separator: "\n")); _url = State(initialValue: server.url); _enabled = State(initialValue: server.enabled); _tags = State(initialValue: (server.tags ?? []).joined(separator: ", ")) }
-    var body: some View { ScrollView { Form { Text("Serwer MCP").font(.title2.bold()); TextField("Nazwa techniczna", text: $name); HStack { TextField("Tagi, oddzielone przecinkami", text: $tags); ExistingTagMenu(tags: existingTags, text: $tags) }; Picker("Transport", selection: $transport) { Text("Lokalny STDIO").tag(MCPTransport.stdio); Text("Zdalny HTTP").tag(MCPTransport.http) }.pickerStyle(.segmented); if transport == .stdio { TextField("Polecenie, np. npx", text: $command); Text("Argumenty — jeden na linię").font(.caption).foregroundStyle(.secondary); TextEditor(text: $arguments).font(.system(.body, design: .monospaced)).frame(height: 75) } else { TextField("URL", text: $url) }; GroupBox("Zmienne i nagłówki") { VStack(alignment: .leading, spacing: 10) { Text("Sekrety pozostają zamaskowane. Puste pole zachowuje poprzednią wartość sekretu.").font(.caption).foregroundStyle(.secondary); ForEach($fields) { $field in MCPManagedFieldRow(field: $field) { fields.removeAll { $0.id == field.id } } }; HStack { Button("Dodaj zmienną") { fields.append(MCPManagedField(location: .environment, key: "", classification: .environment)) }; Button("Dodaj nagłówek") { fields.append(MCPManagedField(location: .header, key: "", classification: .environment)) } } }.padding(7) }; Toggle("Włączony", isOn: $enabled); HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { Task { if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(name.isEmpty || (transport == .stdio ? command.isEmpty : url.isEmpty) || model.isWorking) } }.padding(24) }.frame(width: 760, height: 760).task { fields = await model.managedFields(for: original) } }
-    private func save() async -> Bool { let server = MCPServer(id: original.id, name: name, transport: transport, command: command, arguments: arguments.split(whereSeparator: \.isNewline).map(String.init), url: url, enabled: enabled, group: original.group, profile: original.profile, tags: AppModel.csv(tags)); return await model.saveMCPServer(server, fields: fields) }
+    /// The JSON view only makes sense once the server is actually saved — a brand-new, unsaved one
+    /// has nothing in the store yet to export or to match by id.
+    private var isExisting: Bool { model.mcp.servers.contains { $0.id == original.id } }
+    var body: some View { ScrollView { Form { Text("Serwer MCP").font(.title2.bold()); TextField("Nazwa techniczna", text: $name); HStack { TextField("Tagi, oddzielone przecinkami", text: $tags); ExistingTagMenu(tags: existingTags, text: $tags) }; Toggle("Włączony", isOn: $enabled)
+        if isExisting { Picker("Widok", selection: $editingJSON) { Text("Formularz").tag(false); Text("JSON").tag(true) }.pickerStyle(.segmented).onChange(of: editingJSON) { if editingJSON { Task { jsonText = await model.exportMCPServerJSON(original.id) } } } }
+        if editingJSON && isExisting {
+            Text("Pełna konfiguracja tego serwera, wartości wprost — łącznie z sekretami. ${VAR} to odczyt zmiennej systemowej; klucze wyglądające na token/hasło/API key automatycznie zostają tylko na tym Macu, reszta trafia do backupu Git.").font(.caption).foregroundStyle(.secondary)
+            TextEditor(text: $jsonText).font(.system(.body, design: .monospaced)).frame(height: 220).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+        } else {
+            Picker("Transport", selection: $transport) { Text("Lokalny STDIO").tag(MCPTransport.stdio); Text("Zdalny HTTP").tag(MCPTransport.http) }.pickerStyle(.segmented)
+            if transport == .stdio { TextField("Polecenie, np. npx", text: $command); Text("Argumenty — jeden na linię").font(.caption).foregroundStyle(.secondary); TextEditor(text: $arguments).font(.system(.body, design: .monospaced)).frame(height: 75) } else { TextField("URL", text: $url) }
+        }
+        GroupBox("Zmienne i nagłówki") { VStack(alignment: .leading, spacing: 10) { Text("Wartości widać wprost — to lokalna apka na tym Macu. Typ pola decyduje, czy wartość trafia do backupu Git: „Tylko na tym Macu” nigdy nie wychodzi poza mcp-secrets.json.").font(.caption).foregroundStyle(.secondary); ForEach($fields) { $field in MCPManagedFieldRow(field: $field) { fields.removeAll { $0.id == field.id } } }; HStack { Button("Dodaj zmienną") { fields.append(MCPManagedField(location: .environment, key: "", classification: .environment)) }; Button("Dodaj nagłówek") { fields.append(MCPManagedField(location: .header, key: "", classification: .environment)) } } }.padding(7) }
+        HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { Task { if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(name.isEmpty || (editingJSON && isExisting ? jsonText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty : (transport == .stdio ? command.isEmpty : url.isEmpty)) || model.isWorking) }
+    }.padding(24) }.frame(width: 760, height: 760).task { fields = await model.managedFields(for: original) } }
+    private func save() async -> Bool {
+        if editingJSON && isExisting { return await model.updateMCPServerJSON(original.id, name: name, json: jsonText, enabled: enabled, tags: AppModel.csv(tags)) }
+        let server = MCPServer(id: original.id, name: name, transport: transport, command: command, arguments: arguments.split(whereSeparator: \.isNewline).map(String.init), url: url, enabled: enabled, group: original.group, profile: original.profile, tags: AppModel.csv(tags))
+        return await model.saveMCPServer(server, fields: fields)
+    }
 }
 
 struct MCPManagedFieldRow: View {
     @Binding var field: MCPManagedField
     let onDelete: () -> Void
-    var body: some View { VStack(alignment: .leading, spacing: 4) { HStack { Picker("Miejsce", selection: $field.location) { Text("Zmienna").tag(MCPImportField.Location.environment); Text("Nagłówek").tag(MCPImportField.Location.header) }.labelsHidden().frame(width: 105); TextField("Nazwa", text: $field.key).frame(minWidth: 120); Picker("Typ", selection: $field.classification) { ForEach(MCPValueClassification.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.labelsHidden().frame(width: 165); if field.classification == .secret { SecureField(field.hasStoredSecret ? "Zapisany — wpisz, aby zmienić" : "Wartość sekretu", text: $field.value) } else { TextField(field.classification == .environment ? "Nazwa zmiennej systemowej" : "Wartość", text: $field.value) }; Button(role: .destructive, action: onDelete) { Image(systemName: "trash") } }; if field.classification == .literal && field.hasStoredSecret && field.value.isEmpty { Label("Zapisany sekret zostanie przeniesiony jawnym tekstem do mcp.json, który trafia do backupu Git.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) } }.onChange(of: field.classification) { if field.classification == .environment && field.value.isEmpty { field.value = field.key } } }
+    var body: some View { HStack { Picker("Miejsce", selection: $field.location) { Text("Zmienna").tag(MCPImportField.Location.environment); Text("Nagłówek").tag(MCPImportField.Location.header) }.labelsHidden().frame(width: 105); TextField("Nazwa", text: $field.key).frame(minWidth: 120); Picker("Typ", selection: $field.classification) { ForEach(MCPValueClassification.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.labelsHidden().frame(width: 260); TextField(field.classification == .environment ? "Nazwa zmiennej systemowej" : "Wartość", text: $field.value); Button(role: .destructive, action: onDelete) { Image(systemName: "trash") } }.onChange(of: field.classification) { if field.classification == .environment && field.value.isEmpty { field.value = field.key } } }
 }
 
 struct MCPImportView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var model: AppModel
+    var prefill: String = ""
     @State private var source = ""
     @State private var summary: MCPImportSummary?
     @State private var error = ""
@@ -957,7 +999,8 @@ struct MCPImportView: View {
     @State private var selected = Set<String>()
     @State private var classifications: [String: MCPValueClassification] = [:]
     var body: some View { VStack(alignment: .leading, spacing: 0) { ScrollView { VStack(alignment: .leading, spacing: 14) {
-        Text("Import konfiguracji MCP").font(.title2.bold())
+        Text(prefill.isEmpty ? "Import konfiguracji MCP" : "Edytuj konfigurację MCP jako JSON").font(.title2.bold())
+        if !prefill.isEmpty { Text("Poniżej jest aktualna konfiguracja, wartości wprost — łącznie z sekretami. Popraw co trzeba i kliknij „Analizuj”, potem zaznacz serwery do zapisania — istniejące o tej samej nazwie zostaną nadpisane, reszta zostanie bez zmian. Klucze wyglądające na token/hasło/API key automatycznie zostają tylko na tym Macu.").font(.caption).foregroundStyle(.secondary) }
         Picker("Tryb", selection: $useAI) { Text("Mam JSON").tag(false); Text("Mam instrukcję — przygotuj z AI").tag(true) }.pickerStyle(.segmented)
         if useAI {
             HStack { Picker("Dostawca", selection: $provider) { Text("OpenAI").tag(MCPAIProvider.openAI); Text("Anthropic").tag(MCPAIProvider.claude) }.frame(width: 210); TextField("Model", text: provider == .openAI ? $openAIModel : $claudeModel); SecureField("Klucz API (puste = użyj zapisanego)", text: $apiKey) }
@@ -978,7 +1021,7 @@ struct MCPImportView: View {
         }
         if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
     }.padding(24) }; Divider(); HStack { if working { ProgressView() }; if summary != nil { Text("Wybrano: \(selected.count)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Anuluj") { dismiss() }; Button(useAI ? "Przygotuj z AI" : "Analizuj") { Task { await prepare() } }.disabled(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working); Button("Importuj wybrane") { Task { await importNow() } }.buttonStyle(.borderedProminent).disabled(summary == nil || selected.isEmpty || working) }.padding(16).background(.bar)
-    }.frame(width: 760, height: 680).onAppear { if let settings = model.mcp.aiSettings { provider = settings.provider; openAIModel = settings.openAIModel; claudeModel = settings.claudeModel } } }
+    }.frame(width: 760, height: 680).onAppear { if source.isEmpty { source = prefill }; if let settings = model.mcp.aiSettings { provider = settings.provider; openAIModel = settings.openAIModel; claudeModel = settings.claudeModel } } }
     private func prepare() async { working = true; error = ""; summary = nil; selected.removeAll(); classifications.removeAll(); defer { working = false }; do { if useAI { let settings = MCPAISettings(provider: provider, openAIModel: openAIModel, claudeModel: claudeModel); source = try await model.generateMCP(source, settings: settings, key: apiKey.isEmpty ? nil : apiKey) }; let analyzed = try await model.analyzeMCP(source); summary = analyzed; selected = Set(analyzed.servers.map(\.name)); classifications = Dictionary(uniqueKeysWithValues: analyzed.fields.map { ($0.id, $0.classification) }) } catch { self.error = error.localizedDescription; model.reportError(error) } }
     private func importNow() async { working = true; error = ""; defer { working = false }; do { _ = try await model.importMCP(source, serverNames: selected, classifications: classifications); dismiss() } catch { self.error = error.localizedDescription; model.reportError(error) } }
     private func classificationBinding(_ field: MCPImportField) -> Binding<MCPValueClassification> { Binding(get: { classifications[field.id] ?? field.classification }, set: { classifications[field.id] = $0 }) }
