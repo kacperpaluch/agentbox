@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-08-26
+
+### Zmieniono
+
+- Pasek filtrów w Bibliotece (tag, grupowanie, sortowanie, rozwijanie grup, sprawdzanie aktualizacji) zwinięty do jednego menu „Filtruj i sortuj” zamiast pięciu osobnych, zawsze widocznych kontrolek — ten sam wzorzec co „Uporządkuj” we Finderze czy Mailu. Wąska kolumna listy nie musi już mieścić ich wszystkich naraz, co usuwa obcinanie się etykiet przy typowej szerokości okna.
+
 ## [0.11.0] - 2026-08-26
 
 ### Dodano

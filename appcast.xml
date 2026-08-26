@@ -6,6 +6,25 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.11.1</title>
+      <pubDate>Wed, 26 Aug 2026 21:12:43 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.11.1</link>
+      <sparkle:version>26</sparkle:version>
+      <sparkle:shortVersionString>0.11.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.11.1</h2>
+        <ul>
+          <li>Pasek filtrów w Bibliotece zwinięty do jednego menu „Filtruj i sortuj” zamiast pięciu osobnych kontrolek, które potrafiły się obcinać przy typowej szerokości okna.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.11.1/Agentbox-0.11.1.dmg"
+        length="5347880"
+        type="application/octet-stream"
+        sparkle:edSignature="rW3azFTBM/fz489TysuE5TnDbWbK8thvgyegklHRRx4YzAynxDYuZLPIF9MuVORIqt5okWKQRZ1motp7oEJgBQ==" />
+    </item>
+    <item>
       <title>Agentbox 0.11.0</title>
       <pubDate>Wed, 26 Aug 2026 20:55:54 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.11.0</link>
