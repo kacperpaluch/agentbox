@@ -6,6 +6,24 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-26
+
+### Dodano
+
+- Ustawienia wspólne dla folderu nadrzędnego. `Dodaj wiele` zapisuje teraz narzędzia, skille, tagi, serwery MCP, wykluczenia i opcję `.gitignore` na samym folderze, a jego podfoldery je dziedziczą — jedna zmiana obejmuje wszystkie projekty w folderze zamiast edycji każdego z osobna. Pojedynczy projekt może przejść na własne ustawienia przełącznikiem w swoim edytorze; formularz startuje wtedy od tego, co dotąd dziedziczył, więc samo odłączenie niczego nie zmienia. Odznaczenie opcji przy dodawaniu wraca do dawnego zachowania z kopią ustawień w każdym projekcie.
+- Wykrywanie nowych podfolderów. Folder nadrzędny jest sprawdzany przy każdym odświeżeniu listy projektów, a nowy podfolder — na przykład świeżo sklonowane repozytorium — pojawia się jako pytanie nad listą: dodać i zsynchronizować, dodać bez synchronizacji, czy pomijać. Odmowa jest zapamiętywana, tak samo jak usunięcie projektu z obserwowanego folderu, więc to samo pytanie nie wraca przy każdym uruchomieniu.
+- `Biblioteka → Napisz własny` tworzy skill bez zakładania katalogu na dysku i bez repozytorium: wystarczy wpisać albo wkleić treść. Agentbox dopisuje nagłówek YAML z nazwą i opisem, a wklejony plik z własnym blokiem `---` zapisuje bez zmian. Taki skill jest lokalny, więc pozostaje edytowalny w aplikacji.
+- CLI: `agentbox new <id> [--name] [--description] [--tags] [--file plik|-]` oraz `agentbox project root-add|roots|scan|adopt-new|ignore-new|unignore`.
+
+### Naprawiono
+
+- Biblioteka w katalogu, którego ścieżkę system zapisuje inaczej po standaryzacji (np. `/private/tmp/...`), odrzucała edycję i usuwanie skilla komunikatem `Niebezpieczna ścieżka`. Sprawdzana jest teraz sama nazwa skilla, a nie wynik porównania dwóch różnie znormalizowanych ścieżek.
+
+### Zmieniono
+
+- Edytor projektu i formularz `Dodaj wiele` korzystają z tego samego zestawu ustawień, więc `Dodaj wiele` obsługuje teraz również wykluczenia i opcję `.gitignore`.
+- `project set` i `mcp assign` odmawiają zmiany projektu korzystającego z ustawień folderu nadrzędnego zamiast zapisywać wybór, którego synchronizacja i tak nie czyta.
+
 ## [0.8.1] - 2026-08-25
 
 ### Naprawiono

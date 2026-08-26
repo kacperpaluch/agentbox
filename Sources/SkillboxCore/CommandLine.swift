@@ -9,7 +9,9 @@ public enum AgentboxCommand {
     Agentbox — skille i MCP dla Claude, Codex i OpenCode
       agentbox add <folder|git-url> [--path subdir] [--branch main] [--id name]
       agentbox list | tag <skill> <tag...> | update <skill|--all>
+      agentbox new <id> [--name x] [--description y] [--tags a,b] [--file plik|-]
       agentbox project add|set|list|status|adopt|unsync ...
+      agentbox project root-add|roots|scan|adopt-new|ignore-new ...
       agentbox sync project <name> [--dry-run]
       agentbox sync all [--dry-run]
       agentbox sync global [--skills a,b] [--tags x] [--tools claude,codex,opencode]
@@ -27,6 +29,18 @@ public enum AgentboxCommand {
         switch command {
         case "list":
             return try await service.listSkills().map { "\($0.id)\t\($0.tags.joined(separator: ","))\t\($0.source.kind.rawValue)" }
+        case "new" where rest.count >= 1:
+            // `--file -` reads standard input, so a skill can be piped in from an editor or another
+            // command instead of having to exist as a file first.
+            let file = option("--file", in: args)
+            let content: String
+            switch file {
+            case "-": content = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            case .some(let path): content = try String(contentsOf: URL(fileURLWithPath: path), encoding: .utf8)
+            case .none: content = "Opisz tutaj, co skill ma robić.\n"
+            }
+            let skill = try await service.createSkill(id: rest[0], name: option("--name", in: args) ?? "", description: option("--description", in: args) ?? "", content: content, tags: csv("--tags", in: args))
+            return ["Utworzono skill \(skill.id)"]
         case "add":
             guard let value = rest.first else { throw SkillboxError.invalidSkill("podaj ścieżkę lub URL") }
             let subpath = option("--path", in: args), branch = option("--branch", in: args), id = option("--id", in: args)
@@ -96,11 +110,67 @@ public enum AgentboxCommand {
             let project = try await resolve(rest[1], service: service)
             let removed = try await service.unsyncProject(id: project.id)
             return ["Usunięto z \(project.name): \(removed.count) elementów"] + removed.map { "  \($0)" }
+        case "root-add" where rest.count >= 3:
+            let tools = (option("--tools", in: args) ?? "claude,codex,opencode").split(separator: ",").compactMap { Tool(rawValue: String($0)) }
+            let folderURL = URL(fileURLWithPath: rest[2]).standardizedFileURL
+            // `--folders` picks subfolders by name; without it nothing is added yet and the folder's
+            // own scan proposes everything it holds.
+            let picked = csv("--folders", in: args).map { folderURL.appending(path: $0).path }
+            let root = ProjectRoot(name: rest[1], path: folderURL.path, tools: tools, skillIDs: csv("--skills", in: args), tags: csv("--tags", in: args), manageGitignore: args.contains("--gitignore"), watchesNewFolders: !args.contains("--no-watch"))
+            let stored = try await service.addProjectRoot(root, folders: picked, serverIDs: [], serverTags: [])
+            return ["Dodano folder nadrzędny \(stored.name) (\(picked.count) projektów)"]
+        case "roots":
+            let roots = try await service.projectRoots()
+            guard !roots.isEmpty else { return ["Brak folderów nadrzędnych."] }
+            let projects = try await service.storedProjects()
+            return roots.map { root in
+                let count = projects.filter { $0.rootID == root.id }.count
+                let watching = root.watchesNewFolders ? "wykrywa nowe" : "bez wykrywania"
+                return "\(root.name)\t\(root.path)\t\(count) projektów\t\(watching)\t\(root.tools.map(\.rawValue).joined(separator: ","))"
+            }
+        case "scan":
+            let found = try await detected(rest, service: service, args: args)
+            guard !found.isEmpty else { return ["Brak nowych podfolderów."] }
+            return ["Nowe podfoldery: \(found.count)"] + found.map { "  \($0.rootName)\t\($0.path)" }
+        case "adopt-new":
+            let found = try await detected(rest, service: service, args: args)
+            guard !found.isEmpty else { return ["Brak nowych podfolderów."] }
+            guard args.contains("--yes") else {
+                return ["Znaleziono \(found.count) nowych podfolderów:"] + found.map { "  \($0.rootName)\t\($0.path)" }
+                    + ["Dodaj --yes, aby dodać je jako projekty (--sync synchronizuje je od razu)."]
+            }
+            let added = try await service.addDetectedFolders(found)
+            var output = ["Dodano \(added.count) projektów: \(added.map(\.name).joined(separator: ", "))"]
+            if args.contains("--sync") {
+                for project in added {
+                    let preview = try await service.syncProjectTransaction(projectID: project.id)
+                    output.append("Zsynchronizowano \(project.name)")
+                    output += lines(for: preview)
+                }
+            }
+            return output
+        case "ignore-new":
+            let found = try await detected(rest, service: service, args: args)
+            guard !found.isEmpty else { return ["Brak nowych podfolderów."] }
+            try await service.ignoreDetectedFolders(found)
+            return ["Pominięto \(found.count) podfolderów. Wróć do nich przez agentbox project unignore <folder>."]
+        case "unignore" where rest.count >= 2:
+            guard let root = try await service.projectRoots().first(where: { $0.name == rest[1] }) else { throw SkillboxError.projectNotFound(rest[1]) }
+            try await service.clearIgnoredFolders(rootID: root.id)
+            return ["Wyczyszczono listę pominiętych podfolderów w \(root.name)"]
         default: return [projectUsage]
         }
     }
 
-    private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode] | set <nazwa> [--skills a,b] [--tags web] | list | status | adopt <nazwa> [--yes] | unsync <nazwa>"
+    /// New subfolders, optionally narrowed to one parent folder with `--root <nazwa>`.
+    private static func detected(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [DetectedProjectFolder] {
+        let found = try await service.scanProjectRoots()
+        guard let name = option("--root", in: args) else { return found }
+        guard let root = try await service.projectRoots().first(where: { $0.name == name }) else { throw SkillboxError.projectNotFound(name) }
+        return found.filter { $0.rootID == root.id }
+    }
+
+    private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode] | set <nazwa> [--skills a,b] [--tags web] | list | status | adopt <nazwa> [--yes] | unsync <nazwa> | root-add <nazwa> <folder> [--tools t] [--skills a,b] [--tags x] [--folders alpha,beta] [--no-watch] | roots | scan [--root nazwa] | adopt-new [--root nazwa] [--yes] [--sync] | ignore-new [--root nazwa] | unignore <folder>"
 
     private static func sync(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
         guard let mode = rest.first else { return [syncUsage] }

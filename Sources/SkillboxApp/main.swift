@@ -70,6 +70,12 @@ struct OperationLogEntry: Identifiable {
     @Published var fullBackups: [FullBackupInfo] = []
     @Published var statuses: [UUID: ProjectStatus] = [:]
     @Published var isCheckingStatuses = false
+    /// Projects exactly as they are stored. `projects` carries the settings synchronization uses,
+    /// which for a project following a parent folder are the folder's — saving those back would
+    /// freeze a copy into the project and break the inheritance the user asked for.
+    @Published var storedProjects: [Project] = []
+    @Published var projectRoots: [ProjectRoot] = []
+    @Published var detectedFolders: [DetectedProjectFolder] = []
     /// Set when the library folder cannot be opened at all (missing disk, no permissions).
     /// The UI then explains the situation instead of showing an empty library that looks like
     /// lost data.
@@ -89,9 +95,58 @@ struct OperationLogEntry: Identifiable {
     // tags), so it recomputes them here too. That is the only place callers need to remember to
     // call — a skill tag edit or a new tagged MCP server no longer leaves the Projects tab showing
     // a stale "synced" badge until someone happens to touch a project directly.
-    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); if let service { hasOpenAIKey = try await service.hasMCPAIKey(.openAI); hasAnthropicKey = try await service.hasMCPAIKey(.claude) }; if selection == nil { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; await loadStatuses() }
+    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); if let service { hasOpenAIKey = try await service.hasMCPAIKey(.openAI); hasAnthropicKey = try await service.hasMCPAIKey(.claude) }; if selection == nil { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses() }
+
+    // MARK: Parent folders
+
+    /// Looks for subfolders that appeared in a watched parent folder since it was added. It runs on
+    /// every reload, so a project cloned into the folder outside Agentbox shows up on its own
+    /// instead of waiting for the user to remember to add it.
+    func scanRoots() async { detectedFolders = (try? await service?.scanProjectRoots()) ?? [] }
+    func root(for project: Project) -> ProjectRoot? { project.rootID.flatMap { id in projectRoots.first { $0.id == id } } }
+    func inheritsRoot(_ project: Project) -> Bool { project.overridesRoot != true && root(for: project) != nil }
+    func storedProject(id: UUID) -> Project? { storedProjects.first { $0.id == id } }
+    func addBatch(_ request: BatchProjectRequest) async {
+        await perform {
+            if let root = request.root {
+                _ = try await self.service?.addProjectRoot(root, folders: request.folders, serverIDs: request.serverIDs, serverTags: request.serverTags)
+                self.message = "Dodano folder \(root.name) i \(request.folders.count) projektów"
+            } else {
+                for project in request.projects { _ = try await self.service?.addProject(project, serverIDs: request.serverIDs, serverTags: request.serverTags) }
+                self.message = "Dodano \(request.projects.count) projektów"
+            }
+        }
+    }
+    func saveRoot(_ root: ProjectRoot, serverIDs: [UUID], serverTags: [String]) async { await perform { try await self.service?.updateProjectRoot(root, serverIDs: serverIDs, serverTags: serverTags); self.message = "Zapisano ustawienia folderu \(root.name)" } }
+    func deleteRoot(_ root: ProjectRoot) async { await perform { try await self.service?.deleteProjectRoot(id: root.id); self.message = "Usunięto ustawienia folderu \(root.name); projekty zachowały to, co dziedziczyły" } }
+    func clearIgnoredFolders(_ root: ProjectRoot) async { await perform { try await self.service?.clearIgnoredFolders(rootID: root.id); self.message = "Wyczyszczono pominięte podfoldery w \(root.name)" } }
+    func ignoreDetected(_ folders: [DetectedProjectFolder]) async { await perform { try await self.service?.ignoreDetectedFolders(folders); self.message = "Pominięto \(folders.count) podfolderów" } }
+    /// Adds the detected subfolders and — when asked — synchronizes them right away, which is the
+    /// point of the question: a new project in a known folder should end up ready to use.
+    func addDetected(_ folders: [DetectedProjectFolder], synchronizing: Bool) async {
+        await perform {
+            let added = try await self.service?.addDetectedFolders(folders) ?? []
+            guard synchronizing else { self.message = "Dodano \(added.count) projektów"; return }
+            var synced = 0
+            var failures: [String] = []
+            for project in added {
+                do { _ = try await self.service?.syncProjectTransaction(projectID: project.id); synced += 1 }
+                catch { failures.append("\(project.name): \(error.localizedDescription)") }
+            }
+            self.message = failures.isEmpty
+                ? "Dodano i zsynchronizowano \(synced) projektów"
+                : "Dodano \(added.count) projektów, zsynchronizowano \(synced). Nie udało się: \(failures.joined(separator: "; "))"
+        }
+    }
     func loadMarkdown() async { guard let selection else { markdown = ""; return }; markdown = (try? await service?.skillMarkdown(skillID: selection)) ?? "" }
     func addLocal(_ url: URL) async { await perform(autoBackup: true) { _ = try await self.service?.addLocal(path: url.path); self.message = "Dodano skill z dysku" } }
+    func createSkill(_ draft: NewSkillDraft) async {
+        await perform(autoBackup: true) {
+            let skill = try await self.service?.createSkill(id: draft.id, name: draft.name, description: draft.description, content: draft.content, tags: draft.tags)
+            if let skill { self.selection = skill.id }
+            self.message = "Utworzono skill \(draft.id)"
+        }
+    }
     func addGit(_ url: String, subpath: String) async { await perform(autoBackup: true) { let urls = url.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }; var count = 0; for item in urls { count += try await self.service?.addGitCollection(url: item, subpath: subpath.isEmpty ? nil : subpath).count ?? 0 }; self.message = "Zaimportowano \(count) skilli" } }
     func checkUpdates() async { isWorking = true; defer { isWorking = false }; do { updateAvailable = try await service?.checkUpdates() ?? []; hasCheckedUpdates = true; message = updateAvailable.isEmpty ? "Wszystkie skille są aktualne" : "Dostępne aktualizacje: \(updateAvailable.count)" } catch { message = error.localizedDescription } }
     func update(_ id: String) async { await perform(autoBackup: true) { _ = try await self.service?.update(skillID: id); self.updateAvailable.remove(id); self.message = "Zaktualizowano \(id)" } }
@@ -107,9 +162,10 @@ struct OperationLogEntry: Identifiable {
     func addTags(_ ids: Set<String>, text: String) async { await perform(autoBackup: true) { try await self.service?.addTags(skillIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) skilli" } }
     func deleteSkill(_ id: String) async { await perform(autoBackup: true) { try await self.service?.deleteSkill(skillID: id); if self.selection == id { self.selection = nil; self.markdown = "" }; self.updateAvailable.remove(id); self.message = "Usunięto skill \(id)" } }
     func addProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async { await perform { _ = try await self.service?.addProject(project, serverIDs: serverIDs, serverTags: serverTags); self.message = "Dodano projekt" } }
-    func addProjects(_ projects: [Project], serverIDs: [UUID], serverTags: [String]) async { await perform { for project in projects { _ = try await self.service?.addProject(project, serverIDs: serverIDs, serverTags: serverTags) }; self.message = "Dodano \(projects.count) projektów" } }
     func updateProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async { await perform { try await self.service?.updateProject(project, serverIDs: serverIDs, serverTags: serverTags); self.message = "Zapisano projekt" } }
-    func selectedMCPServerIDs(for project: Project) -> [UUID] { let direct = mcp.projectServerIDs?[project.id.uuidString] ?? []; let legacyPresetIDs = Set(mcp.projectPresetIDs[project.id.uuidString] ?? []); let legacy = mcp.presets.filter { legacyPresetIDs.contains($0.id) }.flatMap(\.serverIDs); return Array(Set(direct + legacy)) }
+    func selectedMCPServerIDs(for project: Project) -> [UUID] { selectedMCPServerIDs(selectionID: (inheritsRoot(project) ? project.rootID : nil) ?? project.id) }
+    func selectedMCPServerIDs(selectionID: UUID) -> [UUID] { let key = selectionID.uuidString; let direct = mcp.projectServerIDs?[key] ?? []; let legacyPresetIDs = Set(mcp.projectPresetIDs[key] ?? []); let legacy = mcp.presets.filter { legacyPresetIDs.contains($0.id) }.flatMap(\.serverIDs); return Array(Set(direct + legacy)) }
+    func selectedMCPServerTags(for project: Project) -> [String] { mcp.projectServerTags?[((inheritsRoot(project) ? project.rootID : nil) ?? project.id).uuidString] ?? [] }
     func deleteProject(_ project: Project, removingFiles: Bool) async {
         await perform {
             if removingFiles {
@@ -290,6 +346,7 @@ enum SkillGrouping: String, CaseIterable, Identifiable { case repository = "Repo
 
 struct LibraryView: View {
     @ObservedObject var model: AppModel; @Binding var showGit: Bool
+    @State private var showNewSkill = false
     @State private var search = ""
     @State private var selectedTag = ""
     @State private var sort: SkillSort = .name
@@ -326,6 +383,7 @@ struct LibraryView: View {
             ActionBar {
                 Button { showGit = true } label: { Label("Z Git", systemImage: "arrow.down.circle") }.buttonStyle(.borderedProminent)
                 Button { chooseSkill() } label: { Label("Z dysku", systemImage: "folder.badge.plus") }.buttonStyle(.bordered)
+                Button { showNewSkill = true } label: { Label("Napisz własny", systemImage: "square.and.pencil") }.buttonStyle(.bordered)
                 if !checked.isEmpty {
                     Button { showBatchTags = true } label: { Label("Dodaj tagi (\(checked.count))", systemImage: "tag") }.buttonStyle(.bordered)
                     Button("Wyczyść") { checked.removeAll() }.buttonStyle(.bordered)
@@ -338,7 +396,9 @@ struct LibraryView: View {
 
         }.frame(minWidth: 410, idealWidth: 480)
         if let id = model.selection, let skill = model.skills.first(where: { $0.id == id }) { SkillDetail(model: model, skill: skill) } else { ContentUnavailableView("Wybierz skill", systemImage: "text.book.closed") }
-    }.navigationTitle("Biblioteka").sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: tags) { text in Task { await model.addTags(checked, text: text); checked.removeAll() } } } }
+    }.navigationTitle("Biblioteka")
+        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: tags) { text in Task { await model.addTags(checked, text: text); checked.removeAll() } } }
+        .sheet(isPresented: $showNewSkill) { NewSkillView(existingTags: tags, existingIDs: Set(model.skills.map(\.id))) { draft in Task { await model.createSkill(draft) } } } }
     private func checkBinding(_ id: String) -> Binding<Bool> { Binding(get: { checked.contains(id) }, set: { if $0 { checked.insert(id) } else { checked.remove(id) } }) }
     private func groupCheckBinding(_ skills: [Skill]) -> Binding<Bool> { let ids = Set(skills.map(\.id)); return Binding(get: { !ids.isEmpty && ids.isSubset(of: checked) }, set: { if $0 { checked.formUnion(ids) } else { checked.subtract(ids) } }) }
     private func groupExpansion(_ name: String) -> Binding<Bool> { Binding(get: { !search.isEmpty || expanded.contains(name) || grouping == .none }, set: { if $0 { expanded.insert(name) } else { expanded.remove(name) } }) }
@@ -409,36 +469,51 @@ struct ProjectsView: View {
     @State private var adopting: Project?
     @State private var deleteFiles = false
     @State private var collapsedGroups = Set<String>()
+    @State private var editingRoot: ProjectRoot?
+    @State private var deletingRoot: ProjectRoot?
+    @State private var showDetected = false
 
     private struct ProjectGroup: Identifiable {
         let path: String
+        let root: ProjectRoot?
         let projects: [Project]
-        var id: String { path }
-        var name: String { URL(fileURLWithPath: path).lastPathComponent }
+        var id: String { root?.id.uuidString ?? path }
+        var name: String { root?.name ?? URL(fileURLWithPath: path).lastPathComponent }
     }
 
+    /// Projects of a parent folder stay together even when one of them was moved elsewhere on disk,
+    /// so the group header always describes the settings its rows actually use. Projects added on
+    /// their own keep the old grouping by the folder they sit in.
     private var groups: [ProjectGroup] {
-        Dictionary(grouping: model.projects) {
-            URL(fileURLWithPath: $0.path).deletingLastPathComponent().standardizedFileURL.path
+        var byRoot: [UUID: [Project]] = [:]
+        var byPath: [String: [Project]] = [:]
+        for project in model.projects {
+            if let root = model.root(for: project) { byRoot[root.id, default: []].append(project) }
+            else { byPath[URL(fileURLWithPath: project.path).deletingLastPathComponent().standardizedFileURL.path, default: []].append(project) }
         }
-        .map { path, projects in
-            ProjectGroup(path: path, projects: projects.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending })
-        }
-        .sorted { $0.path.localizedCaseInsensitiveCompare($1.path) == .orderedAscending }
+        let sorted: ([Project]) -> [Project] = { $0.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
+        // A folder with no projects left still appears, otherwise its shared settings would become
+        // unreachable the moment its last project is removed.
+        let rootGroups = model.projectRoots.map { ProjectGroup(path: $0.path, root: $0, projects: sorted(byRoot[$0.id] ?? [])) }
+        let pathGroups = byPath.map { ProjectGroup(path: $0.key, root: nil, projects: sorted($0.value)) }
+        return (rootGroups + pathGroups).sorted { $0.path.localizedCaseInsensitiveCompare($1.path) == .orderedAscending }
     }
 
     var body: some View {
         VStack(spacing: 0) {
             actionBar
-            if model.projects.isEmpty {
+            if !model.detectedFolders.isEmpty { detectedBanner }
+            if model.projects.isEmpty && model.projectRoots.isEmpty {
                 ContentUnavailableView("Brak projektów", systemImage: "folder.badge.plus", description: Text("Dodaj folder i wybierz skille dla Claude, Codex lub OpenCode."))
             } else {
                 projectList
             }
         }
         .navigationTitle("Projekty")
-        .sheet(isPresented: $showBatch) { BatchProjectView(skills: model.skills, servers: model.mcp.servers, existingProjects: model.projects) { projects, servers, tags in Task { await model.addProjects(projects, serverIDs: servers, serverTags: tags) } } }
-        .sheet(item: $editing) { project in ProjectEditor(skills: model.skills, servers: model.mcp.servers, project: project, selectedServerIDs: model.selectedMCPServerIDs(for: project), selectedServerTags: model.mcp.projectServerTags?[project.id.uuidString] ?? []) { updated, servers, tags in Task { await model.updateProject(updated, serverIDs: servers, serverTags: tags) } } }
+        .sheet(isPresented: $showBatch) { BatchProjectView(skills: model.skills, servers: model.mcp.servers, existingProjects: model.projects, existingRoots: model.projectRoots) { request in Task { await model.addBatch(request) } } }
+        .sheet(isPresented: $showDetected) { DetectedFoldersView(model: model) }
+        .sheet(item: $editingRoot) { root in ProjectRootEditor(skills: model.skills, servers: model.mcp.servers, root: root, followingProjects: model.storedProjects.filter { $0.rootID == root.id && $0.overridesRoot != true }.count, selectedServerIDs: model.selectedMCPServerIDs(selectionID: root.id), selectedServerTags: model.mcp.projectServerTags?[root.id.uuidString] ?? []) { updated, servers, tags in Task { await model.saveRoot(updated, serverIDs: servers, serverTags: tags) } } }
+        .sheet(item: $editing) { project in ProjectEditor(skills: model.skills, servers: model.mcp.servers, project: model.storedProject(id: project.id) ?? project, root: model.root(for: project), inheritedFrom: model.inheritsRoot(project) ? model.projects.first { $0.id == project.id } : nil, selectedServerIDs: model.selectedMCPServerIDs(for: project), selectedServerTags: model.selectedMCPServerTags(for: project)) { updated, servers, tags in Task { await model.updateProject(updated, serverIDs: servers, serverTags: tags) } } }
         .sheet(item: $previewProject) { project in MCPPreviewView(model: model, project: project) }
         .sheet(isPresented: $showAllSync) { AllProjectsSyncPreviewView(model: model) }
         .confirmationDialog("Usunąć projekt \(deleting?.name ?? "") z Agentbox?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
@@ -447,23 +522,53 @@ struct ProjectsView: View {
             Button("Anuluj", role: .cancel) { deleting = nil }
         } message: { Text("Sprzątanie usuwa z folderu projektu wyłącznie katalogi skilli i wpisy MCP wymienione w manifestach Agentbox. Przed zmianą powstaje backup, który można cofnąć w sekcji Odzyskiwanie.") }
         .sheet(item: $adopting) { project in AdoptSkillsView(model: model, project: project) }
+        .confirmationDialog("Usunąć wspólne ustawienia folderu \(deletingRoot?.name ?? "")?", isPresented: Binding(get: { deletingRoot != nil }, set: { if !$0 { deletingRoot = nil } })) {
+            Button("Usuń ustawienia folderu", role: .destructive) { if let deletingRoot { Task { await model.deleteRoot(deletingRoot) } }; deletingRoot = nil }
+            Button("Anuluj", role: .cancel) { deletingRoot = nil }
+        } message: { Text("Projekty zostają. Każdy, który korzystał z ustawień folderu, dostaje ich kopię, więc do repozytoriów trafia dokładnie to samo co dziś. Agentbox przestaje tylko pytać o nowe podfoldery.") }
+    }
+
+    /// The question the user asked for: a new subfolder in a watched parent folder is offered as a
+    /// project instead of being noticed only when something is missing from it.
+    private var detectedBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "sparkle.magnifyingglass").foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(model.detectedFolders.count == 1 ? "Nowy podfolder w obserwowanym folderze" : "Nowe podfoldery w obserwowanych folderach: \(model.detectedFolders.count)").font(.callout.weight(.medium))
+                Text(model.detectedFolders.prefix(3).map(\.name).joined(separator: ", ") + (model.detectedFolders.count > 3 ? "…" : "")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer()
+            Button("Przejrzyj…") { showDetected = true }.buttonStyle(.borderedProminent)
+            Button("Dodaj i synchronizuj") { let folders = model.detectedFolders; Task { await model.addDetected(folders, synchronizing: true) } }.buttonStyle(.bordered).disabled(model.isWorking)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(.quaternary.opacity(0.4))
     }
 
     private var projectList: some View {
         List {
             ForEach(groups) { group in
                 DisclosureGroup(isExpanded: groupExpansion(group.path)) {
+                    if group.projects.isEmpty { Text("Folder bez projektów. Dodaj podfoldery przez `Dodaj wiele` albo poczekaj, aż Agentbox je wykryje.").font(.caption).foregroundStyle(.secondary).padding(.vertical, 6) }
                     ForEach(group.projects) { project in
-                        ProjectRow(project: project, status: model.statuses[project.id], editing: $editing, previewProject: $previewProject, deleting: $deleting, adopting: $adopting)
+                        ProjectRow(project: project, status: model.statuses[project.id], inheritsRoot: model.inheritsRoot(project), editing: $editing, previewProject: $previewProject, deleting: $deleting, adopting: $adopting)
                     }
                 } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "folder").foregroundStyle(.tint)
-                            Text(group.name).font(.subheadline.weight(.semibold))
-                            Text("\(group.projects.count)").font(.caption2).foregroundStyle(.secondary)
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Image(systemName: group.root == nil ? "folder" : "folder.badge.gearshape").foregroundStyle(.tint)
+                                Text(group.name).font(.subheadline.weight(.semibold))
+                                Text("\(group.projects.count)").font(.caption2).foregroundStyle(.secondary)
+                                if let root = group.root, root.watchesNewFolders { Image(systemName: "eye").font(.caption2).foregroundStyle(.secondary).help("Agentbox pyta o nowe podfoldery w tym folderze") }
+                            }
+                            Text(group.path).font(.caption2).foregroundStyle(.tertiary).lineLimit(1).help(group.path)
                         }
-                        Text(group.path).font(.caption2).foregroundStyle(.tertiary).lineLimit(1).help(group.path)
+                        Spacer()
+                        if let root = group.root {
+                            Button { editingRoot = root } label: { Label("Ustawienia folderu", systemImage: "gearshape") }.buttonStyle(.bordered).controlSize(.small)
+                            Button { deletingRoot = root } label: { Image(systemName: "trash") }.buttonStyle(.borderless).controlSize(.small).help("Usuń wspólne ustawienia folderu")
+                        }
                     }
                     .textCase(nil)
                     .padding(.vertical, 2)
@@ -526,6 +631,7 @@ struct ProjectStatusBadge: View {
 private struct ProjectRow: View {
     let project: Project
     let status: ProjectStatus?
+    let inheritsRoot: Bool
     @Binding var editing: Project?
     @Binding var previewProject: Project?
     @Binding var deleting: Project?
@@ -535,7 +641,11 @@ private struct ProjectRow: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading) {
-                    HStack(spacing: 8) { Text(project.name).fontWeight(.medium); ProjectStatusBadge(status: status) }
+                    HStack(spacing: 8) {
+                        Text(project.name).fontWeight(.medium)
+                        ProjectStatusBadge(status: status)
+                        if inheritsRoot { Label("ustawienia folderu", systemImage: "arrow.turn.up.right").font(.caption2).foregroundStyle(.secondary).help("Skille, tagi i MCP tego projektu pochodzą z folderu nadrzędnego") }
+                    }
                     Text(project.path).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(project.path)
                 }
                 Spacer()
@@ -1078,26 +1188,34 @@ struct AddGitView: View {
     var body: some View { VStack(alignment: .leading, spacing: 18) { Text("Dodaj z Git").font(.title2.bold()); Text("Adres repozytorium lub link GitHub do konkretnego folderu. Możesz wkleić kilka adresów — po jednym w linii.").font(.caption).foregroundStyle(.secondary); TextEditor(text: $url).font(.system(.body, design: .monospaced)).frame(height: 110).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary)); TextField("Podfolder, np. skills (opcjonalnie)", text: $subpath); Text("Dla linku GitHub `/tree/branch/folder` branch i podfolder zostaną rozpoznane automatycznie. Zwykły URL repozytorium importuje wszystkie znalezione katalogi z SKILL.md.").font(.caption).foregroundStyle(.secondary); HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Importuj") { onAdd(url, subpath); dismiss() }.buttonStyle(.borderedProminent).disabled(url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) } }.padding(24).frame(width: 580) }
 }
 
-struct ProjectEditor: View {
-    @Environment(\.dismiss) private var dismiss
+/// The settings a project and a parent folder share. Both edit them through this one view, so a
+/// folder can never offer less than a project — including the rule that a tag owns everything it
+/// pulls in.
+struct SharedSettingsForm: View {
     let skills: [Skill]
     let servers: [MCPServer]
-    let project: Project?
-    let selectedServerIDs: [UUID]
-    let selectedServerTags: [String]
-    let onSave: (Project, [UUID], [String]) -> Void
-    @State private var name = ""
-    @State private var path = ""
-    @State private var tools = Set(Tool.allCases)
-    @State private var selected = Set<String>()
-    @State private var selectedTags = Set<String>()
-    @State private var selectedServers = Set<UUID>()
-    @State private var selectedMCPtags = Set<String>()
-    @State private var excluded = Set<String>()
-    @State private var manageGitignore = false
+    @Binding var tools: Set<Tool>
+    @Binding var selectedSkills: Set<String>
+    @Binding var selectedTags: Set<String>
+    @Binding var selectedServers: Set<UUID>
+    @Binding var selectedMCPtags: Set<String>
+    @Binding var excluded: Set<String>
+    @Binding var manageGitignore: Bool
+
     private var availableTags: [String] { Array(Set(skills.flatMap(\.tags))).sorted() }
     private var mcpTags: [String] { Array(Set(servers.flatMap { $0.tags ?? [] })).sorted() }
-    var body: some View { ScrollView { VStack(alignment: .leading, spacing: 14) { Text(project == nil ? "Nowy projekt" : "Edytuj projekt").font(.title2.bold()); TextField("Nazwa", text: $name); HStack { TextField("Folder projektu", text: $path); Button("Wybierz…") { chooseFolder() } }; GroupBox("Narzędzia") { HStack { ForEach(Tool.allCases, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: toolBinding(tool)).toggleStyle(.checkbox) } }.padding(6) }; GroupBox("Pojedyncze skille") { ScrollView { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(skills) { skill in skillToggle(skill) } }.padding(6) }.frame(height: 150) }; GroupBox("Tagi skilli") { tagGrid(availableTags, selection: $selectedTags) }; GroupBox("Pojedyncze serwery MCP") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(servers) { server in serverToggle(server) } }.padding(6) }; GroupBox("Tagi MCP") { tagGrid(mcpTags, selection: $selectedMCPtags) }; exclusionsBox; GroupBox("Git") { VStack(alignment: .leading, spacing: 6) { Toggle("Dopisuj wygenerowane pliki MCP do .gitignore projektu", isOn: $manageGitignore).toggleStyle(.checkbox); Text(".gitignore jedzie z repozytorium, więc chroni też zespół. Agentbox dopisuje tylko własny blok i nigdy nie usuwa istniejących wpisów.").font(.caption).foregroundStyle(.secondary) }.padding(6) }; HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { onSave(Project(id: project?.id ?? UUID(), name: name, path: path, tools: Array(tools), skillIDs: Array(selected), tags: Array(selectedTags).sorted(), excludedSkillIDs: excluded.isEmpty ? nil : Array(excluded).sorted(), manageGitignore: manageGitignore), Array(selectedServers), Array(selectedMCPtags).sorted()); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || path.isEmpty || tools.isEmpty) } }.padding(24) }.frame(width: 700, height: 880).onAppear { selectedServers = Set(selectedServerIDs); selectedMCPtags = Set(selectedServerTags); if let project { name = project.name; path = project.path; tools = Set(project.tools); selected = Set(project.skillIDs); selectedTags = Set(project.tags); excluded = Set(project.excludedSkillIDs ?? []); manageGitignore = project.manageGitignore ?? false } else { manageGitignore = true } } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            GroupBox("Narzędzia") { HStack { ForEach(Tool.allCases, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: setBinding(tool, in: $tools)).toggleStyle(.checkbox) } }.padding(6) }
+            GroupBox("Pojedyncze skille") { ScrollView { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(skills) { skill in skillToggle(skill) } }.padding(6) }.frame(height: 150) }
+            GroupBox("Tagi skilli") { tagGrid(availableTags, selection: $selectedTags) }
+            GroupBox("Pojedyncze serwery MCP") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(servers) { server in serverToggle(server) } }.padding(6) }
+            GroupBox("Tagi MCP") { tagGrid(mcpTags, selection: $selectedMCPtags) }
+            exclusionsBox
+            GroupBox("Git") { VStack(alignment: .leading, spacing: 6) { Toggle("Dopisuj wygenerowane pliki MCP do .gitignore projektu", isOn: $manageGitignore).toggleStyle(.checkbox); Text(".gitignore jedzie z repozytorium, więc chroni też zespół. Agentbox dopisuje tylko własny blok i nigdy nie usuwa istniejących wpisów.").font(.caption).foregroundStyle(.secondary) }.padding(6) }
+        }
+    }
 
     /// Every skill a tag pulls in can be excluded here, including one that was also ticked
     /// individually — the tag locks its checkbox, so this box is the only way to drop it.
@@ -1112,19 +1230,16 @@ struct ProjectEditor: View {
             VStack(alignment: .leading, spacing: 6) {
                 if tagMatched.isEmpty { Text("Wybierz tagi skilli, aby móc wykluczyć pojedyncze pozycje.").font(.caption).foregroundStyle(.secondary) }
                 else {
-                    Text("Te skille wchodzą przez tagi. Zaznaczone zostaną pominięte w tym projekcie.").font(.caption).foregroundStyle(.secondary)
+                    Text("Te skille wchodzą przez tagi. Zaznaczone zostaną pominięte.").font(.caption).foregroundStyle(.secondary)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) {
                         ForEach(tagMatched) { skill in
-                            Toggle(skill.name, isOn: Binding(get: { excluded.contains(skill.id) }, set: { if $0 { excluded.insert(skill.id); selected.remove(skill.id) } else { excluded.remove(skill.id) } })).toggleStyle(.checkbox)
+                            Toggle(skill.name, isOn: Binding(get: { excluded.contains(skill.id) }, set: { if $0 { excluded.insert(skill.id); selectedSkills.remove(skill.id) } else { excluded.remove(skill.id) } })).toggleStyle(.checkbox)
                         }
                     }
                 }
             }.padding(6)
         }
     }
-    private func toolBinding(_ tool: Tool) -> Binding<Bool> { Binding(get: { tools.contains(tool) }, set: { if $0 { tools.insert(tool) } else { tools.remove(tool) } }) }
-    private func skillBinding(_ id: String) -> Binding<Bool> { Binding(get: { selected.contains(id) }, set: { if $0 { selected.insert(id) } else { selected.remove(id) } }) }
-    private func serverBinding(_ id: UUID) -> Binding<Bool> { Binding(get: { selectedServers.contains(id) }, set: { if $0 { selectedServers.insert(id) } else { selectedServers.remove(id) } }) }
     // A selected tag pulls the skill/server in on its own; showing it checked-but-locked here makes
     // that visible right on the list instead of only in the separate "Wykluczenia" box. The tag wins
     // even over an earlier individual tick, so an item tagged later looks the same as one the tag
@@ -1132,48 +1247,333 @@ struct ProjectEditor: View {
     // saving hands the item to the tag, because the store drops ids a tag already covers.
     private func skillToggle(_ skill: Skill) -> some View {
         let tagCovered = covered(skill.tags, by: selectedTags)
-        return Toggle(skill.name, isOn: tagCovered ? .constant(true) : skillBinding(skill.id)).toggleStyle(.checkbox)
+        return Toggle(skill.name, isOn: tagCovered ? .constant(true) : setBinding(skill.id, in: $selectedSkills)).toggleStyle(.checkbox)
             .disabled(tagCovered).help(tagCovered ? "Wybrany przez tag — odznacz go w sekcji Wykluczenia, by pominąć" : "")
     }
     private func serverToggle(_ server: MCPServer) -> some View {
         let tagCovered = covered(server.tags ?? [], by: selectedMCPtags)
-        return Toggle(server.name, isOn: tagCovered ? .constant(true) : serverBinding(server.id)).toggleStyle(.checkbox)
+        return Toggle(server.name, isOn: tagCovered ? .constant(true) : setBinding(server.id, in: $selectedServers)).toggleStyle(.checkbox)
             .disabled(tagCovered).help(tagCovered ? "Wybrany przez tag MCP" : "")
     }
-    private func tagGrid(_ tags: [String], selection: Binding<Set<String>>) -> some View { Group { if tags.isEmpty { Text("Brak tagów.").foregroundStyle(.secondary).padding(6) } else { LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], alignment: .leading) { ForEach(tags, id: \.self) { tag in Toggle("#\(tag)", isOn: Binding(get: { selection.wrappedValue.contains(tag) }, set: { if $0 { selection.wrappedValue.insert(tag) } else { selection.wrappedValue.remove(tag) } })).toggleStyle(.checkbox) } }.padding(6) } } }
+    private func tagGrid(_ tags: [String], selection: Binding<Set<String>>) -> some View { Group { if tags.isEmpty { Text("Brak tagów.").foregroundStyle(.secondary).padding(6) } else { LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], alignment: .leading) { ForEach(tags, id: \.self) { tag in Toggle("#\(tag)", isOn: setBinding(tag, in: selection)).toggleStyle(.checkbox) } }.padding(6) } } }
+}
+
+func setBinding<T: Hashable>(_ value: T, in set: Binding<Set<T>>) -> Binding<Bool> {
+    Binding(get: { set.wrappedValue.contains(value) }, set: { enabled in if enabled { set.wrappedValue.insert(value) } else { set.wrappedValue.remove(value) } })
+}
+
+struct ProjectEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    let skills: [Skill]
+    let servers: [MCPServer]
+    let project: Project?
+    /// The parent folder this project belongs to, when it came from one.
+    var root: ProjectRoot?
+    /// The project as synchronization sees it right now. When it follows the folder, this fills the
+    /// form with what it actually gets, so switching to its own settings starts from today's state
+    /// instead of an empty editor.
+    var inheritedFrom: Project?
+    let selectedServerIDs: [UUID]
+    let selectedServerTags: [String]
+    let onSave: (Project, [UUID], [String]) -> Void
+    @State private var name = ""
+    @State private var path = ""
+    @State private var tools = Set(Tool.allCases)
+    @State private var selected = Set<String>()
+    @State private var selectedTags = Set<String>()
+    @State private var selectedServers = Set<UUID>()
+    @State private var selectedMCPtags = Set<String>()
+    @State private var excluded = Set<String>()
+    @State private var manageGitignore = false
+    @State private var usesOwnSettings = true
+
+    var body: some View {
+        ScrollView { VStack(alignment: .leading, spacing: 14) {
+            Text(project == nil ? "Nowy projekt" : "Edytuj projekt").font(.title2.bold())
+            TextField("Nazwa", text: $name)
+            HStack { TextField("Folder projektu", text: $path); Button("Wybierz…") { chooseFolder() } }
+            inheritanceBox
+            SharedSettingsForm(skills: skills, servers: servers, tools: $tools, selectedSkills: $selected, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, excluded: $excluded, manageGitignore: $manageGitignore)
+                .disabled(!usesOwnSettings)
+            HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || path.isEmpty || (usesOwnSettings && tools.isEmpty)) }
+        }.padding(24) }
+        .frame(width: 700, height: 880)
+        .onAppear { load() }
+    }
+
+    @ViewBuilder private var inheritanceBox: some View {
+        if let root {
+            GroupBox("Skąd projekt bierze ustawienia") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Picker("", selection: $usesOwnSettings) {
+                        Text("Z folderu „\(root.name)”").tag(false)
+                        Text("Własne dla tego projektu").tag(true)
+                    }.pickerStyle(.segmented).labelsHidden()
+                    Text(usesOwnSettings
+                         ? "Zmiany w folderze nadrzędnym nie będą już dotyczyć tego projektu."
+                         : "Skille, tagi, serwery MCP i opcja .gitignore pochodzą z folderu nadrzędnego — zmiana tam obejmuje wszystkie projekty, które z niego korzystają. Poniżej widać, co folder ustawia.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.padding(6)
+            }
+        }
+    }
+
+    private func load() {
+        selectedServers = Set(selectedServerIDs); selectedMCPtags = Set(selectedServerTags)
+        guard let project else { manageGitignore = true; return }
+        name = project.name; path = project.path
+        usesOwnSettings = root == nil || project.overridesRoot == true
+        let source = usesOwnSettings ? project : (inheritedFrom ?? project)
+        tools = Set(source.tools); selected = Set(source.skillIDs); selectedTags = Set(source.tags)
+        excluded = Set(source.excludedSkillIDs ?? []); manageGitignore = source.manageGitignore ?? false
+    }
+
+    private func save() {
+        let follows = root != nil && !usesOwnSettings
+        // A project following its folder stores nothing of its own. Keeping a copy would look like
+        // a second source of truth and would resurface the moment the folder's settings changed.
+        let saved = Project(
+            id: project?.id ?? UUID(), name: name, path: path,
+            tools: follows ? [] : Array(tools),
+            skillIDs: follows ? [] : Array(selected),
+            tags: follows ? [] : Array(selectedTags).sorted(),
+            excludedSkillIDs: follows || excluded.isEmpty ? nil : Array(excluded).sorted(),
+            manageGitignore: follows ? nil : manageGitignore,
+            rootID: project?.rootID,
+            overridesRoot: root == nil ? nil : (usesOwnSettings ? true : nil))
+        onSave(saved, follows ? [] : Array(selectedServers), follows ? [] : Array(selectedMCPtags).sorted())
+    }
+
     private func chooseFolder() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; if panel.runModal() == .OK { path = panel.url?.path ?? path } }
+}
+
+/// Settings shared by every project in a parent folder. Editing them here is the point of adding a
+/// folder in a batch: one change reaches all its projects instead of being repeated in each one.
+struct ProjectRootEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    let skills: [Skill]
+    let servers: [MCPServer]
+    let root: ProjectRoot
+    let followingProjects: Int
+    let selectedServerIDs: [UUID]
+    let selectedServerTags: [String]
+    let onSave: (ProjectRoot, [UUID], [String]) -> Void
+    @State private var name = ""
+    @State private var tools = Set<Tool>()
+    @State private var selected = Set<String>()
+    @State private var selectedTags = Set<String>()
+    @State private var selectedServers = Set<UUID>()
+    @State private var selectedMCPtags = Set<String>()
+    @State private var excluded = Set<String>()
+    @State private var manageGitignore = false
+    @State private var watchesNewFolders = true
+    @State private var ignoredPaths: [String] = []
+
+    var body: some View {
+        ScrollView { VStack(alignment: .leading, spacing: 14) {
+            Text("Ustawienia folderu nadrzędnego").font(.title2.bold())
+            TextField("Nazwa", text: $name)
+            Text(root.path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            Text(followingProjects == 0
+                 ? "Żaden projekt nie korzysta jeszcze z tych ustawień."
+                 : "Te ustawienia obejmują \(followingProjects) projektów. Projekty z własnymi ustawieniami pozostają nietknięte.")
+                .font(.callout).foregroundStyle(.secondary)
+            GroupBox("Nowe podfoldery") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("Pytaj, gdy w tym folderze pojawi się nowy podfolder", isOn: $watchesNewFolders).toggleStyle(.checkbox)
+                    Text("Agentbox sprawdza folder przy każdym odświeżeniu listy projektów i proponuje dodanie oraz synchronizację nowych podfolderów.").font(.caption).foregroundStyle(.secondary)
+                    if !ignoredPaths.isEmpty {
+                        HStack {
+                            Text("Pominięte podfoldery: \(ignoredPaths.count)").font(.caption).foregroundStyle(.secondary)
+                            Button("Przywróć pominięte") { ignoredPaths = [] }.controlSize(.small)
+                        }
+                        Text(ignoredPaths.map { URL(fileURLWithPath: $0).lastPathComponent }.joined(separator: ", ")).font(.caption2).foregroundStyle(.tertiary).lineLimit(2)
+                    }
+                }.padding(6)
+            }
+            SharedSettingsForm(skills: skills, servers: servers, tools: $tools, selectedSkills: $selected, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, excluded: $excluded, manageGitignore: $manageGitignore)
+            HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || tools.isEmpty) }
+        }.padding(24) }
+        .frame(width: 700, height: 900)
+        .onAppear {
+            name = root.name; tools = Set(root.tools); selected = Set(root.skillIDs); selectedTags = Set(root.tags)
+            excluded = Set(root.excludedSkillIDs ?? []); manageGitignore = root.manageGitignore ?? false
+            watchesNewFolders = root.watchesNewFolders; ignoredPaths = root.ignoredPaths
+            selectedServers = Set(selectedServerIDs); selectedMCPtags = Set(selectedServerTags)
+        }
+    }
+
+    private func save() {
+        let updated = ProjectRoot(id: root.id, name: name, path: root.path, tools: Array(tools), skillIDs: Array(selected), tags: Array(selectedTags).sorted(), excludedSkillIDs: excluded.isEmpty ? nil : Array(excluded).sorted(), manageGitignore: manageGitignore, watchesNewFolders: watchesNewFolders, ignoredPaths: ignoredPaths)
+        onSave(updated, Array(selectedServers), Array(selectedMCPtags).sorted())
+    }
+}
+
+/// What `Dodaj wiele` produces: either a parent folder plus the subfolders picked from it, or —
+/// when the user does not want shared settings — plain projects, exactly as before.
+struct BatchProjectRequest {
+    var root: ProjectRoot?
+    var folders: [String] = []
+    var projects: [Project] = []
+    var serverIDs: [UUID] = []
+    var serverTags: [String] = []
 }
 
 struct BatchProjectView: View {
     @Environment(\.dismiss) private var dismiss
-    let skills: [Skill]; let servers: [MCPServer]; let existingProjects: [Project]
-    let onSave: ([Project], [UUID], [String]) -> Void
+    let skills: [Skill]; let servers: [MCPServer]; let existingProjects: [Project]; let existingRoots: [ProjectRoot]
+    let onSave: (BatchProjectRequest) -> Void
     @State private var root = ""; @State private var folders: [URL] = []; @State private var selectedFolders = Set<String>()
-    @State private var tools = Set(Tool.allCases); @State private var selectedSkills = Set<String>(); @State private var selectedTags = Set<String>(); @State private var selectedServers = Set<UUID>(); @State private var selectedMCPtags = Set<String>(); @State private var scanError = ""
+    @State private var tools = Set(Tool.allCases); @State private var selectedSkills = Set<String>(); @State private var selectedTags = Set<String>(); @State private var selectedServers = Set<UUID>(); @State private var selectedMCPtags = Set<String>(); @State private var excluded = Set<String>(); @State private var manageGitignore = true; @State private var scanError = ""
+    @State private var sharedSettings = true; @State private var watchesNewFolders = true; @State private var rootName = ""
     private var existingPaths: Set<String> { Set(existingProjects.map { URL(fileURLWithPath: $0.path).standardizedFileURL.path }) }
     private var availableFolders: [URL] { folders.filter { !existingPaths.contains($0.standardizedFileURL.path) } }
-    private var availableTags: [String] { Array(Set(skills.flatMap(\.tags))).sorted() }
-    private var mcpTags: [String] { Array(Set(servers.flatMap { $0.tags ?? [] })).sorted() }
+    private var rootAlreadyAdded: Bool { !root.isEmpty && existingRoots.contains { URL(fileURLWithPath: $0.path).standardizedFileURL.path == URL(fileURLWithPath: root).standardizedFileURL.path } }
+    private var rootNameTaken: Bool { existingRoots.contains { $0.name.caseInsensitiveCompare(rootName) == .orderedSame } }
+
     var body: some View { ScrollView { VStack(alignment: .leading, spacing: 14) {
         Text("Dodaj wiele projektów").font(.title2.bold())
-        Text("Każdy zaznaczony podfolder otrzyma kopię tych samych ustawień początkowych.").foregroundStyle(.secondary)
+        Text("Ustawienia zapisują się na folderze nadrzędnym i schodzą na jego podfoldery. Pojedynczy projekt może później dostać własne.").foregroundStyle(.secondary)
         HStack { TextField("Folder nadrzędny", text: $root); Button("Wybierz…") { chooseRoot() } }
         if !scanError.isEmpty { Label(scanError, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
+        if rootAlreadyAdded { Label("Ten folder jest już dodany jako nadrzędny. Otwórz jego ustawienia na liście projektów.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
+        GroupBox("Ustawienia wspólne") { VStack(alignment: .leading, spacing: 6) {
+            Toggle("Zapisz ustawienia na folderze nadrzędnym i dziedzicz je w podfolderach", isOn: $sharedSettings).toggleStyle(.checkbox)
+            Toggle("Pytaj, gdy w folderze pojawi się nowy podfolder", isOn: $watchesNewFolders).toggleStyle(.checkbox).disabled(!sharedSettings)
+            if sharedSettings {
+                TextField("Nazwa folderu nadrzędnego", text: $rootName)
+                if rootNameTaken { Text("Folder nadrzędny o tej nazwie już istnieje.").font(.caption).foregroundStyle(.orange) }
+            } else {
+                Text("Bez wspólnych ustawień każdy projekt dostaje własną kopię tego, co wybierzesz poniżej — tak jak w poprzednich wersjach.").font(.caption).foregroundStyle(.secondary)
+            }
+        }.padding(6) }
         GroupBox("Podfoldery") { VStack(alignment: .leading, spacing: 7) {
             if folders.isEmpty { Text("Wybierz folder, aby znaleźć projekty.").foregroundStyle(.secondary) }
             else { HStack { Button("Zaznacz dostępne") { selectedFolders = Set(availableFolders.map(\.path)) }; Button("Wyczyść") { selectedFolders.removeAll() }; Spacer(); Text("Wybrano \(selectedFolders.count)").foregroundStyle(.secondary) }; ForEach(folders, id: \.path) { folder in let exists = existingPaths.contains(folder.standardizedFileURL.path); Toggle(isOn: folderBinding(folder)) { HStack { Image(systemName: "folder"); Text(folder.lastPathComponent); Spacer(); if exists { Text("już dodany").font(.caption).foregroundStyle(.secondary) } } }.toggleStyle(.checkbox).disabled(exists) } }
         }.padding(6) }.frame(maxHeight: 230)
-        GroupBox("Narzędzia") { HStack { ForEach(Tool.allCases, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: setBinding(tool, in: $tools)).toggleStyle(.checkbox) } }.padding(6) }
-        GroupBox("Pojedyncze skille") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 180))], alignment: .leading) { ForEach(skills) { skill in Toggle(skill.name, isOn: setBinding(skill.id, in: $selectedSkills)).toggleStyle(.checkbox) } }.padding(6) }
-        GroupBox("Tagi dynamiczne") { if availableTags.isEmpty { Text("Brak tagów.").foregroundStyle(.secondary).padding(6) } else { LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], alignment: .leading) { ForEach(availableTags, id: \.self) { tag in Toggle("#\(tag)", isOn: setBinding(tag, in: $selectedTags)).toggleStyle(.checkbox) } }.padding(6) } }
-        GroupBox("Pojedyncze serwery MCP") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 180))], alignment: .leading) { ForEach(servers) { server in Toggle(server.name, isOn: setBinding(server.id, in: $selectedServers)).toggleStyle(.checkbox) } }.padding(6) }
-        GroupBox("Tagi MCP") { if mcpTags.isEmpty { Text("Brak tagów MCP.").foregroundStyle(.secondary).padding(6) } else { LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], alignment: .leading) { ForEach(mcpTags, id: \.self) { tag in Toggle("#\(tag)", isOn: setBinding(tag, in: $selectedMCPtags)).toggleStyle(.checkbox) } }.padding(6) } }
-        HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Dodaj \(selectedFolders.count) projektów") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(selectedFolders.isEmpty || tools.isEmpty) }
-    }.padding(24) }.frame(width: 760, height: 860) }
-    private func chooseRoot() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; guard panel.runModal() == .OK, let url = panel.url else { return }; root = url.path; do { folders = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]).filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }.sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }; selectedFolders = Set(availableFolders.map(\.path)); scanError = "" } catch { folders = []; selectedFolders = []; scanError = error.localizedDescription } }
+        SharedSettingsForm(skills: skills, servers: servers, tools: $tools, selectedSkills: $selectedSkills, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, excluded: $excluded, manageGitignore: $manageGitignore)
+        HStack { Spacer(); Button("Anuluj") { dismiss() }; Button(sharedSettings ? "Dodaj folder i \(selectedFolders.count) projektów" : "Dodaj \(selectedFolders.count) projektów") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(saveDisabled) }
+    }.padding(24) }.frame(width: 760, height: 900) }
+
+    private var saveDisabled: Bool {
+        if tools.isEmpty || rootAlreadyAdded { return true }
+        if sharedSettings { return root.isEmpty || rootName.isEmpty || rootNameTaken }
+        return selectedFolders.isEmpty
+    }
+
+    private func chooseRoot() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; guard panel.runModal() == .OK, let url = panel.url else { return }; root = url.path; rootName = url.lastPathComponent; do { folders = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]).filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }.sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }; selectedFolders = Set(availableFolders.map(\.path)); scanError = "" } catch { folders = []; selectedFolders = []; scanError = error.localizedDescription } }
     private func folderBinding(_ folder: URL) -> Binding<Bool> { Binding(get: { selectedFolders.contains(folder.path) }, set: { if $0 { selectedFolders.insert(folder.path) } else { selectedFolders.remove(folder.path) } }) }
-    private func setBinding<T: Hashable>(_ value: T, in set: Binding<Set<T>>) -> Binding<Bool> { Binding(get: { set.wrappedValue.contains(value) }, set: { enabled in if enabled { set.wrappedValue.insert(value) } else { set.wrappedValue.remove(value) } }) }
-    private func save() { let projects = availableFolders.filter { selectedFolders.contains($0.path) }.map { Project(name: $0.lastPathComponent, path: $0.path, tools: Array(tools), skillIDs: Array(selectedSkills), tags: Array(selectedTags).sorted()) }; onSave(projects, Array(selectedServers), Array(selectedMCPtags).sorted()) }
+
+    private func save() {
+        let chosen = availableFolders.filter { selectedFolders.contains($0.path) }
+        let exclusions = excluded.isEmpty ? nil : Array(excluded).sorted()
+        guard sharedSettings else {
+            let projects = chosen.map { Project(name: $0.lastPathComponent, path: $0.path, tools: Array(tools), skillIDs: Array(selectedSkills), tags: Array(selectedTags).sorted(), excludedSkillIDs: exclusions, manageGitignore: manageGitignore) }
+            onSave(BatchProjectRequest(root: nil, projects: projects, serverIDs: Array(selectedServers), serverTags: Array(selectedMCPtags).sorted()))
+            return
+        }
+        let folder = ProjectRoot(name: rootName, path: root, tools: Array(tools), skillIDs: Array(selectedSkills), tags: Array(selectedTags).sorted(), excludedSkillIDs: exclusions, manageGitignore: manageGitignore, watchesNewFolders: watchesNewFolders)
+        onSave(BatchProjectRequest(root: folder, folders: chosen.map(\.path), serverIDs: Array(selectedServers), serverTags: Array(selectedMCPtags).sorted()))
+    }
+}
+
+/// Subfolders that showed up in a watched parent folder. Each one is a yes/no question, and both
+/// answers are remembered: adding makes it a project, skipping stops it from being offered again.
+struct DetectedFoldersView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var model: AppModel
+    @State private var selected = Set<String>()
+
+    private var groups: [(name: String, folders: [DetectedProjectFolder])] {
+        Dictionary(grouping: model.detectedFolders, by: \.rootName)
+            .map { (name: $0.key, folders: $0.value.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+    private var chosen: [DetectedProjectFolder] { model.detectedFolders.filter { selected.contains($0.path) } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Nowe podfoldery").font(.title2.bold())
+            Text("Te foldery pojawiły się w folderach nadrzędnych i nie są jeszcze projektami. Dodane projekty korzystają z ustawień swojego folderu.").foregroundStyle(.secondary)
+            HStack { Button("Zaznacz wszystkie") { selected = Set(model.detectedFolders.map(\.path)) }; Button("Wyczyść") { selected.removeAll() }; Spacer(); Text("Wybrano \(selected.count)").foregroundStyle(.secondary) }
+            List {
+                ForEach(groups, id: \.name) { group in
+                    Section(group.name) {
+                        ForEach(group.folders) { folder in
+                            Toggle(isOn: setBinding(folder.path, in: $selected)) {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(folder.name)
+                                    Text(folder.path).font(.caption2).foregroundStyle(.tertiary).lineLimit(1).help(folder.path)
+                                }
+                            }.toggleStyle(.checkbox)
+                        }
+                    }
+                }
+            }
+            HStack {
+                Button("Pomijaj zaznaczone") { let folders = chosen; Task { await model.ignoreDetected(folders) }; dismiss() }.disabled(selected.isEmpty)
+                Spacer()
+                Button("Później") { dismiss() }
+                Button("Dodaj bez synchronizacji") { let folders = chosen; Task { await model.addDetected(folders, synchronizing: false) }; dismiss() }.disabled(selected.isEmpty)
+                Button("Dodaj i synchronizuj") { let folders = chosen; Task { await model.addDetected(folders, synchronizing: true) }; dismiss() }.buttonStyle(.borderedProminent).disabled(selected.isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 680, height: 520)
+        .onAppear { selected = Set(model.detectedFolders.map(\.path)) }
+    }
+}
+
+/// A skill written or pasted straight into Agentbox, with no folder on disk and no repository.
+struct NewSkillDraft {
+    var id = ""
+    var name = ""
+    var description = ""
+    var content = ""
+    var tags: [String] = []
+}
+
+struct NewSkillView: View {
+    @Environment(\.dismiss) private var dismiss
+    let existingTags: [String]
+    let existingIDs: Set<String>
+    let onCreate: (NewSkillDraft) -> Void
+    @State private var name = ""
+    @State private var identifier = ""
+    @State private var identifierEdited = false
+    @State private var description = ""
+    @State private var tags = ""
+    @State private var content = ""
+
+    /// Content pasted with its own YAML block is a finished `SKILL.md`, so the name and description
+    /// fields would be a lie — Agentbox saves such a paste untouched and says so.
+    private var pastedComplete: Bool { content.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("---") }
+    private var suggestedID: String { name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().replacingOccurrences(of: " ", with: "-") }
+    private var effectiveID: String { (identifierEdited ? identifier : suggestedID).trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+    private var idValid: Bool { effectiveID.range(of: "^[a-z0-9]+(?:-[a-z0-9]+)*$", options: .regularExpression) != nil }
+    private var idTaken: Bool { existingIDs.contains(effectiveID) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Nowy skill").font(.title2.bold())
+            Text("Treść trafia prosto do biblioteki jako `SKILL.md`. Taki skill można później edytować w Agentbox — w przeciwieństwie do skilli z Git, które nadpisuje aktualizacja.").font(.callout).foregroundStyle(.secondary)
+            HStack { TextField("Nazwa", text: $name); TextField("Identyfikator", text: Binding(get: { identifierEdited ? identifier : suggestedID }, set: { identifier = $0; identifierEdited = true })) }
+            if !effectiveID.isEmpty && !idValid { Label("Identyfikator może zawierać tylko małe litery, cyfry i pojedyncze myślniki.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }
+            if idTaken { Label("Skill o tym identyfikatorze już jest w bibliotece.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }
+            TextField("Opis (trafia do nagłówka SKILL.md)", text: $description).disabled(pastedComplete)
+            HStack { TextField("tagi, oddzielone przecinkami", text: $tags); ExistingTagMenu(tags: existingTags, text: $tags) }
+            GroupBox(pastedComplete ? "Treść — wklejony SKILL.md zostanie zapisany bez zmian" : "Treść") {
+                TextEditor(text: $content).font(.system(.body, design: .monospaced)).frame(minHeight: 240)
+            }
+            Text(pastedComplete
+                 ? "Wykryto nagłówek YAML, więc Agentbox nie dopisuje własnego."
+                 : "Agentbox dopisze nagłówek YAML z nazwą i opisem. Wklej gotowy plik z blokiem `---`, aby zachować własny nagłówek.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Utwórz skill") { onCreate(NewSkillDraft(id: effectiveID, name: name, description: description, content: content, tags: AppModel.csv(tags))); dismiss() }.buttonStyle(.borderedProminent).disabled(!idValid || idTaken || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+        }
+        .padding(24)
+        .frame(width: 720, height: 640)
+    }
 }
 
 struct StatusToast: View { let text: String; let onClose: () -> Void; var body: some View { HStack(spacing: 10) { Label(text, systemImage: "info.circle.fill"); Button(action: onClose) { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain).help("Zamknij") }.font(.callout).padding(.horizontal, 16).padding(.vertical, 10).background(.regularMaterial, in: Capsule()).shadow(radius: 8).padding(.bottom, 14) } }

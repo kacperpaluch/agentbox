@@ -18,12 +18,15 @@ SKILLBOX_HOME="$HOME/Documents/AgentboxData" agentbox list
 
 ```bash
 agentbox list
+agentbox new moje-notatki [--name "Moje notatki"] [--description "Zasady"] [--tags praca] [--file plik|-]
 agentbox add ./folder-skilla [--id nazwa]
 agentbox add https://github.com/user/repo.git [--path skills] [--branch main] [--id nazwa]
 agentbox tag nazwa-skilla seo audit
 agentbox update nazwa-skilla
 agentbox update --all
 ```
+
+`new` tworzy skill prosto w bibliotece z podanej treści. `--file` wskazuje plik, a `--file -` czyta standardowe wejście, więc skill można podać potokiem. Bez `--file` powstaje krótki szkic do uzupełnienia. Treść zaczynająca się od bloku `---` jest zapisywana bez zmian; w pozostałych przypadkach Agentbox dopisuje nagłówek YAML z `--name` i `--description`.
 
 `add` kopiuje lokalny skill albo importuje wszystkie znalezione `SKILL.md` z Git. `tag` zastępuje listę tagów wskazanego skilla. `update` działa dla skilli pochodzących z Git.
 
@@ -51,6 +54,25 @@ agentbox project unsync sklep
 `project adopt` wypisuje katalogi ze `SKILL.md`, które leżą w projekcie, nie są zarządzane przez Agentbox i nie mają odpowiednika w bibliotece. Bez `--yes` tylko je wylicza; z `--yes` kopiuje je do biblioteki jako skille lokalne.
 
 `project unsync` usuwa z folderu projektu wyłącznie to, co Agentbox ma w swoich manifestach. Ręcznie dodane skille i serwery MCP zostają nietknięte, a przed zmianą powstaje backup.
+
+### Foldery nadrzędne i nowe podfoldery
+
+```bash
+agentbox project root-add workspace ~/Projekty --tools claude --skills styl --folders sklep,blog
+agentbox project roots
+agentbox project scan [--root workspace]
+agentbox project adopt-new [--root workspace] --yes [--sync]
+agentbox project ignore-new [--root workspace]
+agentbox project unignore workspace
+```
+
+`project root-add` tworzy folder nadrzędny z ustawieniami wspólnymi dla jego podfolderów — tak samo jak `Dodaj wiele` w aplikacji. `--folders` wybiera podfoldery, które od razu stają się projektami; pominięcie tej opcji dodaje sam folder, a jego podfoldery zaproponuje `project scan`. `--no-watch` wyłącza wykrywanie nowych podfolderów, a `--gitignore` włącza dopisywanie plików MCP do `.gitignore` projektów.
+
+`project roots` wypisuje foldery nadrzędne dodane w aplikacji przez `Dodaj wiele`: ścieżkę, liczbę projektów, czy folder jest obserwowany i jego narzędzia.
+
+`project scan` pokazuje podfoldery, które pojawiły się w obserwowanych folderach i nie są jeszcze projektami. `project adopt-new` dodaje je jako projekty korzystające z ustawień folderu — bez `--yes` tylko je wylicza, a `--sync` synchronizuje je od razu po dodaniu. `project ignore-new` zapamiętuje odmowę, więc te podfoldery nie wracają w kolejnych skanach, a `project unignore <folder>` czyści tę listę.
+
+Projekt korzystający z ustawień folderu nadrzędnego odrzuca `project set` i `mcp assign` z komunikatem: zmień ustawienia folderu albo nadaj projektowi własne w aplikacji.
 
 ## Synchronizacja skilli
 

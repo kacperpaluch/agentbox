@@ -50,9 +50,15 @@ Po imporcie klasyfikacją nadal można zarządzać w `MCP → Szczegóły`. Sekc
 
 Skill liczy się jako nieaktualny, gdy jego wersja w bibliotece jest nowsza niż ta zapisana w manifeście projektu, albo gdy jego katalog zniknął z projektu. Skille, które są aktualne, nie pojawiają się w żadnym z liczników.
 
+### Pisanie własnego skilla
+
+`Biblioteka → Napisz własny` tworzy skill bez zakładania katalogu na dysku i bez repozytorium. Podaj nazwę (identyfikator podpowiada się sam), opcjonalny opis i tagi, a treść wpisz albo wklej w polu poniżej. Agentbox dopisze nagłówek YAML z nazwą i opisem. Jeśli wklejona treść zaczyna się od bloku `---`, jest traktowana jak gotowy `SKILL.md` i zapisywana bez zmian — pola nazwy i opisu są wtedy nieaktywne.
+
+Tak utworzony skill jest lokalny, więc później można go poprawiać w aplikacji jak każdy skill dodany z dysku.
+
 ### Edycja skilli
 
-Skille dodane z dysku można edytować bezpośrednio w aplikacji: wybierz skill i kliknij `Edytuj SKILL.md`. Zapis aktualizuje kopię w bibliotece i od razu oznacza wszystkie projekty z tym skillem jako nieaktualne, więc widać, gdzie trzeba uruchomić synchronizację.
+Skille dodane z dysku i napisane w aplikacji można edytować bezpośrednio w aplikacji: wybierz skill i kliknij `Edytuj SKILL.md`. Zapis aktualizuje kopię w bibliotece i od razu oznacza wszystkie projekty z tym skillem jako nieaktualne, więc widać, gdzie trzeba uruchomić synchronizację.
 
 Skille pochodzące z Git są tylko do odczytu. `Aktualizuj` zastępuje taki skill zawartością repozytorium, więc zmiana zrobiona w aplikacji zniknęłaby przy najbliższej aktualizacji. Aby zmienić taki skill, zmodyfikuj repozytorium źródłowe.
 
@@ -98,11 +104,30 @@ Zaznacz narzędzia, a następnie pojedyncze skille lub tagi dynamiczne. `Zapisz 
 
 ### Dodawanie wielu projektów
 
-W sekcji `Projekty` wybierz `Dodaj wiele`, a następnie wskaż folder nadrzędny. Agentbox pokaże jego bezpośrednie, nieukryte podfoldery. Zaznacz projekty i ustaw wspólne narzędzia, pojedyncze skille i MCP oraz dynamiczne tagi obu typów. Podfolder zapisany już jako projekt jest oznaczony i nie można dodać go ponownie.
+W sekcji `Projekty` wybierz `Dodaj wiele`, a następnie wskaż folder nadrzędny. Agentbox pokaże jego bezpośrednie, nieukryte podfoldery. Zaznacz projekty i ustaw wspólne narzędzia, pojedyncze skille i MCP, dynamiczne tagi obu typów, wykluczenia oraz opcję `.gitignore`. Podfolder zapisany już jako projekt jest oznaczony i nie można dodać go ponownie.
 
-Ustawienia są kopiowane w chwili importu. Późniejsza edycja jednego projektu nie zmienia pozostałych; folder nadrzędny nie jest trwałym szablonem ani źródłem dziedziczenia.
+### Ustawienia folderu nadrzędnego
 
-Lista projektów automatycznie grupuje wpisy według ich bezpośredniego folderu nadrzędnego i pokazuje pełną ścieżkę grupy. Nagłówek zwija pojedynczą grupę, a menu pod listą pozwala rozwinąć lub zwinąć wszystkie. Przycisk `Synchronizuj wszystkie projekty` tworzy wspólny podgląd całej listy przed pierwszym zapisem. Następnie synchronizuje projekty kolejno; każdy z nich zachowuje własny backup, transakcyjny zapis skilli i MCP oraz rollback w razie błędu.
+Domyślnie ustawienia z `Dodaj wiele` zapisują się **na folderze nadrzędnym**, a jego podfoldery je dziedziczą. Zmiana w folderze obejmuje od razu wszystkie projekty, które z niego korzystają — nie trzeba edytować każdego z osobna. Ustawienia folderu otwiera przycisk `Ustawienia folderu` w nagłówku grupy na liście projektów.
+
+Pojedynczy projekt może wyłamać się z tego schematu: w jego edytorze przełącznik `Skąd projekt bierze ustawienia` przełącza między `Z folderu` a `Własne dla tego projektu`. Formularz startuje wtedy od tego, co projekt dostawał z folderu, więc odejście od wspólnych ustawień nic nie zmienia, dopóki czegoś nie poprawisz. Projekt korzystający z folderu jest oznaczony na liście etykietą `ustawienia folderu`.
+
+Odznaczenie `Zapisz ustawienia na folderze nadrzędnym` przy dodawaniu wraca do dawnego zachowania: każdy projekt dostaje własną kopię ustawień, bez dziedziczenia.
+
+Usunięcie ustawień folderu (kosz w nagłówku grupy) nie rusza projektów. Każdy, który dziedziczył, dostaje kopię tego, co dotąd dostawał — łącznie z przypisaniami MCP — więc do repozytoriów trafia dokładnie to samo co przed usunięciem.
+
+### Nowe podfoldery
+
+Folder nadrzędny z włączoną opcją `Pytaj, gdy w tym folderze pojawi się nowy podfolder` jest sprawdzany przy każdym odświeżeniu listy projektów. Nowy podfolder — na przykład świeżo sklonowane repozytorium — pojawia się jako baner nad listą projektów. `Przejrzyj…` otwiera listę wykrytych folderów, w której można:
+
+- `Dodaj i synchronizuj` — dodaje projekty i od razu synchronizuje je ustawieniami folderu,
+- `Dodaj bez synchronizacji` — dodaje projekty i zostawia synchronizację na później,
+- `Pomijaj zaznaczone` — zapamiętuje odmowę, więc Agentbox nie zapyta o te foldery ponownie,
+- `Później` — zostawia pytanie na następny raz.
+
+Usunięcie projektu należącego do obserwowanego folderu jest traktowane jak odmowa: jego podfolder nie wraca jako propozycja. Listę pominiętych folderów czyści przycisk `Przywróć pominięte` w ustawieniach folderu.
+
+Lista projektów grupuje projekty według folderu nadrzędnego, a pozostałe — według ich bezpośredniego folderu — i pokazuje pełną ścieżkę grupy. Nagłówek zwija pojedynczą grupę, a menu pod listą pozwala rozwinąć lub zwinąć wszystkie. Przycisk `Synchronizuj wszystkie projekty` tworzy wspólny podgląd całej listy przed pierwszym zapisem. Następnie synchronizuje projekty kolejno; każdy z nich zachowuje własny backup, transakcyjny zapis skilli i MCP oraz rollback w razie błędu.
 
 Podgląd projektu pokazuje osobno dla Claude, Codex i OpenCode:
 

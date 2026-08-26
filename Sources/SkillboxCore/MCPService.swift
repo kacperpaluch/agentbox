@@ -100,6 +100,10 @@ extension SkillboxService {
     }
 
     public func setMCPServers(projectID: UUID, serverIDs: [UUID], tags: [String]) async throws {
+        let local = try await store.configuration()
+        if let project = local.projects.first(where: { $0.id == projectID }), local.inheritsRoot(project) {
+            throw SkillboxError.invalidSkill("projekt \(project.name) korzysta z ustawień folderu nadrzędnego — przypisz serwery do folderu albo nadaj projektowi własne ustawienia")
+        }
         var config = try await store.mcpConfiguration()
         var assignments = config.projectServerIDs ?? [:]
         assignments[projectID.uuidString] = SkillboxService.prunedServerIDs(Array(Set(serverIDs)), tags: tags, servers: config.servers)
@@ -112,15 +116,18 @@ extension SkillboxService {
 
     public func previewMCP(projectID: UUID) async throws -> [MCPPreview] {
         let local = try await store.configuration()
-        guard let project = local.projects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
+        guard let project = local.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
         let mcp = try await store.mcpConfiguration()
-        let presetIDs = Set(mcp.projectPresetIDs[projectID.uuidString] ?? [])
+        // A project following a parent folder reads the folder's MCP selection, so adding a server
+        // to the folder reaches every project in it.
+        let selectionID = local.mcpSelectionID(for: project).uuidString
+        let presetIDs = Set(mcp.projectPresetIDs[selectionID] ?? [])
         var serverIDs = Set(mcp.presets.filter { presetIDs.contains($0.id) }.flatMap(\.serverIDs))
-        serverIDs.formUnion(mcp.projectServerIDs?[projectID.uuidString] ?? [])
+        serverIDs.formUnion(mcp.projectServerIDs?[selectionID] ?? [])
         // Lowercased on both sides, so tags saved before normalization keep matching.
-        let tags = Set((mcp.projectServerTags?[projectID.uuidString] ?? []).map { $0.lowercased() })
+        let tags = Set((mcp.projectServerTags?[selectionID] ?? []).map { $0.lowercased() })
         var servers = mcp.servers.filter { serverIDs.contains($0.id) || !tags.isDisjoint(with: ($0.tags ?? []).map { $0.lowercased() }) }.filter(\.enabled)
         servers.sort { $0.name < $1.name }
         let secrets = try await store.secrets()

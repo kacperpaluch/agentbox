@@ -60,11 +60,56 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
     /// Whether Agentbox may add generated MCP files to the project's tracked `.gitignore`.
     /// `nil` means no, so existing projects are never modified without an explicit choice.
     public var manageGitignore: Bool?
+    /// Parent folder this project came from. `nil` for a project added on its own, so projects
+    /// saved before parent folders existed keep decoding and keep their own settings.
+    public var rootID: UUID?
+    /// `true` when the user gave this project settings of its own instead of the parent folder's.
+    /// `nil` means it follows the folder, which is what a project added in a batch does.
+    public var overridesRoot: Bool?
 
-    public init(id: UUID = UUID(), name: String, path: String, tools: [Tool], skillIDs: [String] = [], tags: [String] = [], excludedSkillIDs: [String]? = nil, manageGitignore: Bool? = nil) {
+    public init(id: UUID = UUID(), name: String, path: String, tools: [Tool], skillIDs: [String] = [], tags: [String] = [], excludedSkillIDs: [String]? = nil, manageGitignore: Bool? = nil, rootID: UUID? = nil, overridesRoot: Bool? = nil) {
         self.id = id; self.name = name; self.path = path; self.tools = tools
         self.skillIDs = skillIDs; self.tags = tags
         self.excludedSkillIDs = excludedSkillIDs; self.manageGitignore = manageGitignore
+        self.rootID = rootID; self.overridesRoot = overridesRoot
+    }
+}
+
+/// A parent folder added with `Dodaj wiele`. It holds the settings its subprojects inherit, so one
+/// change reaches every project in the folder, and it remembers which new subfolders the user does
+/// not want to be asked about again.
+public struct ProjectRoot: Codable, Identifiable, Hashable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var path: String
+    public var tools: [Tool]
+    public var skillIDs: [String]
+    public var tags: [String]
+    public var excludedSkillIDs: [String]?
+    public var manageGitignore: Bool?
+    /// Whether Agentbox looks for new subfolders here and offers to add them as projects.
+    public var watchesNewFolders: Bool
+    /// Subfolders the user dismissed. They are never offered again until the list is cleared.
+    public var ignoredPaths: [String]
+
+    public init(id: UUID = UUID(), name: String, path: String, tools: [Tool], skillIDs: [String] = [], tags: [String] = [], excludedSkillIDs: [String]? = nil, manageGitignore: Bool? = nil, watchesNewFolders: Bool = true, ignoredPaths: [String] = []) {
+        self.id = id; self.name = name; self.path = path; self.tools = tools
+        self.skillIDs = skillIDs; self.tags = tags
+        self.excludedSkillIDs = excludedSkillIDs; self.manageGitignore = manageGitignore
+        self.watchesNewFolders = watchesNewFolders; self.ignoredPaths = ignoredPaths
+    }
+}
+
+/// A subfolder of a watched parent folder that is not a project yet and was not dismissed.
+public struct DetectedProjectFolder: Codable, Identifiable, Hashable, Sendable {
+    public var rootID: UUID
+    public var rootName: String
+    public var path: String
+    public var id: String { path }
+    public var name: String { URL(fileURLWithPath: path).lastPathComponent }
+
+    public init(rootID: UUID, rootName: String, path: String) {
+        self.rootID = rootID; self.rootName = rootName; self.path = path
     }
 }
 
@@ -76,6 +121,9 @@ public struct Catalog: Codable, Sendable {
 
 public struct LocalConfiguration: Codable, Sendable {
     public var projects: [Project] = []
+    /// Parent folders added in a batch, with the settings their projects inherit.
+    /// Optional so libraries created before parent folders keep decoding.
+    public var projectRoots: [ProjectRoot]?
     public var backupRemote: String?
     /// Global (per-user) skill selection written to `~/.claude/skills` and its equivalents.
     /// Optional so libraries created before global sync keep decoding.

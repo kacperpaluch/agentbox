@@ -59,11 +59,12 @@ SKILLBOX_HOME="$HOME/Documents/AgentboxData" swift run agentbox list
 
 ### Dodawanie
 
-`Z dysku` przyjmuje katalog zawierający `SKILL.md` i kopiuje cały skill do biblioteki. `Z Git` przyjmuje URL oraz opcjonalny podfolder. Jeśli znalezionych zostanie wiele katalogów z `SKILL.md`, każdy jest importowany osobno. Można też wkleić kilka URL-i — po jednym w linii.
+`Napisz własny` otwiera edytor, w którym można napisać albo wkleić skill bez zakładania katalogu na dysku — Agentbox dopisuje nagłówek YAML z nazwą i opisem, a wklejony plik z własnym blokiem `---` zapisuje bez zmian. Taki skill jest lokalny, więc później można go edytować w aplikacji. `Z dysku` przyjmuje katalog zawierający `SKILL.md` i kopiuje cały skill do biblioteki. `Z Git` przyjmuje URL oraz opcjonalny podfolder. Jeśli znalezionych zostanie wiele katalogów z `SKILL.md`, każdy jest importowany osobno. Można też wkleić kilka URL-i — po jednym w linii.
 
 Linki GitHub wskazujące konkretny katalog są rozpoznawane automatycznie. Przykład `https://github.com/anthropics/skills/tree/main/skills/docx` zostanie rozłożony na repozytorium `anthropics/skills`, branch `main` i podfolder `skills/docx`.
 
 ```bash
+swift run agentbox new moje-notatki --name "Moje notatki" --description "Zasady pisania" --file ./notatki.md
 swift run agentbox add ./my-skill
 swift run agentbox add https://github.com/user/repo.git --path skills
 swift run agentbox add https://github.com/user/repo.git --path skills/seo --branch main
@@ -102,9 +103,11 @@ Pełny workflow można wykonać jedną komendą: `agentbox refresh`. Aktualizuje
 
 Projekt wskazuje istniejący folder na dysku oraz obsługiwane narzędzia. Można mu przypisać pojedyncze skille i serwery MCP albo wybierać oba typy dynamicznie według tagów.
 
-Opcja `Dodaj wiele` przyjmuje folder nadrzędny, wykrywa jego bezpośrednie podfoldery i pozwala utworzyć z nich projekty z jednym wspólnym zestawem ustawień. Foldery już dodane do Agentbox są pomijane. Po imporcie każdy projekt ma niezależną kopię konfiguracji i może być edytowany osobno.
+Opcja `Dodaj wiele` przyjmuje folder nadrzędny, wykrywa jego bezpośrednie podfoldery i pozwala utworzyć z nich projekty. Foldery już dodane do Agentbox są pomijane. Ustawienia zapisują się domyślnie na samym folderze nadrzędnym, a jego projekty je dziedziczą — jedna zmiana w folderze obejmuje wszystkie. Pojedynczy projekt może przejść na własne ustawienia w swoim edytorze, a odznaczenie opcji przy dodawaniu daje każdemu projektowi niezależną kopię konfiguracji.
 
-Lista projektów jest grupowana według bezpośredniego folderu nadrzędnego, dzięki czemu projekty z jednego katalogu roboczego są widoczne razem. Każdą grupę można zwinąć osobno albo rozwinąć i zwinąć wszystkie grupy z menu pod listą.
+Folder nadrzędny może też obserwować nowe podfoldery. Świeżo sklonowane repozytorium pojawia się wtedy jako pytanie nad listą projektów: dodać i zsynchronizować, dodać bez synchronizacji, czy pomijać. Odmowa jest zapamiętywana.
+
+Lista projektów jest grupowana według folderu nadrzędnego, dzięki czemu projekty z jednego katalogu roboczego są widoczne razem. Każdą grupę można zwinąć osobno albo rozwinąć i zwinąć wszystkie grupy z menu pod listą.
 
 `Synchronizuj wszystko` przy projekcie pokazuje podgląd i synchronizuje jego skille oraz konfiguracje MCP. `Synchronizuj wszystkie projekty` najpierw przygotowuje plan dla całej listy, a następnie wykonuje tę samą transakcyjną operację kolejno dla każdego projektu.
 

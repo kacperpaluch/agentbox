@@ -22,7 +22,11 @@ public actor SkillboxService {
     }
 
     public func listSkills() async throws -> [Skill] { try await store.catalog().skills.sorted { $0.name < $1.name } }
-    public func listProjects() async throws -> [Project] { try await store.configuration().projects.sorted { $0.name < $1.name } }
+    /// Projects as synchronization sees them: one that follows a parent folder is returned with
+    /// the folder's settings already applied. `storedProjects()` returns the raw records an editor
+    /// must load, so saving a project never freezes inherited settings into it.
+    public func listProjects() async throws -> [Project] { try await store.configuration().resolvedProjects.sorted { $0.name < $1.name } }
+    public func storedProjects() async throws -> [Project] { try await store.configuration().projects.sorted { $0.name < $1.name } }
 
     public func skillMarkdown(skillID: String) async throws -> String {
         guard try await store.catalog().skills.contains(where: { $0.id == skillID }) else { throw SkillboxError.skillNotFound(skillID) }
@@ -122,6 +126,68 @@ public actor SkillboxService {
         return skill
     }
 
+    /// The library directory of a skill, guaranteed to sit directly inside `skills/`.
+    ///
+    /// The identifier is checked instead of the resulting path. Standardizing the two URLs and
+    /// comparing them looks equivalent but is not: `standardizedFileURL` resolves `/private/tmp` to
+    /// `/tmp` and marks an existing directory with a trailing slash, and it does so on one side of
+    /// the comparison only — which rejected perfectly valid libraries depending on where they live.
+    func skillDirectory(_ skillID: String) async throws -> URL {
+        guard !skillID.isEmpty, !skillID.contains("/"), skillID != ".", skillID != ".." else {
+            throw SkillboxError.unsafePath(skillID)
+        }
+        return await store.skillsDirectory.appending(path: skillID)
+    }
+
+    /// Creates a skill from text written or pasted in the app, with no folder on disk to import
+    /// from. The library copy is the original, so the source is local and points at the library
+    /// itself — exactly what `saveSkillMarkdown` needs to keep the skill editable afterwards.
+    @discardableResult
+    public func createSkill(id: String, name: String = "", description: String = "", content: String, tags: [String] = []) async throws -> Skill {
+        let id = id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().replacingOccurrences(of: " ", with: "-")
+        guard id.range(of: "^[a-z0-9]+(?:-[a-z0-9]+)*$", options: .regularExpression) != nil else {
+            throw SkillboxError.invalidSkill("identyfikator może zawierać tylko małe litery, cyfry i pojedyncze myślniki: \(id)")
+        }
+        var catalog = try await store.catalog()
+        guard !catalog.skills.contains(where: { $0.id == id }) else { throw SkillboxError.duplicateSkill(id) }
+        let displayName = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? id : name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let document = Self.skillDocument(name: displayName, description: description, body: content)
+        let directory = try await skillDirectory(id)
+        guard !fm.fileExists(atPath: directory.path) else { throw SkillboxError.duplicateSkill(id) }
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        do {
+            try document.write(to: directory.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+            let skill = Skill(id: id, name: displayName, tags: Self.normalizedTags(tags), source: SkillSource(kind: .local, location: directory.path))
+            catalog.skills.append(skill)
+            try await store.save(catalog)
+            return skill
+        } catch {
+            // The catalog is the source of truth. A directory left behind after a failed save would
+            // block the next attempt with the same identifier.
+            try? fm.removeItem(at: directory)
+            throw error
+        }
+    }
+
+    /// Wraps written text in the YAML front matter a `SKILL.md` needs. Content that already starts
+    /// with a `---` block is a complete file the user pasted, and is left exactly as it is.
+    static func skillDocument(name: String, description: String, body: String) -> String {
+        let text = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.hasPrefix("---") { return text + "\n" }
+        var header = "---\nname: \(yamlScalar(name))\n"
+        let description = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !description.isEmpty { header += "description: \(yamlScalar(description))\n" }
+        header += "---\n\n"
+        return header + text + "\n"
+    }
+
+    /// Quotes a value whose punctuation would otherwise change the meaning of the YAML line.
+    static func yamlScalar(_ value: String) -> String {
+        let plain = value.range(of: "^[A-Za-z0-9][A-Za-z0-9 ._/()-]*$", options: .regularExpression) != nil
+        guard !plain else { return value }
+        return "\"" + value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
+    }
+
     /// Saves edited `SKILL.md` content back into the library copy and bumps `updatedAt`, so every
     /// project that already has this skill immediately reports as outdated.
     ///
@@ -133,8 +199,7 @@ public actor SkillboxService {
         guard catalog.skills[index].source.kind == .local else {
             throw SkillboxError.invalidSkill("skille z Git są zastępowane przy aktualizacji, więc nie można ich edytować w aplikacji")
         }
-        let directory = await store.skillsDirectory.appending(path: skillID).standardizedFileURL
-        guard directory.deletingLastPathComponent() == (await store.skillsDirectory.standardizedFileURL) else { throw SkillboxError.unsafePath(directory.path) }
+        let directory = try await skillDirectory(skillID)
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         try content.write(to: directory.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
         catalog.skills[index].updatedAt = .now
@@ -163,9 +228,7 @@ public actor SkillboxService {
     public func deleteSkill(skillID: String) async throws {
         var catalog = try await store.catalog()
         guard catalog.skills.contains(where: { $0.id == skillID }) else { throw SkillboxError.skillNotFound(skillID) }
-        let directory = await store.skillsDirectory.appending(path: skillID).standardizedFileURL
-        let skillsRoot = await store.skillsDirectory.standardizedFileURL
-        guard directory.deletingLastPathComponent() == skillsRoot else { throw SkillboxError.unsafePath(directory.path) }
+        let directory = try await skillDirectory(skillID)
         if fm.fileExists(atPath: directory.path) { try fm.removeItem(at: directory) }
         catalog.skills.removeAll { $0.id == skillID }
         var projects = try await store.configuration()
@@ -173,6 +236,14 @@ public actor SkillboxService {
             projects.projects[index].skillIDs.removeAll { $0 == skillID }
             projects.projects[index].excludedSkillIDs?.removeAll { $0 == skillID }
         }
+        // A parent folder holds the same selections for the projects that follow it, so leaving the
+        // deleted skill there would keep handing it to every one of them.
+        var roots = projects.roots
+        for index in roots.indices {
+            roots[index].skillIDs.removeAll { $0 == skillID }
+            roots[index].excludedSkillIDs?.removeAll { $0 == skillID }
+        }
+        if !roots.isEmpty { projects.projectRoots = roots }
         try await store.save(catalog, projects)
     }
 
@@ -236,11 +307,15 @@ public actor SkillboxService {
         guard fm.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
         config.projects[index] = Self.pruned(project, in: try await store.catalog())
         var mcp = try await store.mcpConfiguration()
-        Self.assign(&mcp, projectID: project.id, serverIDs: serverIDs, tags: serverTags)
+        // A project following its parent folder reads the folder's MCP selection, so writing one
+        // under its own id would only leave a record nothing ever uses.
+        if !config.inheritsRoot(config.projects[index]) {
+            Self.assign(&mcp, projectID: project.id, serverIDs: serverIDs, tags: serverTags)
+        }
         try await store.save(config, mcp)
     }
 
-    private static func assign(_ mcp: inout MCPConfiguration, projectID: UUID, serverIDs: [UUID], tags: [String]) {
+    static func assign(_ mcp: inout MCPConfiguration, projectID: UUID, serverIDs: [UUID], tags: [String]) {
         var assignments = mcp.projectServerIDs ?? [:]
         assignments[projectID.uuidString] = prunedServerIDs(Array(Set(serverIDs)), tags: tags, servers: mcp.servers)
         mcp.projectServerIDs = assignments
@@ -259,6 +334,7 @@ public actor SkillboxService {
     public func configureProject(name: String, skillIDs: [String], tags: [String]) async throws {
         var config = try await store.configuration()
         guard let index = config.projects.firstIndex(where: { $0.name == name }) else { throw SkillboxError.projectNotFound(name) }
+        try Self.assertOwnSettings(config.projects[index], in: config)
         config.projects[index].skillIDs = skillIDs; config.projects[index].tags = tags
         config.projects[index] = Self.pruned(config.projects[index], in: try await store.catalog())
         try await store.save(config)
@@ -267,9 +343,17 @@ public actor SkillboxService {
     public func configureProject(id: UUID, skillIDs: [String], tags: [String]) async throws {
         var config = try await store.configuration()
         guard let index = config.projects.firstIndex(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
+        try Self.assertOwnSettings(config.projects[index], in: config)
         config.projects[index].skillIDs = skillIDs; config.projects[index].tags = tags
         config.projects[index] = Self.pruned(config.projects[index], in: try await store.catalog())
         try await store.save(config)
+    }
+
+    /// Configuring a project that follows its parent folder would write a selection synchronization
+    /// never reads. Saying so is more useful than a silent no-op.
+    static func assertOwnSettings(_ project: Project, in config: LocalConfiguration) throws {
+        guard config.inheritsRoot(project) else { return }
+        throw SkillboxError.invalidSkill("projekt \(project.name) korzysta z ustawień folderu nadrzędnego — zmień ustawienia folderu albo nadaj projektowi własne")
     }
 
     /// A tag owns everything it pulls in, so keeping an individual id for a tagged skill or server
@@ -309,8 +393,15 @@ public actor SkillboxService {
 
     public func deleteProject(id: UUID) async throws {
         var config = try await store.configuration()
-        guard config.projects.contains(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
+        guard let removed = config.projects.first(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
         config.projects.removeAll { $0.id == id }
+        // Removing a project from a watched parent folder is an answer, not an accident: without
+        // this the folder would offer the very same subfolder again at the next scan.
+        if let rootID = removed.rootID, let index = config.roots.firstIndex(where: { $0.id == rootID }) {
+            var roots = config.roots
+            roots[index].ignoredPaths = Self.standardized(roots[index].ignoredPaths + [removed.path]).sorted()
+            config.projectRoots = roots
+        }
         var mcp = try await store.mcpConfiguration()
         mcp.projectPresetIDs.removeValue(forKey: id.uuidString)
         var profiles = mcp.projectProfileSelections ?? [:]
@@ -326,7 +417,7 @@ public actor SkillboxService {
     /// one turns a conflict into a shared skill instead of forcing the user to delete their work.
     public func adoptableSkills(projectID: UUID) async throws -> [AdoptableSkill] {
         let config = try await store.configuration()
-        guard let project = config.projects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
+        guard let project = config.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
         let known = Set(try await store.catalog().skills.map(\.id))
         var found: [AdoptableSkill] = []
         for tool in project.tools {
@@ -383,13 +474,13 @@ public actor SkillboxService {
 
     public func syncProject(name: String, dryRun: Bool = false) async throws -> [Tool: SyncResult] {
         let config = try await store.configuration()
-        guard let project = config.projects.first(where: { $0.name == name }) else { throw SkillboxError.projectNotFound(name) }
+        guard let project = config.resolvedProjects.first(where: { $0.name == name }) else { throw SkillboxError.projectNotFound(name) }
         return try await syncProject(id: project.id, dryRun: dryRun)
     }
 
     public func syncProject(id: UUID, dryRun: Bool = false) async throws -> [Tool: SyncResult] {
         let config = try await store.configuration()
-        guard let project = config.projects.first(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
+        guard let project = config.resolvedProjects.first(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
         let catalog = try await store.catalog()

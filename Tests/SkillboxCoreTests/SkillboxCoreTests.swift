@@ -1120,4 +1120,223 @@ final class SkillboxCoreTests: XCTestCase {
         process.arguments = arguments; process.currentDirectoryURL = directory
         try process.run(); process.waitUntilExit(); XCTAssertEqual(process.terminationStatus, 0)
     }
+
+    // MARK: Parent folders
+
+    /// A parent folder added in a batch, plus a subfolder that appears afterwards: the folder's
+    /// settings reach every project without being copied into any of them, and the new subfolder is
+    /// offered instead of being noticed only when something is missing from it.
+    func testParentFolderSettingsReachEveryProjectAndNewSubfoldersAreDetected() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/demo")
+        let workspace = root.appending(path: "workspace")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        for name in ["alpha", "beta"] { try FileManager.default.createDirectory(at: workspace.appending(path: name), withIntermediateDirectories: true) }
+        try "---\nname: demo\ndescription: Demo\n---\n".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        try await service.saveMCPServer(MCPServer(name: "probe", transport: .stdio, command: "echo"))
+        let server = try await service.mcpConfiguration().servers.first { $0.name == "probe" }!
+
+        let folder = ProjectRoot(name: "workspace", path: workspace.path, tools: [.claude], skillIDs: ["demo"])
+        let stored = try await service.addProjectRoot(folder, folders: [workspace.appending(path: "alpha").path, workspace.appending(path: "beta").path], serverIDs: [server.id], serverTags: [])
+        let projects = try await service.listProjects()
+        XCTAssertEqual(projects.count, 2)
+        XCTAssertTrue(projects.allSatisfy { $0.skillIDs == ["demo"] && $0.tools == [.claude] }, "projekty czytają ustawienia folderu")
+        let rawProjects = try await service.storedProjects()
+        XCTAssertTrue(rawProjects.allSatisfy { $0.skillIDs.isEmpty }, "ustawienia zostają w folderze, a nie w kopii na każdym projekcie")
+        let mcpPreviews = try await service.previewMCP(projectID: projects[0].id)
+        XCTAssertTrue(mcpPreviews.contains { $0.added.contains("probe") }, "serwer MCP folderu wchodzi do projektu: \(mcpPreviews.map(\.added))")
+
+        // A subfolder cloned in outside Agentbox is reported once, adopted as a project of the same
+        // folder, and then stops being reported.
+        try FileManager.default.createDirectory(at: workspace.appending(path: "gamma"), withIntermediateDirectories: true)
+        let detected = try await service.scanProjectRoots()
+        XCTAssertEqual(detected.map(\.name), ["gamma"])
+        let added = try await service.addDetectedFolders(detected)
+        XCTAssertEqual(added.map(\.name), ["gamma"])
+        let afterAdopting = try await service.scanProjectRoots()
+        XCTAssertEqual(afterAdopting.count, 0)
+        _ = try await service.syncProjectTransaction(projectID: added[0].id)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: workspace.appending(path: "gamma/.claude/skills/demo/SKILL.md").path))
+
+        // Changing the folder changes every project that follows it, with one edit.
+        var updated = try await service.projectRoots()[0]
+        updated.tools = [.claude, .codex]
+        try await service.updateProjectRoot(updated, serverIDs: [server.id], serverTags: [])
+        let afterFolderChange = try await service.listProjects()
+        XCTAssertTrue(afterFolderChange.allSatisfy { $0.tools == [.claude, .codex] })
+        XCTAssertEqual(stored.id, updated.id)
+    }
+
+    /// The escape hatch: one project in the folder gets settings of its own and stops following it.
+    func testProjectCanLeaveParentFolderSettingsWithoutAffectingTheOthers() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/demo")
+        let workspace = root.appending(path: "workspace")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        for name in ["alpha", "beta"] { try FileManager.default.createDirectory(at: workspace.appending(path: name), withIntermediateDirectories: true) }
+        try "---\nname: demo\ndescription: Demo\n---\n".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        let folder = ProjectRoot(name: "workspace", path: workspace.path, tools: [.claude], skillIDs: ["demo"])
+        _ = try await service.addProjectRoot(folder, folders: [workspace.appending(path: "alpha").path, workspace.appending(path: "beta").path], serverIDs: [], serverTags: [])
+
+        var alpha = try await service.storedProjects().first { $0.name == "alpha" }!
+        alpha.overridesRoot = true; alpha.tools = [.codex]; alpha.skillIDs = []
+        try await service.updateProject(alpha, serverIDs: [], serverTags: [])
+        let resolved = try await service.listProjects()
+        XCTAssertEqual(resolved.first { $0.name == "alpha" }?.tools, [.codex])
+        XCTAssertTrue(resolved.first { $0.name == "alpha" }?.skillIDs.isEmpty == true)
+        XCTAssertEqual(resolved.first { $0.name == "beta" }?.skillIDs, ["demo"], "drugi projekt nadal korzysta z folderu")
+
+        // Configuring a project that still follows the folder would write a selection nothing reads.
+        let beta = resolved.first { $0.name == "beta" }!
+        do { try await service.configureProject(id: beta.id, skillIDs: [], tags: []); XCTFail("oczekiwano błędu") }
+        catch { XCTAssertTrue("\(error)".contains("folderu nadrzędnego"), "\(error)") }
+    }
+
+    /// Dismissing a subfolder — explicitly, or by removing the project made from it — is an answer
+    /// Agentbox has to remember, otherwise the same question comes back at every refresh.
+    func testDismissedAndDeletedSubfoldersAreNotOfferedAgain() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let workspace = root.appending(path: "workspace")
+        for name in ["alpha", "beta"] { try FileManager.default.createDirectory(at: workspace.appending(path: name), withIntermediateDirectories: true) }
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let folder = ProjectRoot(name: "workspace", path: workspace.path, tools: [.claude])
+        _ = try await service.addProjectRoot(folder, folders: [workspace.appending(path: "alpha").path], serverIDs: [], serverTags: [])
+
+        let detected = try await service.scanProjectRoots()
+        XCTAssertEqual(detected.map(\.name), ["beta"])
+        try await service.ignoreDetectedFolders(detected)
+        let afterIgnoring = try await service.scanProjectRoots()
+        XCTAssertTrue(afterIgnoring.isEmpty)
+
+        let alpha = try await service.listProjects().first { $0.name == "alpha" }!
+        try await service.deleteProject(id: alpha.id)
+        let afterDeletion = try await service.scanProjectRoots()
+        XCTAssertTrue(afterDeletion.isEmpty, "usunięty projekt nie wraca jako propozycja")
+
+        let watched = try await service.projectRoots()[0]
+        try await service.clearIgnoredFolders(rootID: watched.id)
+        let afterClearing = try await service.scanProjectRoots()
+        XCTAssertEqual(afterClearing.map(\.name).sorted(), ["alpha", "beta"])
+    }
+
+    /// Removing the shared settings must not change what any project synchronizes: each one that
+    /// was following the folder keeps a copy of exactly what it was getting.
+    func testDeletingParentFolderLeavesProjectsWithWhatTheyInherited() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/demo")
+        let workspace = root.appending(path: "workspace")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: workspace.appending(path: "alpha"), withIntermediateDirectories: true)
+        try "---\nname: demo\ndescription: Demo\n---\n".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        try await service.saveMCPServer(MCPServer(name: "probe", transport: .stdio, command: "echo"))
+        let server = try await service.mcpConfiguration().servers.first { $0.name == "probe" }!
+        let folder = ProjectRoot(name: "workspace", path: workspace.path, tools: [.claude], skillIDs: ["demo"])
+        let stored = try await service.addProjectRoot(folder, folders: [workspace.appending(path: "alpha").path], serverIDs: [server.id], serverTags: [])
+
+        try await service.deleteProjectRoot(id: stored.id)
+        let alpha = try await service.listProjects().first { $0.name == "alpha" }!
+        XCTAssertNil(alpha.rootID)
+        XCTAssertEqual(alpha.skillIDs, ["demo"])
+        XCTAssertEqual(alpha.tools, [.claude])
+        let mcpAfterDeletion = try await service.mcpConfiguration()
+        XCTAssertEqual(mcpAfterDeletion.projectServerIDs?[alpha.id.uuidString], [server.id])
+        let remainingRoots = try await service.projectRoots()
+        XCTAssertTrue(remainingRoots.isEmpty)
+    }
+
+    /// A library written before parent folders existed must keep working, and a folder must not be
+    /// able to hand a project a skill that was deleted from the library.
+    func testLibraryWithoutParentFoldersKeepsDecodingAndDeletedSkillLeavesTheFolder() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let library = root.appending(path: "data")
+        let source = root.appending(path: "source/demo")
+        let folderPath = root.appending(path: "workspace")
+        try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: folderPath.appending(path: "alpha"), withIntermediateDirectories: true)
+        let legacy = """
+        {"projects":[{"id":"\(UUID().uuidString)","name":"legacy","path":"\(folderPath.appending(path: "alpha").path)","tools":["claude"],"skillIDs":[],"tags":[]}]}
+        """
+        try legacy.write(to: library.appending(path: "projects.local.json"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: library)
+        let legacyProjects = try await service.listProjects()
+        XCTAssertEqual(legacyProjects.map(\.name), ["legacy"])
+        let legacyRoots = try await service.projectRoots()
+        XCTAssertTrue(legacyRoots.isEmpty)
+        let legacyScan = try await service.scanProjectRoots()
+        XCTAssertTrue(legacyScan.isEmpty)
+
+        try "---\nname: demo\ndescription: Demo\n---\n".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        _ = try await service.addLocal(path: source.path)
+        try FileManager.default.createDirectory(at: folderPath.appending(path: "beta"), withIntermediateDirectories: true)
+        let folder = ProjectRoot(name: "workspace", path: folderPath.path, tools: [.claude], skillIDs: ["demo"])
+        _ = try await service.addProjectRoot(folder, folders: [folderPath.appending(path: "beta").path], serverIDs: [], serverTags: [])
+        try await service.deleteSkill(skillID: "demo")
+        let rootsAfterSkillDelete = try await service.projectRoots()
+        XCTAssertTrue(rootsAfterSkillDelete[0].skillIDs.isEmpty, "usunięty skill znika też z folderu nadrzędnego")
+        let projectsAfterSkillDelete = try await service.listProjects()
+        XCTAssertTrue(projectsAfterSkillDelete.allSatisfy { $0.skillIDs.isEmpty })
+    }
+
+    /// Writing a skill in the app instead of importing one: it lands in the library as a valid
+    /// `SKILL.md`, stays editable, and reaches projects like any other skill.
+    func testSkillWrittenInTheAppIsStoredEditableAndSynchronizes() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectFolder = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: projectFolder, withIntermediateDirectories: true)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+
+        let created = try await service.createSkill(id: "Moje Notatki", name: "Moje notatki", description: "Zasady: krótko", content: "Pisz zwięźle.", tags: ["Praca"])
+        XCTAssertEqual(created.id, "moje-notatki")
+        XCTAssertEqual(created.tags, ["praca"])
+        let markdown = try await service.skillMarkdown(skillID: "moje-notatki")
+        XCTAssertTrue(markdown.hasPrefix("---\nname: Moje notatki\ndescription: \"Zasady: krótko\"\n---"), markdown)
+        XCTAssertTrue(markdown.contains("Pisz zwięźle."))
+
+        // A local skill stays editable, unlike one replaced wholesale by a Git update.
+        try await service.saveSkillMarkdown(skillID: "moje-notatki", content: markdown + "\nDopisek.\n")
+        let edited = try await service.skillMarkdown(skillID: "moje-notatki")
+        XCTAssertTrue(edited.contains("Dopisek."))
+
+        let project = try await service.addProject(name: "sample", path: projectFolder.path, tools: [.claude])
+        try await service.configureProject(id: project.id, skillIDs: ["moje-notatki"], tags: [])
+        _ = try await service.syncProject(id: project.id)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: projectFolder.appending(path: ".claude/skills/moje-notatki/SKILL.md").path))
+
+        // A pasted file that already has its own header is stored exactly as pasted.
+        let pasted = "---\nname: gotowy\ndescription: Wklejony\n---\n\nTreść.\n"
+        _ = try await service.createSkill(id: "gotowy", name: "ignorowana", content: pasted)
+        let storedPaste = try await service.skillMarkdown(skillID: "gotowy")
+        XCTAssertEqual(storedPaste, pasted)
+
+        // A taken identifier is refused and leaves nothing behind in the library.
+        do { _ = try await service.createSkill(id: "gotowy", content: "inne"); XCTFail("oczekiwano błędu") }
+        catch { XCTAssertTrue("\(error)".contains("gotowy"), "\(error)") }
+        let ids = try await service.listSkills().map(\.id)
+        XCTAssertEqual(ids.sorted(), ["gotowy", "moje-notatki"])
+    }
+
+    /// `/var` is a symlink to `/private/var`, so a library can be reached by two spellings of the
+    /// same path. Standardizing only one side of a path comparison made every edit in such a
+    /// library fail with "unsafe path".
+    func testLibraryReachedThroughASymlinkedPathStaysEditable() async throws {
+        let temporary = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try XCTSkipUnless(temporary.path.hasPrefix("/var/"), "ten system nie mapuje /var na /private/var")
+        let library = URL(fileURLWithPath: "/private" + temporary.path)
+        let service = try SkillboxService(root: library)
+
+        _ = try await service.createSkill(id: "notatki", content: "Treść.")
+        try await service.saveSkillMarkdown(skillID: "notatki", content: "---\nname: notatki\n---\n\nInna treść.\n")
+        let markdown = try await service.skillMarkdown(skillID: "notatki")
+        XCTAssertTrue(markdown.contains("Inna treść."))
+        try await service.deleteSkill(skillID: "notatki")
+        let remaining = try await service.listSkills()
+        XCTAssertTrue(remaining.isEmpty)
+    }
 }

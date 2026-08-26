@@ -77,7 +77,7 @@ extension SkillboxService {
     @discardableResult
     public func unsyncProject(id: UUID) async throws -> [String] {
         let config = try await store.configuration()
-        guard let project = config.projects.first(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
+        guard let project = config.resolvedProjects.first(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
         let projectURL = URL(fileURLWithPath: project.path)
         Self.removeLegacyBackupDirectories(projectURL)
         let fm = FileManager.default
@@ -166,7 +166,7 @@ extension SkillboxService {
 
     public func previewProjectSync(projectID: UUID) async throws -> ProjectSyncPreview {
         let config = try await store.configuration()
-        guard let project = config.projects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
+        guard let project = config.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
         let catalog = try await store.catalog()
         let selected = SkillboxService.selectedSkills(in: catalog, for: project)
         let skills = try project.tools.map { tool in
@@ -222,7 +222,7 @@ extension SkillboxService {
     public func syncProjectTransaction(projectID: UUID) async throws -> ProjectSyncPreview {
         let preview = try await previewProjectSync(projectID: projectID)
         let config = try await store.configuration()
-        guard let project = config.projects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
+        guard let project = config.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
         let projectURL = URL(fileURLWithPath: project.path)
         Self.removeLegacyBackupDirectories(projectURL)
         // Independent of the sync content and idempotent, so it also runs for an unchanged project

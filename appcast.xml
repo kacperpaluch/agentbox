@@ -6,6 +6,29 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.9.0</title>
+      <pubDate>Wed, 26 Aug 2026 08:16:50 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.9.0</link>
+      <sparkle:version>18</sparkle:version>
+      <sparkle:shortVersionString>0.9.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.9.0</h2>
+        <ul>
+          <li>Ustawienia wspólne dla folderu nadrzędnego — narzędzia, skille, tagi i MCP zapisują się na folderze, a jego projekty je dziedziczą. Jedna zmiana obejmuje wszystkie.</li>
+          <li>Pojedynczy projekt może przejść na własne ustawienia, startując od tego, co dotąd dziedziczył.</li>
+          <li>Nowy podfolder w obserwowanym folderze pojawia się jako pytanie nad listą projektów: dodać i zsynchronizować, dodać bez synchronizacji, czy pomijać.</li>
+          <li>„Napisz własny” w Bibliotece tworzy skill bez katalogu na dysku i bez repozytorium — wystarczy wpisać albo wkleić treść.</li>
+          <li>Biblioteka w katalogu o dwóch zapisach ścieżki (np. <code>/private/tmp/…</code>) nie odrzuca już edycji skilla komunikatem „Niebezpieczna ścieżka”.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.9.0/Agentbox-0.9.0.dmg"
+        length="5184199"
+        type="application/octet-stream"
+        sparkle:edSignature="KwsrZF6j66qEqBTvrNxv3z4k2QjBNsQzYM3RAjUrXp80FCF5kIHSPnl8JFVZn53WMCoXbgcWdx7xCMoO173sBg==" />
+    </item>
+    <item>
       <title>Agentbox 0.8.1</title>
       <pubDate>Tue, 25 Aug 2026 12:33:01 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.8.1</link>
