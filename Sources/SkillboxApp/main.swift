@@ -340,7 +340,7 @@ struct ContentView: View {
                 }
             }
             .contentShape(Rectangle())
-            .tag(Optional(item))
+            .tag(item)
         }.navigationTitle("Agentbox"); Divider(); Text(AppVersion.display).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(12) }.navigationSplitViewColumnWidth(min: 180, ideal: 210) } detail: {
             Group {
                 if let serviceError = model.serviceError, section != .settings {

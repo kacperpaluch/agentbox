@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-08-26
+
+### Naprawiono
+
+- Poprawka menu bocznego z 0.9.4 nadal nie pozwalała zmieniać sekcji: opcjonalne zaznaczenie listy dostało tagi o niewłaściwym, również opcjonalnym typie. Wiersze ponownie używają wartości `SectionKind`, której oczekuje `List(selection:)`.
+
 ## [0.9.4] - 2026-08-26
 
 ### Naprawiono
