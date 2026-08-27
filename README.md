@@ -182,7 +182,7 @@ swift run agentbox sync global --skills seo-audit,docx --tags seo --tools claude
 swift run agentbox sync all
 ```
 
-Sekcja `Odzyskiwanie` pozwala przywrócić snapshot metadanych biblioteki albo pełny backup lokalny. Pliki w folderach projektów odtwarza się ponowną synchronizacją, a czyści przez `Usuń i posprzątaj pliki`. Przed przywróceniem Agentbox automatycznie zachowuje aktualny stan.
+Sekcja `Backup` (razem z dawnym „Odzyskiwaniem", które ma teraz wspólne miejsce z resztą backupów) pozwala przywrócić snapshot metadanych biblioteki albo pełny backup lokalny. Pliki w folderach projektów odtwarza się ponowną synchronizacją, a czyści przez `Usuń i posprzątaj pliki`. Przed przywróceniem Agentbox automatycznie zachowuje aktualny stan.
 
 ### Sekrety
 

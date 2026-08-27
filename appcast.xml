@@ -6,6 +6,26 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.11.2</title>
+      <pubDate>Thu, 27 Aug 2026 08:01:05 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.11.2</link>
+      <sparkle:version>27</sparkle:version>
+      <sparkle:shortVersionString>0.11.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.11.2</h2>
+        <ul>
+          <li>Przegląd wizualny: spójna skala odstępów, jeden neutralny styl tagów zamiast siedmiu losowych kolorów, dwuliniowy układ wierszy list (skille, projekty, serwery MCP) z akcjami drugorzędnymi schowanymi w menu „⋯”.</li>
+          <li>Pasek boczny: „Biblioteka” nazywa się teraz „Skille”, kolejność sekcji dopasowana do częstości użycia, a „Backup” i „Odzyskiwanie” scalone w jedną sekcję.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.11.2/Agentbox-0.11.2.dmg"
+        length="5383610"
+        type="application/octet-stream"
+        sparkle:edSignature="sUZ/1iyJTASMRcVxR4CIUY+Zjh0ywvvoDYEnhuRqLmrZeNv5RZf9xQOrfsMhpX7jmDYFhAAFHq6MxTGHivyWDg==" />
+    </item>
+    <item>
       <title>Agentbox 0.11.1</title>
       <pubDate>Wed, 26 Aug 2026 21:12:43 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.11.1</link>

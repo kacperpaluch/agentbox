@@ -6,6 +6,14 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-08-27
+
+### Zmieniono
+
+- Przegląd wizualny GUI: wspólna skala odstępów i ról typograficznych (`DesignSystem.swift`), jeden neutralny styl tagów zamiast siedmiu losowych kolorów z hasha nazwy, wspólny komponent `MetaBadge` na drobne fakty (typ transportu, narzędzie) odróżniony od realnych statusów (aktualizacja, błąd synchronizacji). Wiersze list (skille, projekty, serwery MCP) mają teraz stały dwuliniowy układ — nazwa i jedna najważniejsza odznaka na górze, metadane i tagi niżej, akcje drugorzędne schowane w menu „⋯”. Biblioteka i MCP używają jednego paska akcji, który zamienia się w pasek zaznaczenia zamiast dokładać drugi rząd przycisków.
+- Pasek boczny: „Biblioteka” nazywa się teraz „Skille” (tam faktycznie są skille), kolejność sekcji dopasowana do tego, jak często są otwierane (Skille, MCP, Globalne, Projekty, Backup, Ustawienia), a „Backup” i „Odzyskiwanie” scalone w jedną sekcję — to jedno pytanie („jak chronię i odzyskuję dane”) rozbite dotąd na dwie pozycje w menu i cztery różne mechanizmy.
+- `Sources/SkillboxApp/main.swift` (1864 linii) rozbite na pliki per widok (`LibraryView.swift`, `ProjectsView.swift`, `ProjectEditors.swift`, `MCPView.swift`, `GlobalSyncView.swift`, `BackupView.swift`, `SettingsView.swift`, `SharedSheets.swift`, `App.swift`, `AppModel.swift`, `DesignSystem.swift`) — bez zmiany zachowania, tylko podział pliku.
+
 ## [0.11.1] - 2026-08-26
 
 ### Zmieniono

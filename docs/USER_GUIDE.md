@@ -54,7 +54,7 @@ Skill liczy się jako nieaktualny, gdy jego wersja w bibliotece jest nowsza niż
 
 ### Pisanie własnego skilla
 
-`Biblioteka → Napisz własny` tworzy skill bez zakładania katalogu na dysku i bez repozytorium. Podaj nazwę (identyfikator podpowiada się sam), opcjonalny opis i tagi, a treść wpisz albo wklej w polu poniżej. Agentbox dopisze nagłówek YAML z nazwą i opisem. Jeśli wklejona treść zaczyna się od bloku `---`, jest traktowana jak gotowy `SKILL.md` i zapisywana bez zmian — pola nazwy i opisu są wtedy nieaktywne.
+`Skille → Napisz własny` tworzy skill bez zakładania katalogu na dysku i bez repozytorium. Podaj nazwę (identyfikator podpowiada się sam), opcjonalny opis i tagi, a treść wpisz albo wklej w polu poniżej. Agentbox dopisze nagłówek YAML z nazwą i opisem. Jeśli wklejona treść zaczyna się od bloku `---`, jest traktowana jak gotowy `SKILL.md` i zapisywana bez zmian — pola nazwy i opisu są wtedy nieaktywne.
 
 Tak utworzony skill jest lokalny, więc później można go poprawiać w aplikacji jak każdy skill dodany z dysku.
 
@@ -88,7 +88,7 @@ Projekt może wciągać skille tagiem i jednocześnie pomijać wybrane pozycje. 
 
 ### Usuwanie projektu i sprzątanie plików
 
-Usunięcie projektu daje dwie możliwości. `Usuń tylko z Agentbox` zostawia folder projektu nietknięty. `Usuń i posprzątaj pliki w projekcie` dodatkowo kasuje katalogi skilli i wpisy MCP wymienione w manifestach Agentbox — wyłącznie je. Plik konfiguracyjny, który w całości pochodził z Agentbox, znika razem z wpisami; ręcznie dodane skille i serwery MCP zostają. Przed sprzątaniem powstaje backup, który można cofnąć w sekcji `Odzyskiwanie`.
+Usunięcie projektu daje dwie możliwości. `Usuń tylko z Agentbox` zostawia folder projektu nietknięty. `Usuń i posprzątaj pliki w projekcie` dodatkowo kasuje katalogi skilli i wpisy MCP wymienione w manifestach Agentbox — wyłącznie je. Plik konfiguracyjny, który w całości pochodził z Agentbox, znika razem z wpisami; ręcznie dodane skille i serwery MCP zostają. Przed sprzątaniem powstaje backup, który można cofnąć w sekcji `Backup`.
 
 Pliki i manifesty powstają tylko wtedy, gdy projekt ma co synchronizować — projekt bez wybranych skilli i serwerów MCP pozostaje nietknięty, a odznaczenie narzędzia sprząta jego pliki przy kolejnej synchronizacji.
 
@@ -170,6 +170,8 @@ W przypadku błędu synchronizacji:
 
 ## Odzyskiwanie
 
+Odzyskiwanie ma teraz wspólne miejsce z resztą backupów w sekcji `Backup`, zamiast osobnej pozycji w pasku bocznym — to jedno pytanie („jak chronię i odzyskuję dane"), nie dwa.
+
 Przed zmianą plików danych Agentbox zachowuje rotacyjne snapshoty w:
 
 ```text
@@ -178,7 +180,7 @@ Przed zmianą plików danych Agentbox zachowuje rotacyjne snapshoty w:
 
 Snapshot zawiera bieżące wersje `catalog.json`, `projects.local.json` i `mcp.json`. Zachowywanych jest 10 ostatnich snapshotów. Sekrety nie są do nich kopiowane. Folder snapshotów jest wyłączony z backupu Git.
 
-W sekcji `Odzyskiwanie → Snapshoty biblioteki` można wybrać kopię na podstawie daty i przywrócić zapisane w niej pliki. Katalog `skills/` i `mcp-secrets.json` nie są zmieniane. Przed przywróceniem Agentbox tworzy snapshot aktualnego stanu.
+W sekcji `Backup → Snapshoty biblioteki` można wybrać kopię na podstawie daty i przywrócić zapisane w niej pliki. Katalog `skills/` i `mcp-secrets.json` nie są zmieniane. Przed przywróceniem Agentbox tworzy snapshot aktualnego stanu.
 
 ### Gdzie leżą kopie
 
@@ -192,7 +194,7 @@ Wersje do 0.7.0 zostawiały historię kopii w `<projekt>/.skillbox/sync-backups/
 
 Projekt, w którym nic się nie zmieniło, jest pomijany — nic nie jest zapisywane, a wynik to `Bez zmian`.
 
-Sekcja `Odzyskiwanie` dotyczy wyłącznie biblioteki: snapshotów metadanych i pełnego backupu lokalnego.
+Ta część sekcji `Backup` dotyczy wyłącznie biblioteki: snapshotów metadanych i pełnego backupu lokalnego.
 
 
 
