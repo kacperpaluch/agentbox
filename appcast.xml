@@ -6,6 +6,25 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.13.1</title>
+      <pubDate>Thu, 27 Aug 2026 21:30:22 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.13.1</link>
+      <sparkle:version>30</sparkle:version>
+      <sparkle:shortVersionString>0.13.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.13.1</h2>
+        <ul>
+          <li>Projekt w obserwowanym folderze, który ma własne ustawienia zamiast dziedziczyć je z folderu, jest teraz widoczny na liście „Projekty” — plakietka „Własne ustawienia” przy nazwie.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.13.1/Agentbox-0.13.1.dmg"
+        length="5545273"
+        type="application/octet-stream"
+        sparkle:edSignature="gN+qHP9SrKocW2N7gcap9sd25QTXLhPFa3vaYBKiUSGaxGjFDkwlsd3AhjBmIJrX32Gj9KOkw9pzlo0Dany9Dg==" />
+    </item>
+    <item>
       <title>Agentbox 0.13.0</title>
       <pubDate>Thu, 27 Aug 2026 21:22:13 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.13.0</link>

@@ -98,7 +98,13 @@ struct ProjectsView: View {
                 DisclosureGroup(isExpanded: groupExpansion(group.path)) {
                     if group.projects.isEmpty { Text("Folder bez projektów. Dodaj podfoldery przez `Dodaj wiele` albo poczekaj, aż Agentbox je wykryje.").font(.caption).foregroundStyle(.secondary).padding(.vertical, 6) }
                     ForEach(group.projects) { project in
-                        ProjectRow(project: project, status: model.statuses[project.id], inheritsRoot: model.inheritsRoot(project), editing: $editing, previewProject: $previewProject, deleting: $deleting, adopting: $adopting)
+                        // A project that belongs to a watched folder but opted out of its shared
+                        // settings looks, at a glance, exactly like one that simply follows it — the
+                        // one place that showed the difference was deep in its own editor. Surfacing
+                        // it here means a change to the folder's settings does not quietly skip this
+                        // project without anyone noticing on the list.
+                        let ownSettings = group.root != nil && !model.inheritsRoot(project)
+                        ProjectRow(project: project, status: model.statuses[project.id], inheritsRoot: model.inheritsRoot(project), ownSettingsInRoot: ownSettings, rootName: group.root?.name, editing: $editing, previewProject: $previewProject, deleting: $deleting, adopting: $adopting)
                     }
                 } label: {
                     HStack {
@@ -184,6 +190,10 @@ private struct ProjectRow: View {
     let project: Project
     let status: ProjectStatus?
     let inheritsRoot: Bool
+    /// True when the project sits in a watched parent folder but was deliberately switched to its
+    /// own settings — so a change to the folder silently stops reaching it.
+    var ownSettingsInRoot: Bool = false
+    var rootName: String?
     @Binding var editing: Project?
     @Binding var previewProject: Project?
     @Binding var deleting: Project?
@@ -197,7 +207,11 @@ private struct ProjectRow: View {
                 Text(project.name).rowTitle()
                 if inheritsRoot {
                     Image(systemName: "arrow.turn.up.right").font(.caption2).foregroundStyle(.tertiary)
-                        .help("Skille, tagi i MCP tego projektu pochodzą z folderu nadrzędnego")
+                        .help("Skille, tagi, MCP i dokumenty tego projektu pochodzą z folderu nadrzędnego")
+                }
+                if ownSettingsInRoot {
+                    MetaBadge(text: "Własne ustawienia", tint: .orange)
+                        .help("Ten projekt ma własne skille, tagi, MCP i dokumenty zamiast dziedziczyć je z folderu\(rootName.map { " „\($0)”" } ?? "")")
                 }
                 ProjectStatusBadge(status: status)
                 Spacer()

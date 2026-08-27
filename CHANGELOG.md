@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-08-27
+
+### Zmieniono
+
+- Projekt należący do obserwowanego folderu, który ma włączone własne ustawienia zamiast dziedziczyć je z folderu, jest teraz od razu widoczny na liście `Projekty` — plakietka „Własne ustawienia” przy nazwie, z podpowiedzią która przypomina, że zmiana w folderze go nie obejmie. Dotąd było to widać tylko po otwarciu edytora tego projektu.
+
 ## [0.13.0] - 2026-08-27
 
 ### Dodano

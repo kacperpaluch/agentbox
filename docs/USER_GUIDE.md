@@ -122,7 +122,7 @@ Domyślnie ustawienia z `Dodaj wiele` zapisują się **na folderze nadrzędnym**
 
 Projekty dodane wcześniej — pojedynczo albo przed pojawieniem się folderów nadrzędnych — też mogą dostać wspólne ustawienia. W nagłówku ich grupy jest przycisk `Wspólne ustawienia…`. Formularz startuje od sumy tego, czego projekty w folderze już używają, więc utworzenie folderu niczego nikomu nie zabiera, a przy każdym projekcie widać, co dokładnie się zmieni (`bez zmian`, `+2 skilli`, `−1 MCP`). Odznaczony projekt zostaje w folderze, ale zachowuje własne ustawienia.
 
-Pojedynczy projekt może wyłamać się z tego schematu: w jego edytorze przełącznik `Skąd projekt bierze ustawienia` przełącza między `Z folderu` a `Własne dla tego projektu`. Formularz startuje wtedy od tego, co projekt dostawał z folderu, więc odejście od wspólnych ustawień nic nie zmienia, dopóki czegoś nie poprawisz. Projekt korzystający z folderu jest oznaczony na liście etykietą `ustawienia folderu`.
+Pojedynczy projekt może wyłamać się z tego schematu: w jego edytorze przełącznik `Skąd projekt bierze ustawienia` przełącza między `Z folderu` a `Własne dla tego projektu`. Formularz startuje wtedy od tego, co projekt dostawał z folderu, więc odejście od wspólnych ustawień nic nie zmienia, dopóki czegoś nie poprawisz. Na liście projektów widać obie sytuacje: projekt, który dziedziczy z folderu, ma przy nazwie małą strzałkę z podpowiedzią; projekt, który się wyłamał, ma zamiast niej pomarańczową plakietkę `Własne ustawienia` — od razu widać, że zmiana w folderze nadrzędnym go nie obejmie.
 
 Odznaczenie `Zapisz ustawienia na folderze nadrzędnym` przy dodawaniu wraca do dawnego zachowania: każdy projekt dostaje własną kopię ustawień, bez dziedziczenia.
 
