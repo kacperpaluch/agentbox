@@ -40,9 +40,9 @@ enum AppVersion {
 // three touched constantly first, then Projekty (its own dedicated setup time), then the two rare
 // ones — Backup+Odzyskiwanie merged into one "protect my data" concept instead of two — settings last.
 enum SectionKind: String, CaseIterable, Identifiable {
-    case library = "Skille", mcp = "MCP", global = "Globalne", projects = "Projekty", backup = "Backup", settings = "Ustawienia"
+    case library = "Skille", mcp = "MCP", docs = "Dokumenty", global = "Globalne", projects = "Projekty", backup = "Backup", settings = "Ustawienia"
     var id: String { rawValue }
-    var icon: String { switch self { case .library: "square.grid.2x2"; case .projects: "folder"; case .global: "person.crop.circle"; case .mcp: "network"; case .backup: "externaldrive.badge.timemachine"; case .settings: "gearshape" } }
+    var icon: String { switch self { case .library: "square.grid.2x2"; case .projects: "folder"; case .global: "person.crop.circle"; case .mcp: "network"; case .docs: "doc.text"; case .backup: "externaldrive.badge.timemachine"; case .settings: "gearshape" } }
 }
 struct OperationLogEntry: Identifiable {
     enum Kind { case success, error }
@@ -90,6 +90,7 @@ struct ContentView: View {
                     case .projects: ProjectsView(model: model, showProject: $showProject)
                     case .global: GlobalSyncView(model: model)
                     case .mcp: MCPView(model: model)
+                    case .docs: DocsView(model: model)
                     case .backup: BackupView(model: model)
                     case .settings: SettingsView(model: model, updater: updater)
                     }
@@ -100,7 +101,7 @@ struct ContentView: View {
         .task(id: model.message) { let current = model.message; guard !current.isEmpty else { return }; try? await Task.sleep(for: .seconds(4)); guard !Task.isCancelled, model.message == current else { return }; withAnimation { model.message = "" } }
         .overlay { if model.isWorking { ProgressView().controlSize(.large).padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
         .sheet(isPresented: $showGit) { AddGitView { url, path in Task { await model.addGit(url, subpath: path) } } }
-        .sheet(isPresented: $showProject) { ProjectEditor(skills: model.skills, servers: model.mcp.servers, project: nil, selectedServerIDs: [], selectedServerTags: []) { project, servers, tags in Task { await model.addProject(project, serverIDs: servers, serverTags: tags) } } }
+        .sheet(isPresented: $showProject) { ProjectEditor(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, project: nil, selectedServerIDs: [], selectedServerTags: [], selectedDocIDs: [], selectedDocTags: []) { project, servers, tags, docIDs, docTags in Task { await model.addProject(project, serverIDs: servers, serverTags: tags, docIDs: docIDs, docTags: docTags) } } }
         .sheet(isPresented: $showHistory) { OperationHistoryView(entries: model.operationLog) }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in Task { await model.scanRootsOnActivation() } }
         .toolbar { Button { showHistory = true } label: { Label("Historia operacji", systemImage: "clock.arrow.circlepath") } }

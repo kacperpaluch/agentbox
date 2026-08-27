@@ -56,11 +56,11 @@ struct ProjectsView: View {
             }
         }
         .navigationTitle("Projekty")
-        .sheet(isPresented: $showBatch) { BatchProjectView(skills: model.skills, servers: model.mcp.servers, existingProjects: model.projects, existingRoots: model.projectRoots) { request in Task { await model.addBatch(request) } } }
+        .sheet(isPresented: $showBatch) { BatchProjectView(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, existingProjects: model.projects, existingRoots: model.projectRoots) { request in Task { await model.addBatch(request) } } }
         .sheet(isPresented: $showDetected) { DetectedFoldersView(model: model) }
         .sheet(item: $settingUpRoot) { group in GroupRootSetupView(model: model, folderPath: group.path, projects: group.projects) }
-        .sheet(item: $editingRoot) { root in ProjectRootEditor(skills: model.skills, servers: model.mcp.servers, root: root, followingProjects: model.storedProjects.filter { $0.rootID == root.id && $0.overridesRoot != true }.count, selectedServerIDs: model.selectedMCPServerIDs(selectionID: root.id), selectedServerTags: model.mcp.projectServerTags?[root.id.uuidString] ?? []) { updated, servers, tags in Task { await model.saveRoot(updated, serverIDs: servers, serverTags: tags) } } }
-        .sheet(item: $editing) { project in ProjectEditor(skills: model.skills, servers: model.mcp.servers, project: model.storedProject(id: project.id) ?? project, root: model.root(for: project), inheritedFrom: model.inheritsRoot(project) ? model.projects.first { $0.id == project.id } : nil, selectedServerIDs: model.selectedMCPServerIDs(for: project), selectedServerTags: model.selectedMCPServerTags(for: project)) { updated, servers, tags in Task { await model.updateProject(updated, serverIDs: servers, serverTags: tags) } } }
+        .sheet(item: $editingRoot) { root in ProjectRootEditor(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, root: root, followingProjects: model.storedProjects.filter { $0.rootID == root.id && $0.overridesRoot != true }.count, selectedServerIDs: model.selectedMCPServerIDs(selectionID: root.id), selectedServerTags: model.mcp.projectServerTags?[root.id.uuidString] ?? [], selectedDocIDs: model.selectedDocIDs(selectionID: root.id), selectedDocTags: model.docs.projectDocTags?[root.id.uuidString] ?? []) { updated, servers, tags, docIDs, docTags in Task { await model.saveRoot(updated, serverIDs: servers, serverTags: tags, docIDs: docIDs, docTags: docTags) } } }
+        .sheet(item: $editing) { project in ProjectEditor(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, project: model.storedProject(id: project.id) ?? project, root: model.root(for: project), inheritedFrom: model.inheritsRoot(project) ? model.projects.first { $0.id == project.id } : nil, selectedServerIDs: model.selectedMCPServerIDs(for: project), selectedServerTags: model.selectedMCPServerTags(for: project), selectedDocIDs: model.selectedDocIDs(for: project), selectedDocTags: model.selectedDocTags(for: project)) { updated, servers, tags, docIDs, docTags in Task { await model.updateProject(updated, serverIDs: servers, serverTags: tags, docIDs: docIDs, docTags: docTags) } } }
         .sheet(item: $previewProject) { project in MCPPreviewView(model: model, project: project) }
         .sheet(isPresented: $showAllSync) { AllProjectsSyncPreviewView(model: model) }
         .confirmationDialog("Usunąć projekt \(deleting?.name ?? "") z Agentbox?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
@@ -287,6 +287,12 @@ private struct AllProjectsSyncPlanRow: View {
                     }
                 }
                 ForEach(plan.preview.mcp, id: \.tool.rawValue) { item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.file).font(.caption).foregroundStyle(.secondary)
+                        SyncChangeRows(added: item.added, updated: [], removed: item.removed)
+                    }
+                }
+                ForEach(plan.preview.docs, id: \.file) { item in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(item.file).font(.caption).foregroundStyle(.secondary)
                         SyncChangeRows(added: item.added, updated: [], removed: item.removed)

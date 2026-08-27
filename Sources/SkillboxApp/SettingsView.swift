@@ -25,26 +25,52 @@ struct SettingsView: View {
 struct SharedSettingsForm: View {
     let skills: [Skill]
     let servers: [MCPServer]
+    let docs: [AgentDoc]
     @Binding var tools: Set<Tool>
     @Binding var selectedSkills: Set<String>
     @Binding var selectedTags: Set<String>
     @Binding var selectedServers: Set<UUID>
     @Binding var selectedMCPtags: Set<String>
+    @Binding var selectedDoc: String?
+    @Binding var selectedDocTags: Set<String>
     @Binding var excluded: Set<String>
     @Binding var manageGitignore: Bool
 
     private var availableTags: [String] { Array(Set(skills.flatMap(\.tags))).sorted() }
     private var mcpTags: [String] { Array(Set(servers.flatMap { $0.tags ?? [] })).sorted() }
+    private var docTags: [String] { Array(Set(docs.flatMap(\.tags))).sorted() }
+    private var matchedDocs: [AgentDoc] { docs.filter { covered($0.tags, by: selectedDocTags) } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             GroupBox("Narzędzia") { HStack { ForEach(Tool.allCases, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: setBinding(tool, in: $tools)).toggleStyle(.checkbox) } }.padding(6) }
             ScrollView { SkillCheckGrid(title: "Pojedyncze skille", skills: skills, selection: $selectedSkills, locked: Set(tagMatched.map(\.id)), lockedHelp: "Wybrany przez tag — odznacz go w sekcji Wykluczenia, by pominąć") }.frame(height: 150)
             TagCheckGrid(title: "Tagi skilli", tags: availableTags, selection: $selectedTags)
-            GroupBox("Pojedyncze serwery MCP") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(servers) { server in serverToggle(server) } }.padding(6) }
+            GroupBox("Pojedyncze serwery MCP") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(servers.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { server in serverToggle(server) } }.padding(6) }
             TagCheckGrid(title: "Tagi MCP", tags: mcpTags, selection: $selectedMCPtags)
             exclusionsBox
+            docSection
             GroupBox("Git") { VStack(alignment: .leading, spacing: 6) { Toggle("Dopisuj wygenerowane pliki MCP do .gitignore projektu", isOn: $manageGitignore).toggleStyle(.checkbox); Text(".gitignore jedzie z repozytorium, więc chroni też zespół. Agentbox dopisuje tylko własny blok i nigdy nie usuwa istniejących wpisów.").font(.caption).foregroundStyle(.secondary) }.padding(6) }
+        }
+    }
+
+    /// A project can only ever have one `AGENTS.md`, so this is a single pick — not a checkbox grid
+    /// like skills and MCP servers. Tags can still match more than one document; that is a conflict
+    /// synchronization reports, so it is flagged here before it gets that far.
+    @ViewBuilder private var docSection: some View {
+        GroupBox("Dokument (AGENTS.md / CLAUDE.md)") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Ten sam tekst trafia jako AGENTS.md; CLAUDE.md jest generowany osobno jako import @AGENTS.md. Oba pliki zawsze idą razem.").font(.caption).foregroundStyle(.secondary)
+                Picker("Dokument", selection: $selectedDoc) {
+                    Text("Brak").tag(String?.none)
+                    ForEach(docs.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { doc in Text(doc.name).tag(Optional(doc.id)) }
+                }
+                TagCheckGrid(title: "Tagi dokumentów", tags: docTags, selection: $selectedDocTags)
+                if matchedDocs.count > 1 {
+                    Label("Kilka dokumentów pasuje przez tagi naraz — synchronizacja zgłosi konflikt. Zostaw jeden pasujący tag albo wybierz dokument wprost.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+            }.padding(6)
         }
     }
 
@@ -98,7 +124,7 @@ struct SkillCheckGrid: View {
             if skills.isEmpty { Text("Biblioteka jest pusta.").foregroundStyle(.secondary).padding(6) }
             else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) {
-                    ForEach(skills) { skill in
+                    ForEach(skills.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { skill in
                         let isLocked = locked.contains(skill.id)
                         Toggle(skill.name, isOn: isLocked ? .constant(true) : setBinding(skill.id, in: $selection))
                             .toggleStyle(.checkbox).disabled(isLocked).help(isLocked ? lockedHelp : "")
@@ -118,7 +144,7 @@ struct TagCheckGrid: View {
             if tags.isEmpty { Text("Brak tagów.").foregroundStyle(.secondary).padding(6) }
             else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], alignment: .leading) {
-                    ForEach(tags, id: \.self) { tag in Toggle("#\(tag)", isOn: setBinding(tag, in: $selection)).toggleStyle(.checkbox) }
+                    ForEach(tags.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }, id: \.self) { tag in Toggle("#\(tag)", isOn: setBinding(tag, in: $selection)).toggleStyle(.checkbox) }
                 }.padding(6)
             }
         }

@@ -151,13 +151,29 @@ agentbox mcp server remove docsearch
 
 `mcp server remove` usuwa serwer z biblioteki, jego bezpośrednie przypisania do projektów i jego wartości z lokalnego pliku sekretów — tak samo jak `Usuń` przy serwerze w aplikacji.
 
+## Dokumenty
+
+```bash
+agentbox docs list
+agentbox docs new standard --tags backend --file agents.md
+agentbox docs tag standard backend web
+agentbox docs assign sklep --docs standard --tags backend
+agentbox docs preview sklep
+agentbox docs sync sklep
+agentbox docs delete standard
+```
+
+`docs assign` zastępuje bezpośrednie dokumenty i tagi projektu — dokładnie jak `mcp assign`. Do jednego projektu może pasować tylko jeden dokument naraz; więcej dopasowań przez tagi jest konfliktem, który `docs preview`/`docs sync` zgłoszą zamiast wybrać dowolny.
+
+Zsynchronizowany dokument ląduje jako `AGENTS.md` (pełna treść) i `CLAUDE.md` (wygenerowany import `@AGENTS.md`) w katalogu głównym projektu, niezależnie od tego, jakie narzędzia ma projekt zaznaczone.
+
 ## Odtworzenie biblioteki
 
 ```bash
 agentbox restore --remote git@github.com:user/agentbox-backup.git
 ```
 
-Pobiera skille, `catalog.json` i `mcp.json` z repozytorium backupu — na przykład przy konfiguracji nowego Maca. Projekty, lokalne ścieżki i sekrety tego Maca pozostają bez zmian. Przed zapisem powstaje pełny backup lokalny, a `.git` klona jest przejmowany, więc kolejne `agentbox backup` wypychają do tego samego repozytorium.
+Pobiera skille, `catalog.json`, `mcp.json` i `docs.json` z repozytorium backupu — na przykład przy konfiguracji nowego Maca. Projekty, lokalne ścieżki i sekrety tego Maca pozostają bez zmian. Przed zapisem powstaje pełny backup lokalny, a `.git` klona jest przejmowany, więc kolejne `agentbox backup` wypychają do tego samego repozytorium.
 
 Sekrety MCP celowo nie trafiają do tego repozytorium, więc serwery, które ich wymagają, ruszą na nowym Maku dopiero po ich uzupełnieniu. Najszybciej: skopiuj `mcp-secrets.json` z ostatniego pełnego backupu starego Maca (`<biblioteka>/backups/full/<data>/mcp-secrets.json`) do folderu nowej biblioteki przez AirDrop albo inny bezpieczny kanał.
 

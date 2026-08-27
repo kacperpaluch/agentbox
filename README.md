@@ -100,7 +100,7 @@ Pełny workflow można wykonać jedną komendą: `agentbox refresh`. Aktualizuje
 
 ## Projekty i synchronizacja
 
-Projekt wskazuje istniejący folder na dysku oraz obsługiwane narzędzia. Można mu przypisać pojedyncze skille i serwery MCP albo wybierać oba typy dynamicznie według tagów.
+Projekt wskazuje istniejący folder na dysku oraz obsługiwane narzędzia. Można mu przypisać pojedyncze skille, serwery MCP i dokument `AGENTS.md`/`CLAUDE.md` albo wybierać każdy typ dynamicznie według tagów.
 
 Opcja `Dodaj wiele` przyjmuje folder nadrzędny, wykrywa jego bezpośrednie podfoldery i pozwala utworzyć z nich projekty. Foldery już dodane do Agentbox są pomijane. Ustawienia zapisują się domyślnie na samym folderze nadrzędnym, a jego projekty je dziedziczą — jedna zmiana w folderze obejmuje wszystkie. Pojedynczy projekt może przejść na własne ustawienia w swoim edytorze, a odznaczenie opcji przy dodawaniu daje każdemu projektowi niezależną kopię konfiguracji.
 
@@ -110,13 +110,15 @@ Folder nadrzędny może też obserwować nowe podfoldery. Świeżo sklonowane re
 
 Lista projektów jest grupowana według folderu nadrzędnego, dzięki czemu projekty z jednego katalogu roboczego są widoczne razem. Każdą grupę można zwinąć osobno albo rozwinąć i zwinąć wszystkie grupy z menu pod listą.
 
-`Synchronizuj wszystko` przy projekcie pokazuje podgląd i synchronizuje jego skille oraz konfiguracje MCP. `Synchronizuj wszystkie projekty` najpierw przygotowuje plan dla całej listy, a następnie wykonuje tę samą transakcyjną operację kolejno dla każdego projektu.
+`Synchronizuj wszystko` przy projekcie pokazuje podgląd i synchronizuje jego skille, konfiguracje MCP oraz dokument. `Synchronizuj wszystkie projekty` najpierw przygotowuje plan dla całej listy, a następnie wykonuje tę samą transakcyjną operację kolejno dla każdego projektu.
 
 | Narzędzie | Skille w projekcie | MCP w projekcie |
 |---|---|---|
 | Claude Code | `.claude/skills/` | `.mcp.json` |
 | Codex | `.codex/skills/` | `.codex/config.toml` |
 | OpenCode | `.opencode/skills/` | istniejący `opencode.jsonc` lub nowy `opencode.json` |
+
+Dokument, jeśli jest przypisany, ląduje niezależnie od listy narzędzi jako `AGENTS.md` i `CLAUDE.md` w katalogu głównym projektu — zobacz [Dokumenty](#dokumenty-agentsmd--claudemd).
 
 Plik `.skillbox.json` w każdym katalogu skilli śledzi tylko elementy zarządzane przez Agentbox. Obce katalogi nie są usuwane.
 
@@ -208,9 +210,26 @@ swift run agentbox mcp sync website
 
 CLI rozdziela synchronizację skilli (`agentbox sync project`) i MCP (`agentbox mcp sync`). GUI łączy je w `Synchronizuj wszystko`.
 
+## Dokumenty (AGENTS.md / CLAUDE.md)
+
+Sekcja `Dokumenty` to biblioteka współdzielonych tekstów, przypisywanych do projektów wprost albo przez tag — dokładnie tak samo jak skille i serwery MCP. Każdy dokument ma swój tekst, zapisywany raz.
+
+Zsynchronizowany dokument trafia zawsze jako **para plików w katalogu głównym projektu**: `AGENTS.md` z pełną treścią i `CLAUDE.md` wygenerowany automatycznie jako jedna linijka — `@AGENTS.md`. To udokumentowany mechanizm importu plików w Claude Code (Claude Code czyta `CLAUDE.md`, nie czyta `AGENTS.md` samodzielnie), więc jeden tekst obsługuje oba bez ręcznego duplikowania go. `CLAUDE.md` nie jest edytowalny osobno.
+
+Do jednego projektu może pasować tylko jeden dokument naraz — `AGENTS.md` ma jedną treść. Więcej niż jedno dopasowanie przez tagi zatrzymuje synchronizację jako konflikt, zamiast wybierać dowolne.
+
+Synchronizacja nadpisuje cały plik, tak jak katalog skilla. Ręcznie napisany `AGENTS.md` albo `CLAUDE.md`, którym Agentbox jeszcze nie zarządza, blokuje zapis zamiast zostać nadpisany — ten sam mechanizm ochrony co przy nieznanym katalogu skilla czy ręcznym wpisie MCP. Wyjątkiem jest plik identyczny bajt w bajt z treścią dokumentu: zostaje przejęty bez pytania.
+
+```bash
+swift run agentbox docs new standard --tags backend --file agents.md
+swift run agentbox docs assign website --docs standard --tags backend
+swift run agentbox docs preview website
+swift run agentbox docs sync website
+```
+
 ## Backup Git
 
-Backup zawiera `catalog.json`, `skills/` i `mcp.json`. Nie zawiera `projects.local.json` z lokalnymi ścieżkami ani `mcp-secrets.json` z sekretami.
+Backup zawiera `catalog.json`, `skills/`, `mcp.json` i `docs.json`. Nie zawiera `projects.local.json` z lokalnymi ścieżkami ani `mcp-secrets.json` z sekretami.
 
 ```bash
 swift run agentbox backup

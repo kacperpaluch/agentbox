@@ -20,6 +20,7 @@ public enum AgentboxCommand {
       agentbox backup [--remote git-url] [--message text]
       agentbox restore --remote <git-url>
       agentbox mcp list|server|assign|preview|sync ...
+      agentbox docs list|new|tag|delete|assign|preview|sync ...
     """
 
     /// Runs one command and returns the lines it produced. Throwing means the command failed.
@@ -76,6 +77,7 @@ public enum AgentboxCommand {
             guard let remote = option("--remote", in: args) else { throw SkillboxError.invalidSkill("podaj --remote <adres-repozytorium>") }
             return [try await service.restoreLibraryFromRemote(remote, applicationVersion: "CLI")]
         case "mcp": return try await mcp(rest, service: service, args: args)
+        case "docs": return try await docs(rest, service: service, args: args)
         default: return [help]
         }
     }
@@ -334,6 +336,45 @@ public enum AgentboxCommand {
 
     private static let mcpUsage = "Użycie: agentbox mcp list | server add <name> --url URL|--command CMD [--args a,b] [--tags x,y] | server remove <name> | assign <project> --servers a,b [--tags x,y] | preview <project> | sync <project>"
 
+    private static func docs(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
+        guard let action = rest.first else { return [docsUsage] }
+        switch action {
+        case "list":
+            let config = try await service.docsConfiguration()
+            return config.docs.sorted { $0.name < $1.name }.map { "\($0.id)\t\($0.tags.joined(separator: ","))\t\($0.content.count) znaków" }
+        case "new" where rest.count >= 2:
+            let file = option("--file", in: args)
+            let content: String
+            switch file {
+            case "-": content = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            case .some(let path): content = try String(contentsOf: URL(fileURLWithPath: path), encoding: .utf8)
+            case .none: content = ""
+            }
+            let doc = try await service.createDoc(id: rest[1], name: option("--name", in: args) ?? "", tags: csv("--tags", in: args), content: content)
+            return ["Utworzono dokument \(doc.id)"]
+        case "tag" where rest.count >= 3:
+            try await service.setDocTags(docID: rest[1], tags: Array(rest.dropFirst(2)))
+            return ["Zapisano tagi"]
+        case "delete" where rest.count >= 2:
+            try await service.deleteDoc(id: rest[1])
+            return ["Usunięto dokument \(rest[1])"]
+        case "assign" where rest.count >= 2:
+            let project = try await resolve(rest[1], service: service)
+            try await service.setDocs(projectID: project.id, docIDs: csv("--docs", in: args), tags: csv("--tags", in: args))
+            return ["Przypisano dokumenty"]
+        case "preview" where rest.count >= 2:
+            let project = try await resolve(rest[1], service: service)
+            return try await service.previewDocs(projectID: project.id).flatMap { ["--- \($0.file)", $0.content.isEmpty ? "(plik nie zostanie utworzony)" : $0.content] }
+        case "sync" where rest.count >= 2:
+            let project = try await resolve(rest[1], service: service)
+            _ = try await service.syncDocs(projectID: project.id)
+            return ["Zsynchronizowano dokumenty"]
+        default: return [docsUsage]
+        }
+    }
+
+    private static let docsUsage = "Użycie: agentbox docs list | new <id> [--name x] [--tags a,b] [--file plik|-] | tag <id> <tag...> | delete <id> | assign <project> --docs a,b [--tags x,y] | preview <project> | sync <project>"
+
     private static func resolve(_ name: String, service: SkillboxService) async throws -> Project {
         guard let project = try await service.listProjects().first(where: { $0.name == name }) else { throw SkillboxError.projectNotFound(name) }
         return project
@@ -342,6 +383,7 @@ public enum AgentboxCommand {
     private static func lines(for preview: ProjectSyncPreview) -> [String] {
         preview.skills.map { "  \($0.tool.rawValue): +\($0.added.count) ~\($0.updated.count) -\($0.removed.count) → \($0.target)" }
             + preview.mcp.map { "  \($0.tool.rawValue) MCP: +\($0.added.count) -\($0.removed.count) → \($0.file)" }
+            + preview.docs.map { "  dokument: +\($0.added.count) -\($0.removed.count) → \($0.file)" }
     }
 
     static func option(_ name: String, in args: [String]) -> String? {

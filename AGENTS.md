@@ -57,7 +57,7 @@ Do not commit `.build/` or generated `dist/` artifacts. DMG files belong in GitH
 ## Data compatibility
 
 - Existing MVP libraries must remain readable. The default data directory intentionally retains the legacy name `~/Library/Application Support/Skillbox`.
-- Treat changes to `Catalog`, `LocalConfiguration`, `MCPConfiguration`, and persisted nested models as schema changes.
+- Treat changes to `Catalog`, `LocalConfiguration`, `MCPConfiguration`, `DocsConfiguration`, and persisted nested models as schema changes.
 - When adding persisted fields, provide backward-compatible decoding through defaults, optionals, or an explicit migration.
 - Do not silently discard malformed or unknown user data.
 - Preserve atomic writes and create recovery snapshots before mutating library metadata.

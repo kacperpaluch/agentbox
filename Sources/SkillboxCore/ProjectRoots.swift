@@ -35,6 +35,13 @@ extension LocalConfiguration {
     public func mcpSelectionID(for project: Project) -> UUID {
         inheritsRoot(project) ? (project.rootID ?? project.id) : project.id
     }
+
+    /// The document-assignment counterpart of `mcpSelectionID`: `docs.json` keys its assignments the
+    /// same way `mcp.json` does, by whichever id — the project's own or its parent folder's — actually
+    /// owns the selection a project follows.
+    public func docSelectionID(for project: Project) -> UUID {
+        inheritsRoot(project) ? (project.rootID ?? project.id) : project.id
+    }
 }
 
 extension SkillboxService {
@@ -46,7 +53,7 @@ extension SkillboxService {
     /// save, so a single user action takes a single recovery snapshot and never leaves a folder
     /// without its projects.
     @discardableResult
-    public func addProjectRoot(_ root: ProjectRoot, folders: [String], serverIDs: [UUID], serverTags: [String], treatingExistingAsKnown: Bool = true) async throws -> ProjectRoot {
+    public func addProjectRoot(_ root: ProjectRoot, folders: [String], serverIDs: [UUID], serverTags: [String], docIDs: [String] = [], docTags: [String] = [], treatingExistingAsKnown: Bool = true) async throws -> ProjectRoot {
         var isDirectory: ObjCBool = false
         let rootURL = URL(fileURLWithPath: root.path).standardizedFileURL
         guard FileManager.default.fileExists(atPath: rootURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -81,13 +88,15 @@ extension SkillboxService {
         config.projects.append(contentsOf: projects)
         var mcp = try await store.mcpConfiguration()
         Self.assign(&mcp, projectID: stored.id, serverIDs: serverIDs, tags: serverTags)
-        try await store.save(config, mcp)
+        var docs = try await store.docsConfiguration()
+        Self.assignDocs(&docs, id: stored.id, docIDs: docIDs, tags: docTags)
+        try await store.save(config, mcp, docs)
         return stored
     }
 
     /// Saves the settings shared by every project in the folder. Projects that follow the folder
     /// pick the change up on their next preview; projects with their own settings are untouched.
-    public func updateProjectRoot(_ root: ProjectRoot, serverIDs: [UUID], serverTags: [String]) async throws {
+    public func updateProjectRoot(_ root: ProjectRoot, serverIDs: [UUID], serverTags: [String], docIDs: [String] = [], docTags: [String] = []) async throws {
         var config = try await store.configuration()
         guard let index = config.roots.firstIndex(where: { $0.id == root.id }) else {
             throw SkillboxError.projectNotFound(root.name)
@@ -104,7 +113,9 @@ extension SkillboxService {
         config.projectRoots = roots
         var mcp = try await store.mcpConfiguration()
         Self.assign(&mcp, projectID: stored.id, serverIDs: serverIDs, tags: serverTags)
-        try await store.save(config, mcp)
+        var docs = try await store.docsConfiguration()
+        Self.assignDocs(&docs, id: stored.id, docIDs: docIDs, tags: docTags)
+        try await store.save(config, mcp, docs)
     }
 
     /// Turns a folder that already holds projects into a parent folder.
@@ -114,7 +125,7 @@ extension SkillboxService {
     /// from scratch. Every project passed in joins the folder; `following` says which ones drop
     /// their own settings for the folder's, and the rest keep exactly what they synchronize today.
     @discardableResult
-    public func adoptProjectsIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], serverIDs: [UUID], serverTags: [String], treatingExistingAsKnown: Bool = true) async throws -> ProjectRoot {
+    public func adoptProjectsIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], serverIDs: [UUID], serverTags: [String], docIDs: [String] = [], docTags: [String] = [], treatingExistingAsKnown: Bool = true) async throws -> ProjectRoot {
         var isDirectory: ObjCBool = false
         let rootURL = URL(fileURLWithPath: root.path).standardizedFileURL
         guard FileManager.default.fileExists(atPath: rootURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -135,6 +146,7 @@ extension SkillboxService {
         stored.path = rootURL.path
         stored.ignoredPaths = Self.standardized(stored.ignoredPaths)
         var mcp = try await store.mcpConfiguration()
+        var docs = try await store.docsConfiguration()
         for index in config.projects.indices {
             let id = config.projects[index].id
             guard followers.contains(id) || owners.contains(id) else { continue }
@@ -150,13 +162,16 @@ extension SkillboxService {
             config.projects[index].manageGitignore = nil
             var servers = mcp.projectServerIDs ?? [:]; servers.removeValue(forKey: id.uuidString); mcp.projectServerIDs = servers
             var tags = mcp.projectServerTags ?? [:]; tags.removeValue(forKey: id.uuidString); mcp.projectServerTags = tags
+            var followerDocIDs = docs.projectDocIDs ?? [:]; followerDocIDs.removeValue(forKey: id.uuidString); docs.projectDocIDs = followerDocIDs
+            var followerDocTags = docs.projectDocTags ?? [:]; followerDocTags.removeValue(forKey: id.uuidString); docs.projectDocTags = followerDocTags
         }
         if treatingExistingAsKnown {
             stored.ignoredPaths = Self.knownSubfolders(of: rootURL, besides: stored.ignoredPaths, excluding: config.projects.map { URL(fileURLWithPath: $0.path).standardizedFileURL.path })
         }
         config.projectRoots = config.roots + [stored]
         Self.assign(&mcp, projectID: stored.id, serverIDs: serverIDs, tags: serverTags)
-        try await store.save(config, mcp)
+        Self.assignDocs(&docs, id: stored.id, docIDs: docIDs, tags: docTags)
+        try await store.save(config, mcp, docs)
         return stored
     }
 
@@ -169,18 +184,26 @@ extension SkillboxService {
         var mcp = try await store.mcpConfiguration()
         let inheritedServers = mcp.projectServerIDs?[id.uuidString] ?? []
         let inheritedTags = mcp.projectServerTags?[id.uuidString] ?? []
+        var docs = try await store.docsConfiguration()
+        let inheritedDocIDs = docs.projectDocIDs?[id.uuidString] ?? []
+        let inheritedDocTags = docs.projectDocTags?[id.uuidString] ?? []
         for index in config.projects.indices where config.projects[index].rootID == id {
             let detached = config.resolved(config.projects[index])
             let followed = config.inheritsRoot(config.projects[index])
             config.projects[index] = detached
             config.projects[index].rootID = nil
             config.projects[index].overridesRoot = nil
-            if followed { Self.assign(&mcp, projectID: detached.id, serverIDs: inheritedServers, tags: inheritedTags) }
+            if followed {
+                Self.assign(&mcp, projectID: detached.id, serverIDs: inheritedServers, tags: inheritedTags)
+                Self.assignDocs(&docs, id: detached.id, docIDs: inheritedDocIDs, tags: inheritedDocTags)
+            }
         }
         config.projectRoots = config.roots.filter { $0.id != id }
         var servers = mcp.projectServerIDs ?? [:]; servers.removeValue(forKey: id.uuidString); mcp.projectServerIDs = servers
         var tags = mcp.projectServerTags ?? [:]; tags.removeValue(forKey: id.uuidString); mcp.projectServerTags = tags
-        try await store.save(config, mcp)
+        var docIDs = docs.projectDocIDs ?? [:]; docIDs.removeValue(forKey: id.uuidString); docs.projectDocIDs = docIDs
+        var docTags = docs.projectDocTags ?? [:]; docTags.removeValue(forKey: id.uuidString); docs.projectDocTags = docTags
+        try await store.save(config, mcp, docs)
     }
 
     /// Subfolders that appeared in a watched parent folder after it was added. A folder whose disk

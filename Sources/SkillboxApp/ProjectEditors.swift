@@ -7,6 +7,7 @@ struct ProjectEditor: View {
     @Environment(\.dismiss) private var dismiss
     let skills: [Skill]
     let servers: [MCPServer]
+    let docs: [AgentDoc]
     let project: Project?
     /// The parent folder this project belongs to, when it came from one.
     var root: ProjectRoot?
@@ -16,14 +17,18 @@ struct ProjectEditor: View {
     var inheritedFrom: Project?
     let selectedServerIDs: [UUID]
     let selectedServerTags: [String]
-    let onSave: (Project, [UUID], [String]) -> Void
+    let selectedDocIDs: [String]
+    let selectedDocTags: [String]
+    let onSave: (Project, [UUID], [String], [String], [String]) -> Void
     @State private var name = ""
     @State private var path = ""
     @State private var tools = Set(Tool.allCases)
     @State private var selected = Set<String>()
-    @State private var selectedTags = Set<String>()
+    @State private var selectedSkillTags = Set<String>()
     @State private var selectedServers = Set<UUID>()
     @State private var selectedMCPtags = Set<String>()
+    @State private var selectedDoc: String?
+    @State private var selectedDocTagSet = Set<String>()
     @State private var excluded = Set<String>()
     @State private var manageGitignore = false
     @State private var usesOwnSettings = true
@@ -34,7 +39,7 @@ struct ProjectEditor: View {
             TextField("Nazwa", text: $name)
             HStack { TextField("Folder projektu", text: $path); Button("Wybierz…") { chooseFolder() } }
             inheritanceBox
-            SharedSettingsForm(skills: skills, servers: servers, tools: $tools, selectedSkills: $selected, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, excluded: $excluded, manageGitignore: $manageGitignore)
+            SharedSettingsForm(skills: skills, servers: servers, docs: docs, tools: $tools, selectedSkills: $selected, selectedTags: $selectedSkillTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, selectedDoc: $selectedDoc, selectedDocTags: $selectedDocTagSet, excluded: $excluded, manageGitignore: $manageGitignore)
                 .disabled(!usesOwnSettings)
             HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || path.isEmpty || (usesOwnSettings && tools.isEmpty)) }
         }.padding(24) }
@@ -61,11 +66,12 @@ struct ProjectEditor: View {
 
     private func load() {
         selectedServers = Set(selectedServerIDs); selectedMCPtags = Set(selectedServerTags)
+        selectedDoc = selectedDocIDs.first; selectedDocTagSet = Set(selectedDocTags)
         guard let project else { manageGitignore = true; return }
         name = project.name; path = project.path
         usesOwnSettings = root == nil || project.overridesRoot == true
         let source = usesOwnSettings ? project : (inheritedFrom ?? project)
-        tools = Set(source.tools); selected = Set(source.skillIDs); selectedTags = Set(source.tags)
+        tools = Set(source.tools); selected = Set(source.skillIDs); selectedSkillTags = Set(source.tags)
         excluded = Set(source.excludedSkillIDs ?? []); manageGitignore = source.manageGitignore ?? false
     }
 
@@ -77,12 +83,13 @@ struct ProjectEditor: View {
             id: project?.id ?? UUID(), name: name, path: path,
             tools: follows ? [] : Array(tools),
             skillIDs: follows ? [] : Array(selected),
-            tags: follows ? [] : Array(selectedTags).sorted(),
+            tags: follows ? [] : Array(selectedSkillTags).sorted(),
             excludedSkillIDs: follows || excluded.isEmpty ? nil : Array(excluded).sorted(),
             manageGitignore: follows ? nil : manageGitignore,
             rootID: project?.rootID,
             overridesRoot: root == nil ? nil : (usesOwnSettings ? true : nil))
-        onSave(saved, follows ? [] : Array(selectedServers), follows ? [] : Array(selectedMCPtags).sorted())
+        onSave(saved, follows ? [] : Array(selectedServers), follows ? [] : Array(selectedMCPtags).sorted(),
+               follows ? [] : (selectedDoc.map { [$0] } ?? []), follows ? [] : Array(selectedDocTagSet).sorted())
     }
 
     private func chooseFolder() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; if panel.runModal() == .OK { path = panel.url?.path ?? path } }
@@ -93,17 +100,22 @@ struct ProjectRootEditor: View {
     @Environment(\.dismiss) private var dismiss
     let skills: [Skill]
     let servers: [MCPServer]
+    let docs: [AgentDoc]
     let root: ProjectRoot
     let followingProjects: Int
     let selectedServerIDs: [UUID]
     let selectedServerTags: [String]
-    let onSave: (ProjectRoot, [UUID], [String]) -> Void
+    let selectedDocIDs: [String]
+    let selectedDocTags: [String]
+    let onSave: (ProjectRoot, [UUID], [String], [String], [String]) -> Void
     @State private var name = ""
     @State private var tools = Set<Tool>()
     @State private var selected = Set<String>()
     @State private var selectedTags = Set<String>()
     @State private var selectedServers = Set<UUID>()
     @State private var selectedMCPtags = Set<String>()
+    @State private var selectedDoc: String?
+    @State private var selectedDocTagSet = Set<String>()
     @State private var excluded = Set<String>()
     @State private var manageGitignore = false
     @State private var watchesNewFolders = true
@@ -131,7 +143,7 @@ struct ProjectRootEditor: View {
                     }
                 }.padding(6)
             }
-            SharedSettingsForm(skills: skills, servers: servers, tools: $tools, selectedSkills: $selected, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, excluded: $excluded, manageGitignore: $manageGitignore)
+            SharedSettingsForm(skills: skills, servers: servers, docs: docs, tools: $tools, selectedSkills: $selected, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, selectedDoc: $selectedDoc, selectedDocTags: $selectedDocTagSet, excluded: $excluded, manageGitignore: $manageGitignore)
             HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || tools.isEmpty) }
         }.padding(24) }
         .frame(width: 700, height: 900)
@@ -140,12 +152,13 @@ struct ProjectRootEditor: View {
             excluded = Set(root.excludedSkillIDs ?? []); manageGitignore = root.manageGitignore ?? false
             watchesNewFolders = root.watchesNewFolders; ignoredPaths = root.ignoredPaths
             selectedServers = Set(selectedServerIDs); selectedMCPtags = Set(selectedServerTags)
+            selectedDoc = selectedDocIDs.first; selectedDocTagSet = Set(selectedDocTags)
         }
     }
 
     private func save() {
         let updated = ProjectRoot(id: root.id, name: name, path: root.path, tools: Array(tools), skillIDs: Array(selected), tags: Array(selectedTags).sorted(), excludedSkillIDs: excluded.isEmpty ? nil : Array(excluded).sorted(), manageGitignore: manageGitignore, watchesNewFolders: watchesNewFolders, ignoredPaths: ignoredPaths)
-        onSave(updated, Array(selectedServers), Array(selectedMCPtags).sorted())
+        onSave(updated, Array(selectedServers), Array(selectedMCPtags).sorted(), selectedDoc.map { [$0] } ?? [], Array(selectedDocTagSet).sorted())
     }
 }
 /// What `Dodaj wiele` produces: either a parent folder plus the subfolders picked from it, or —
@@ -156,15 +169,17 @@ struct BatchProjectRequest {
     var projects: [Project] = []
     var serverIDs: [UUID] = []
     var serverTags: [String] = []
+    var docIDs: [String] = []
+    var docTags: [String] = []
     /// Subfolders left unticked are an answer too, so by default they are not proposed again.
     var treatingExistingAsKnown = true
 }
 struct BatchProjectView: View {
     @Environment(\.dismiss) private var dismiss
-    let skills: [Skill]; let servers: [MCPServer]; let existingProjects: [Project]; let existingRoots: [ProjectRoot]
+    let skills: [Skill]; let servers: [MCPServer]; let docs: [AgentDoc]; let existingProjects: [Project]; let existingRoots: [ProjectRoot]
     let onSave: (BatchProjectRequest) -> Void
     @State private var root = ""; @State private var folders: [URL] = []; @State private var selectedFolders = Set<String>()
-    @State private var tools = Set(Tool.allCases); @State private var selectedSkills = Set<String>(); @State private var selectedTags = Set<String>(); @State private var selectedServers = Set<UUID>(); @State private var selectedMCPtags = Set<String>(); @State private var excluded = Set<String>(); @State private var manageGitignore = true; @State private var scanError = ""
+    @State private var tools = Set(Tool.allCases); @State private var selectedSkills = Set<String>(); @State private var selectedTags = Set<String>(); @State private var selectedServers = Set<UUID>(); @State private var selectedMCPtags = Set<String>(); @State private var selectedDoc: String?; @State private var selectedDocTagSet = Set<String>(); @State private var excluded = Set<String>(); @State private var manageGitignore = true; @State private var scanError = ""
     @State private var sharedSettings = true; @State private var watchesNewFolders = true; @State private var onlyFutureFolders = true; @State private var rootName = ""
     private var existingPaths: Set<String> { Set(existingProjects.map { URL(fileURLWithPath: $0.path).standardizedFileURL.path }) }
     private var availableFolders: [URL] { folders.filter { !existingPaths.contains($0.standardizedFileURL.path) } }
@@ -193,7 +208,7 @@ struct BatchProjectView: View {
             if folders.isEmpty { Text("Wybierz folder, aby znaleźć projekty.").foregroundStyle(.secondary) }
             else { HStack { Button("Zaznacz dostępne") { selectedFolders = Set(availableFolders.map(\.path)) }; Button("Wyczyść") { selectedFolders.removeAll() }; Spacer(); Text("Wybrano \(selectedFolders.count)").foregroundStyle(.secondary) }; ForEach(folders, id: \.path) { folder in let exists = existingPaths.contains(folder.standardizedFileURL.path); Toggle(isOn: folderBinding(folder)) { HStack { Image(systemName: "folder"); Text(folder.lastPathComponent); Spacer(); if exists { Text("już dodany").font(.caption).foregroundStyle(.secondary) } } }.toggleStyle(.checkbox).disabled(exists) } }
         }.padding(6) }.frame(maxHeight: 230)
-        SharedSettingsForm(skills: skills, servers: servers, tools: $tools, selectedSkills: $selectedSkills, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, excluded: $excluded, manageGitignore: $manageGitignore)
+        SharedSettingsForm(skills: skills, servers: servers, docs: docs, tools: $tools, selectedSkills: $selectedSkills, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, selectedDoc: $selectedDoc, selectedDocTags: $selectedDocTagSet, excluded: $excluded, manageGitignore: $manageGitignore)
         HStack { Spacer(); Button("Anuluj") { dismiss() }; Button(sharedSettings ? "Dodaj folder i \(selectedFolders.count) projektów" : "Dodaj \(selectedFolders.count) projektów") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(saveDisabled) }
     }.padding(24) }.frame(width: 760, height: 900) }
 
@@ -211,11 +226,11 @@ struct BatchProjectView: View {
         let exclusions = excluded.isEmpty ? nil : Array(excluded).sorted()
         guard sharedSettings else {
             let projects = chosen.map { Project(name: $0.lastPathComponent, path: $0.path, tools: Array(tools), skillIDs: Array(selectedSkills), tags: Array(selectedTags).sorted(), excludedSkillIDs: exclusions, manageGitignore: manageGitignore) }
-            onSave(BatchProjectRequest(root: nil, projects: projects, serverIDs: Array(selectedServers), serverTags: Array(selectedMCPtags).sorted()))
+            onSave(BatchProjectRequest(root: nil, projects: projects, serverIDs: Array(selectedServers), serverTags: Array(selectedMCPtags).sorted(), docIDs: selectedDoc.map { [$0] } ?? [], docTags: Array(selectedDocTagSet).sorted()))
             return
         }
         let folder = ProjectRoot(name: rootName, path: root, tools: Array(tools), skillIDs: Array(selectedSkills), tags: Array(selectedTags).sorted(), excludedSkillIDs: exclusions, manageGitignore: manageGitignore, watchesNewFolders: watchesNewFolders)
-        onSave(BatchProjectRequest(root: folder, folders: chosen.map(\.path), serverIDs: Array(selectedServers), serverTags: Array(selectedMCPtags).sorted(), treatingExistingAsKnown: onlyFutureFolders))
+        onSave(BatchProjectRequest(root: folder, folders: chosen.map(\.path), serverIDs: Array(selectedServers), serverTags: Array(selectedMCPtags).sorted(), docIDs: selectedDoc.map { [$0] } ?? [], docTags: Array(selectedDocTagSet).sorted(), treatingExistingAsKnown: onlyFutureFolders))
     }
 }
 /// Turns a folder that already holds projects into a parent folder with shared settings.
@@ -234,6 +249,8 @@ struct GroupRootSetupView: View {
     @State private var selectedTags = Set<String>()
     @State private var selectedServers = Set<UUID>()
     @State private var selectedMCPtags = Set<String>()
+    @State private var selectedDoc: String?
+    @State private var selectedDocTagSet = Set<String>()
     @State private var excluded = Set<String>()
     @State private var manageGitignore = false
     @State private var watchesNewFolders = true
@@ -272,7 +289,7 @@ struct GroupRootSetupView: View {
                      : "Agentbox zapyta także o podfoldery, które już tam leżą i nie są projektami.")
                     .font(.caption).foregroundStyle(.secondary)
             }.padding(6) }
-            SharedSettingsForm(skills: model.skills, servers: model.mcp.servers, tools: $tools, selectedSkills: $selectedSkills, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, excluded: $excluded, manageGitignore: $manageGitignore)
+            SharedSettingsForm(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, tools: $tools, selectedSkills: $selectedSkills, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, selectedDoc: $selectedDoc, selectedDocTags: $selectedDocTagSet, excluded: $excluded, manageGitignore: $manageGitignore)
             HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Utwórz folder nadrzędny") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || nameTaken || tools.isEmpty) }
         }.padding(24) }
         .frame(width: 760, height: 900)
@@ -295,6 +312,8 @@ struct GroupRootSetupView: View {
         manageGitignore = !projects.isEmpty && projects.allSatisfy { $0.manageGitignore == true }
         selectedServers = Set(projects.flatMap { model.selectedMCPServerIDs(for: $0) })
         selectedMCPtags = Set(projects.flatMap { model.selectedMCPServerTags(for: $0) })
+        selectedDoc = projects.compactMap { model.selectedDocIDs(for: $0).first }.first
+        selectedDocTagSet = Set(projects.flatMap { model.selectedDocTags(for: $0) })
     }
 
     /// What the project would gain or lose, counted the same way synchronization resolves it.
@@ -332,7 +351,7 @@ struct GroupRootSetupView: View {
         let root = ProjectRoot(name: name, path: folderPath, tools: Array(tools), skillIDs: Array(selectedSkills), tags: Array(selectedTags).sorted(), excludedSkillIDs: excluded.isEmpty ? nil : Array(excluded).sorted(), manageGitignore: manageGitignore, watchesNewFolders: watchesNewFolders)
         let followers = projects.map(\.id).filter { following.contains($0) }
         let owners = projects.map(\.id).filter { !following.contains($0) }
-        model.adoptGroupIntoRoot(root, following: followers, keepingOwnSettings: owners, serverIDs: Array(selectedServers), serverTags: Array(selectedMCPtags).sorted(), treatingExistingAsKnown: onlyFutureFolders)
+        model.adoptGroupIntoRoot(root, following: followers, keepingOwnSettings: owners, serverIDs: Array(selectedServers), serverTags: Array(selectedMCPtags).sorted(), docIDs: selectedDoc.map { [$0] } ?? [], docTags: Array(selectedDocTagSet).sorted(), treatingExistingAsKnown: onlyFutureFolders)
     }
 }
 /// Subfolders that showed up in a watched parent folder. Each one is a yes/no question, and both

@@ -18,6 +18,7 @@ public actor SkillboxService {
         _ = try await store.catalog()
         _ = try await store.configuration()
         _ = try await store.mcpConfiguration()
+        _ = try await store.docsConfiguration()
         _ = try await store.secrets()
     }
 
@@ -287,10 +288,10 @@ public actor SkillboxService {
         config.projects.append(project); try await store.save(config); return project
     }
 
-    /// Creates a project and its skill and MCP assignments in one operation. The GUI used to call
-    /// three separate methods, which took three snapshots for a single user action.
+    /// Creates a project and its skill, MCP and document assignments in one operation. The GUI used
+    /// to call separate methods for each, which took a snapshot per call for a single user action.
     @discardableResult
-    public func addProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async throws -> Project {
+    public func addProject(_ project: Project, serverIDs: [UUID], serverTags: [String], docIDs: [String] = [], docTags: [String] = []) async throws -> Project {
         let url = URL(fileURLWithPath: project.path).standardizedFileURL
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
@@ -300,11 +301,13 @@ public actor SkillboxService {
         config.projects.append(stored)
         var mcp = try await store.mcpConfiguration()
         Self.assign(&mcp, projectID: stored.id, serverIDs: serverIDs, tags: serverTags)
-        try await store.save(config, mcp)
+        var docs = try await store.docsConfiguration()
+        Self.assignDocs(&docs, id: stored.id, docIDs: docIDs, tags: docTags)
+        try await store.save(config, mcp, docs)
         return stored
     }
 
-    public func updateProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async throws {
+    public func updateProject(_ project: Project, serverIDs: [UUID], serverTags: [String], docIDs: [String] = [], docTags: [String] = []) async throws {
         var config = try await store.configuration()
         guard let index = config.projects.firstIndex(where: { $0.id == project.id }) else { throw SkillboxError.projectNotFound(project.name) }
         guard !config.projects.contains(where: { $0.id != project.id && $0.name.caseInsensitiveCompare(project.name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(project.name) już istnieje") }
@@ -312,12 +315,14 @@ public actor SkillboxService {
         guard fm.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
         config.projects[index] = Self.pruned(project, in: try await store.catalog())
         var mcp = try await store.mcpConfiguration()
-        // A project following its parent folder reads the folder's MCP selection, so writing one
-        // under its own id would only leave a record nothing ever uses.
+        var docs = try await store.docsConfiguration()
+        // A project following its parent folder reads the folder's MCP and document selections, so
+        // writing one under its own id would only leave a record nothing ever uses.
         if !config.inheritsRoot(config.projects[index]) {
             Self.assign(&mcp, projectID: project.id, serverIDs: serverIDs, tags: serverTags)
+            Self.assignDocs(&docs, id: project.id, docIDs: docIDs, tags: docTags)
         }
-        try await store.save(config, mcp)
+        try await store.save(config, mcp, docs)
     }
 
     static func assign(_ mcp: inout MCPConfiguration, projectID: UUID, serverIDs: [UUID], tags: [String]) {
@@ -408,7 +413,10 @@ public actor SkillboxService {
         var mcp = try await store.mcpConfiguration()
         var servers = mcp.projectServerIDs ?? [:]; servers.removeValue(forKey: id.uuidString); mcp.projectServerIDs = servers
         var tags = mcp.projectServerTags ?? [:]; tags.removeValue(forKey: id.uuidString); mcp.projectServerTags = tags
-        try await store.save(config, mcp)
+        var docs = try await store.docsConfiguration()
+        var docIDs = docs.projectDocIDs ?? [:]; docIDs.removeValue(forKey: id.uuidString); docs.projectDocIDs = docIDs
+        var docTags = docs.projectDocTags ?? [:]; docTags.removeValue(forKey: id.uuidString); docs.projectDocTags = docTags
+        try await store.save(config, mcp, docs)
     }
 
     /// Skill directories sitting in a project that Agentbox does not manage and that the library
@@ -630,7 +638,7 @@ public actor SkillboxService {
         let hasRemote = (try? ProcessRunner.run("/usr/bin/git", ["remote", "get-url", "origin"], cwd: root)) != nil
         if requireRemote, !hasRemote { throw SkillboxError.commandFailed("brak zdalnego repozytorium Git; skonfiguruj origin lub podaj --remote") }
         var tracked = [".gitignore", "skills"]
-        for name in ["catalog.json", "mcp.json"] where fm.fileExists(atPath: root.appending(path: name).path) { tracked.append(name) }
+        for name in ["catalog.json", "mcp.json", "docs.json"] where fm.fileExists(atPath: root.appending(path: name).path) { tracked.append(name) }
         _ = try ProcessRunner.run("/usr/bin/git", ["add"] + tracked, cwd: root)
         let staged = try ProcessRunner.run("/usr/bin/git", ["diff", "--cached", "--name-only"], cwd: root)
         if !staged.isEmpty { _ = try ProcessRunner.run("/usr/bin/git", ["commit", "-m", message], cwd: root) }

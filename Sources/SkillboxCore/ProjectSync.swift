@@ -57,9 +57,9 @@ extension SkillboxService {
             }
             do {
                 let preview = try await previewProjectSync(projectID: project.id)
-                let added = preview.skills.reduce(0) { $0 + $1.added.count } + preview.mcp.reduce(0) { $0 + $1.added.count }
+                let added = preview.skills.reduce(0) { $0 + $1.added.count } + preview.mcp.reduce(0) { $0 + $1.added.count } + (preview.docs.first?.added.count ?? 0)
                 let outdated = preview.skills.reduce(0) { $0 + $1.updated.count }
-                let removed = preview.skills.reduce(0) { $0 + $1.removed.count } + preview.mcp.reduce(0) { $0 + $1.removed.count }
+                let removed = preview.skills.reduce(0) { $0 + $1.removed.count } + preview.mcp.reduce(0) { $0 + $1.removed.count } + (preview.docs.first?.removed.count ?? 0)
                 let stale = preview.mcp.contains { $0.staleFile != nil } ? 1 : 0
                 statuses.append(ProjectStatus(
                     projectID: project.id,
@@ -86,9 +86,12 @@ extension SkillboxService {
         var targets = tools.map { projectURL.appending(path: $0.projectSkillsPath) }
         let mcpPreviews = try await previewMCPRemovingEverything(project: project)
         targets += mcpPreviews.map { URL(fileURLWithPath: $0.file) }
-        // Only the manifest — backing up the whole .skillbox directory would copy the backup
+        let docPreviews = try DocsRenderer.preview(project: projectURL, doc: nil)
+        targets += docPreviews.map { URL(fileURLWithPath: $0.file) }
+        // Only the manifests — backing up the whole .skillbox directory would copy the backup
         // directory into itself.
         targets.append(projectURL.appending(path: ".skillbox/mcp-manifest.json"))
+        targets.append(projectURL.appending(path: ".skillbox/docs-manifest.json"))
         var unique: [URL] = []
         for target in targets where !unique.contains(target) { unique.append(target) }
         let scratch = Self.scratchDirectory()
@@ -112,6 +115,10 @@ extension SkillboxService {
             }
             let manifest = projectURL.appending(path: ".skillbox/mcp-manifest.json")
             if fm.fileExists(atPath: manifest.path) { try fm.removeItem(at: manifest) }
+            try DocsRenderer.apply(previews: docPreviews, project: projectURL)
+            removed += docPreviews.flatMap { preview in preview.removed.map { "\(URL(fileURLWithPath: preview.file).lastPathComponent): \($0)" } }
+            let docsManifest = projectURL.appending(path: ".skillbox/docs-manifest.json")
+            if fm.fileExists(atPath: docsManifest.path) { try fm.removeItem(at: docsManifest) }
             // The manifest was the last thing Agentbox kept there; an emptied .skillbox is ours to
             // take away too instead of leaving clutter in the user's repository.
             let skillboxDirectory = projectURL.appending(path: ".skillbox")
@@ -190,7 +197,7 @@ extension SkillboxService {
         let skills = try perTool.map { tool, current in
             try SkillboxService.skillPreview(tool: tool, target: URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath), current: current, library: library)
         }
-        return ProjectSyncPreview(skills: skills, mcp: try await previewMCP(projectID: projectID))
+        return ProjectSyncPreview(skills: skills, mcp: try await previewMCP(projectID: projectID), docs: try await previewDocs(projectID: projectID))
     }
 
     /// True when synchronizing would write exactly what is already on disk.
@@ -207,10 +214,15 @@ extension SkillboxService {
             let target = URL(fileURLWithPath: item.target)
             for skill in skills where !Self.directoryMatches(library.appending(path: skill.id), target.appending(path: skill.id)) { return false }
         }
-        return preview.mcp.allSatisfy { item in
+        let mcpUpToDate = preview.mcp.allSatisfy { item in
             guard item.staleFile == nil else { return false }
             let existing = try? String(contentsOf: URL(fileURLWithPath: item.file), encoding: .utf8)
             // Empty content means "this file should not exist", so a missing file is up to date.
+            return item.content.isEmpty ? existing == nil : existing == item.content
+        }
+        guard mcpUpToDate else { return false }
+        return preview.docs.allSatisfy { item in
+            let existing = try? String(contentsOf: URL(fileURLWithPath: item.file), encoding: .utf8)
             return item.content.isEmpty ? existing == nil : existing == item.content
         }
     }
@@ -272,6 +284,8 @@ extension SkillboxService {
         targets += preview.mcp.map { URL(fileURLWithPath: $0.file) }
         targets += preview.mcp.compactMap { $0.staleFile.map(URL.init(fileURLWithPath:)) }
         targets.append(projectURL.appending(path: ".skillbox/mcp-manifest.json"))
+        targets += preview.docs.map { URL(fileURLWithPath: $0.file) }
+        targets.append(projectURL.appending(path: ".skillbox/docs-manifest.json"))
         var unique: [URL] = []
         for target in targets where !unique.contains(target) { unique.append(target) }
         // The rollback copy exists only for the duration of this write. Once the sync succeeds it
@@ -285,6 +299,7 @@ extension SkillboxService {
         do {
             _ = try await syncProject(id: projectID)
             _ = try await syncMCP(projectID: projectID)
+            _ = try await syncDocs(projectID: projectID)
             return preview
         } catch {
             try? Self.applySyncBackup(project: projectURL, backup: backup, metadata: metadata)

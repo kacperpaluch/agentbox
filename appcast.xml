@@ -6,6 +6,26 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.13.0</title>
+      <pubDate>Thu, 27 Aug 2026 21:22:13 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.13.0</link>
+      <sparkle:version>29</sparkle:version>
+      <sparkle:shortVersionString>0.13.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.13.0</h2>
+        <ul>
+          <li>Nowa sekcja „Dokumenty”: biblioteka współdzielonych tekstów <code>AGENTS.md</code>, tagowana i przypisywana do projektów tak samo jak skille i serwery MCP. <code>CLAUDE.md</code> generuje się automatycznie jako import <code>@AGENTS.md</code> — jeden tekst obsługuje oba narzędzia bez duplikacji. CLI: <code>agentbox docs list|new|tag|delete|assign|preview|sync</code>.</li>
+          <li>Skille i serwery MCP są teraz sortowane alfabetycznie w zakładkach i na wszystkich listach wyboru w edytorach projektów i folderów.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.13.0/Agentbox-0.13.0.dmg"
+        length="5542531"
+        type="application/octet-stream"
+        sparkle:edSignature="gKyhbCvT3E0N/+XUkOBCYl6pH8+HnNX97fdlUyRffZ1+irR/eOj9mRvzFc9BW8IVbr/V+tShCCvVcSJR/cNXBQ==" />
+    </item>
+    <item>
       <title>Agentbox 0.12.0</title>
       <pubDate>Thu, 27 Aug 2026 08:34:26 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.12.0</link>

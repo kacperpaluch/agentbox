@@ -113,6 +113,30 @@ public struct DetectedProjectFolder: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
+/// A shared text synchronized into a project as `AGENTS.md`. `CLAUDE.md` is never edited directly —
+/// Agentbox always generates it as a one-line `@AGENTS.md` import, the convention Claude Code itself
+/// documents for reading the same instructions as other agents without duplicating the text.
+public struct AgentDoc: Codable, Identifiable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+    public var tags: [String]
+    public var content: String
+    public var updatedAt: Date
+
+    public init(id: String, name: String, tags: [String] = [], content: String, updatedAt: Date = .now) {
+        self.id = id; self.name = name; self.tags = tags
+        self.content = content; self.updatedAt = updatedAt
+    }
+}
+
+public struct DocsConfiguration: Codable, Sendable {
+    public var version = 1
+    public var docs: [AgentDoc] = []
+    public var projectDocIDs: [String: [String]]?
+    public var projectDocTags: [String: [String]]?
+    public init() {}
+}
+
 public struct Catalog: Codable, Sendable {
     public var version = 1
     public var skills: [Skill] = []
@@ -276,10 +300,25 @@ public struct SkillSyncPreview: Sendable {
     }
 }
 
+/// The plan for one generated file that is not tied to a specific `Tool` — today `AGENTS.md` and the
+/// `CLAUDE.md` import that is always generated alongside it.
+public struct DocPreview: Sendable {
+    public var file: String
+    /// The full new content of `file`. Empty means the file should not exist at all: it is never
+    /// created, and an existing managed copy is removed.
+    public var content: String
+    public var added: [String]
+    public var removed: [String]
+    public init(file: String, content: String, added: [String], removed: [String]) {
+        self.file = file; self.content = content; self.added = added; self.removed = removed
+    }
+}
+
 public struct ProjectSyncPreview: Sendable {
     public var skills: [SkillSyncPreview]
     public var mcp: [MCPPreview]
-    public init(skills: [SkillSyncPreview], mcp: [MCPPreview]) { self.skills = skills; self.mcp = mcp }
+    public var docs: [DocPreview]
+    public init(skills: [SkillSyncPreview], mcp: [MCPPreview], docs: [DocPreview] = []) { self.skills = skills; self.mcp = mcp; self.docs = docs }
 }
 
 public struct ProjectSyncPlan: Identifiable, Sendable {
@@ -371,6 +410,7 @@ public enum SkillboxError: LocalizedError {
     case invalidSkill(String), duplicateSkill(String), skillNotFound(String)
     case projectNotFound(String), commandFailed(String), unsafePath(String)
     case mcpConflict(String), skillConflict(String)
+    case docNotFound(String), docConflict(String)
 
     public var errorDescription: String? {
         switch self {
@@ -382,6 +422,8 @@ public enum SkillboxError: LocalizedError {
         case .unsafePath(let value): "Niebezpieczna ścieżka: \(value)"
         case .mcpConflict(let value): "Konflikt MCP: \(value)"
         case .skillConflict(let value): "Konflikt skilla: \(value)"
+        case .docNotFound(let value): "Nie znaleziono dokumentu: \(value)"
+        case .docConflict(let value): "Konflikt dokumentu: \(value)"
         }
     }
 }

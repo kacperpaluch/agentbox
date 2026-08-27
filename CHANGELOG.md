@@ -6,6 +6,13 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-08-27
+
+### Dodano
+
+- Nowa sekcja „Dokumenty”: biblioteka współdzielonych tekstów `AGENTS.md`, tagowana i przypisywana do projektów tak samo jak skille i serwery MCP (wprost albo przez tag). `CLAUDE.md` nie trzeba pisać osobno — Agentbox generuje go automatycznie jako jednolinijkowy import `@AGENTS.md` (oficjalnie udokumentowany mechanizm Claude Code), więc jeden tekst obsługuje oba narzędzia bez duplikacji. Oba pliki zawsze synchronizują się razem, z tym samym pełnym nadpisaniem, backupem i rollbackiem co reszta projektu, i tą samą ochroną ręcznie napisanych plików przed nadpisaniem. CLI: `agentbox docs list|new|tag|delete|assign|preview|sync`.
+- Skille i serwery MCP są teraz konsekwentnie sortowane alfabetycznie — w zakładkach Biblioteka/MCP oraz na wszystkich listach wyboru w edytorach projektów i folderów.
+
 ## [0.12.0] - 2026-08-27
 
 ### Dodano

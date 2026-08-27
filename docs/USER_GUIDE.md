@@ -70,7 +70,7 @@ Jeśli w projekcie leży ręcznie napisany katalog ze `SKILL.md`, którego nie m
 
 ### Skille, których Agentbox nie zarządza
 
-Agentbox usuwa i zastępuje wyłącznie katalogi wymienione w swoim manifeście `.skillbox.json`. Jeśli w katalogu docelowym leży katalog skilla o tej samej nazwie, którego w manifeście nie ma — na przykład skill napisany ręcznie w projekcie — synchronizacja zatrzymuje się z komunikatem `Konflikt skilla` i nie zapisuje niczego. Usuń ten katalog albo zmień nazwę skilla w bibliotece, jeśli ma go zastąpić. Ta sama zasada chroni ręcznie dodane serwery MCP.
+Agentbox usuwa i zastępuje wyłącznie katalogi wymienione w swoim manifeście `.skillbox.json`. Jeśli w katalogu docelowym leży katalog skilla o tej samej nazwie, którego w manifeście nie ma — na przykład skill napisany ręcznie w projekcie — synchronizacja zatrzymuje się z komunikatem `Konflikt skilla` i nie zapisuje niczego. Usuń ten katalog albo zmień nazwę skilla w bibliotece, jeśli ma go zastąpić. Ta sama zasada chroni ręcznie dodane serwery MCP oraz ręcznie napisane `AGENTS.md`/`CLAUDE.md` — z jednym wyjątkiem: plik identyczny bajt w bajt z treścią przypisanego dokumentu jest przejmowany bez pytania, zamiast blokować synchronizację.
 
 ### Wynik synchronizacji wszystkich projektów
 
@@ -82,15 +82,21 @@ Serwery MCP wybiera się tak samo jak skille: pojedynczo albo dynamicznie wedłu
 
 Tagi dodaje się w szczegółach serwera MCP. Menu `Używane tagi` pokazuje istniejące wartości, co pomaga zachować jednolite nazwy. To samo menu jest dostępne podczas tagowania pojedynczych i wielu skilli. Wielkość liter nie ma znaczenia — tagi są zapisywane małymi literami, a `SEO` i `seo` to ten sam tag. Biblioteka ze starymi przypisaniami presetów (usuniętych jako funkcja w 0.3.1) migruje je automatycznie do bezpośredniego wyboru serwerów przy pierwszym otwarciu — bez utraty przypisań i bez żadnej akcji ze strony użytkownika.
 
+### Wybór dokumentu w projekcie
+
+Dokument wybiera się jednym z dwóch sposobów: wprost z listy albo dynamicznie przez tag — nigdy oboma naraz w sposób, który dawałby więcej niż jedno dopasowanie. `AGENTS.md` ma tylko jedną treść, więc jeśli tagi wciągnęłyby dwa różne dokumenty do tego samego projektu, synchronizacja zatrzymuje się z komunikatem `Konflikt dokumentu` zamiast wybierać dowolny z nich — edytor projektu ostrzega o tym już przy zaznaczaniu tagów.
+
+Zsynchronizowany dokument ląduje jako `AGENTS.md` (pełna treść) i `CLAUDE.md` (jednolinijkowy, wygenerowany import `@AGENTS.md`) w katalogu głównym projektu, niezależnie od tego, jakie narzędzia (Claude/Codex/OpenCode) ma projekt zaznaczone. `CLAUDE.md` nie edytuje się osobno — Claude Code czyta go i przez import wczytuje treść `AGENTS.md`, więc jeden tekst wystarcza obu.
+
 ### Wykluczenia w projekcie
 
 Projekt może wciągać skille tagiem i jednocześnie pomijać wybrane pozycje. W edytorze projektu zaznaczenie tagu — skilla albo MCP — od razu zaznacza i blokuje odpowiednie pozycje na liście `Pojedyncze skille`/`Pojedyncze serwery MCP`, więc widać, co wchodzi przez tag, bez otwierania osobnej listy. Tag ma pierwszeństwo także wtedy, gdy pozycja była wcześniej zaznaczona ręcznie — wygląda wtedy identycznie jak każda inna wciągnięta tagiem. Odznaczenie tagu przed zapisem przywraca zwykłe zaznaczenie; po zapisie pozycję ma już tag i to on decyduje, czy wchodzi do projektu. Sekcja `Wykluczenia` pokazuje te same skille jeszcze raz — zaznaczenie skilla tam pomija go w tym jednym projekcie. Skille wybrane tylko pojedynczo, bez pasującego tagu, usuwa się po prostu odznaczając je na liście.
 
 ### Usuwanie projektu i sprzątanie plików
 
-Usunięcie projektu daje dwie możliwości. `Usuń tylko z Agentbox` zostawia folder projektu nietknięty. `Usuń i posprzątaj pliki w projekcie` dodatkowo kasuje katalogi skilli i wpisy MCP wymienione w manifestach Agentbox — wyłącznie je. Plik konfiguracyjny, który w całości pochodził z Agentbox, znika razem z wpisami; ręcznie dodane skille i serwery MCP zostają. Przed sprzątaniem powstaje backup, który można cofnąć w sekcji `Backup`.
+Usunięcie projektu daje dwie możliwości. `Usuń tylko z Agentbox` zostawia folder projektu nietknięty. `Usuń i posprzątaj pliki w projekcie` dodatkowo kasuje katalogi skilli, wpisy MCP i dokument `AGENTS.md`/`CLAUDE.md` wymienione w manifestach Agentbox — wyłącznie je. Plik konfiguracyjny, który w całości pochodził z Agentbox, znika razem z wpisami; ręcznie dodane skille, serwery MCP i pliki dokumentów zostają. Przed sprzątaniem powstaje backup, który można cofnąć w sekcji `Backup`.
 
-Pliki i manifesty powstają tylko wtedy, gdy projekt ma co synchronizować — projekt bez wybranych skilli i serwerów MCP pozostaje nietknięty, a odznaczenie narzędzia sprząta jego pliki przy kolejnej synchronizacji.
+Pliki i manifesty powstają tylko wtedy, gdy projekt ma co synchronizować — projekt bez wybranych skilli, serwerów MCP i dokumentu pozostaje nietknięty, a odznaczenie narzędzia sprząta jego pliki skilli/MCP przy kolejnej synchronizacji.
 
 ### Ochrona przez .gitignore projektu
 

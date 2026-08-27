@@ -18,7 +18,7 @@ struct MCPView: View {
             actionBar
             List {
                 Section("Serwery") {
-                    ForEach(model.mcp.servers) { server in
+                    ForEach(model.mcp.servers.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { server in
                         HStack(alignment: .top, spacing: Space.row + 1) {
                             Toggle("", isOn: checkBinding(server.id)).labelsHidden().toggleStyle(.checkbox).padding(.top, 5)
                             MCPServerRow(server: server, onDetails: { editingServer = server }, onDelete: { serverToDelete = server })
@@ -233,8 +233,12 @@ struct MCPPreviewView: View {
                 ForEach(preview.skills, id: \.tool) { item in GroupBox { VStack(alignment: .leading, spacing: 6) { Text(item.target).font(.caption).foregroundStyle(.secondary); SyncChangeRows(added: item.added, updated: item.updated, removed: item.removed) }.padding(7) } label: { Label(item.tool.rawValue.capitalized, systemImage: "folder") } }
                 Text("MCP").font(.headline).padding(.top, 4)
                 ForEach(preview.mcp, id: \.tool.rawValue) { item in GroupBox { VStack(alignment: .leading, spacing: 8) { Text(item.file).font(.caption).foregroundStyle(.secondary); SyncChangeRows(added: item.added, updated: [], removed: item.removed); DisclosureGroup("Podgląd pliku") { Text(item.content.isEmpty ? "Plik nie jest potrzebny — nie zostanie utworzony, a istniejący pusty szkielet zostanie usunięty." : item.content).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6) } }.padding(7) } label: { Label(item.tool.rawValue.capitalized, systemImage: "doc.text") } }
+                if !preview.docs.isEmpty {
+                    Text("Dokumenty").font(.headline).padding(.top, 4)
+                    ForEach(preview.docs, id: \.file) { item in GroupBox { VStack(alignment: .leading, spacing: 8) { Text(item.file).font(.caption).foregroundStyle(.secondary); SyncChangeRows(added: item.added, updated: [], removed: item.removed); DisclosureGroup("Podgląd pliku") { Text(item.content.isEmpty ? "Plik nie jest potrzebny — nie zostanie utworzony, a istniejący zarządzany plik zostanie usunięty." : item.content).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6) } }.padding(7) } label: { Label(URL(fileURLWithPath: item.file).lastPathComponent, systemImage: "doc.text") } }
+                }
             } } }
-            HStack { Spacer(); Button("Zamknij") { dismiss() }; Button("Synchronizuj skille i MCP") { Task { await model.syncEverything(project) } }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || preview == nil || model.isWorking) }
+            HStack { Spacer(); Button("Zamknij") { dismiss() }; Button("Synchronizuj skille, MCP i dokumenty") { Task { await model.syncEverything(project) } }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || preview == nil || model.isWorking) }
         }.padding(24).frame(width: 820, height: 700).task { do { preview = try await model.previewProjectSync(project) } catch { self.error = error.localizedDescription; model.reportError(error) } }
     }
 }

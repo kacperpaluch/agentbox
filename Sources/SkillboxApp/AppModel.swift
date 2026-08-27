@@ -15,6 +15,7 @@ import SkillboxCore
     @Published var hasCheckedUpdates = false
     @Published var rootPath: String
     @Published var mcp = MCPConfiguration()
+    @Published var docs = DocsConfiguration()
     @Published var operationLog: [OperationLogEntry] = []
     @Published var librarySnapshots: [LibrarySnapshot] = []
     @Published var fullBackups: [FullBackupInfo] = []
@@ -47,7 +48,7 @@ import SkillboxCore
     // tags), so it recomputes them here too. That is the only place callers need to remember to
     // call — a skill tag edit or a new tagged MCP server no longer leaves the Projects tab showing
     // a stale "synced" badge until someone happens to touch a project directly.
-    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); if selection == nil { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses() }
+    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); docs = try await service?.docsConfiguration() ?? DocsConfiguration(); if selection == nil { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses() }
 
     // MARK: Parent folders
 
@@ -92,18 +93,18 @@ import SkillboxCore
     func addBatch(_ request: BatchProjectRequest) async {
         await perform {
             if let root = request.root {
-                _ = try await self.service?.addProjectRoot(root, folders: request.folders, serverIDs: request.serverIDs, serverTags: request.serverTags, treatingExistingAsKnown: request.treatingExistingAsKnown)
+                _ = try await self.service?.addProjectRoot(root, folders: request.folders, serverIDs: request.serverIDs, serverTags: request.serverTags, docIDs: request.docIDs, docTags: request.docTags, treatingExistingAsKnown: request.treatingExistingAsKnown)
                 self.message = "Dodano folder \(root.name) i \(request.folders.count) projektów"
             } else {
-                for project in request.projects { _ = try await self.service?.addProject(project, serverIDs: request.serverIDs, serverTags: request.serverTags) }
+                for project in request.projects { _ = try await self.service?.addProject(project, serverIDs: request.serverIDs, serverTags: request.serverTags, docIDs: request.docIDs, docTags: request.docTags) }
                 self.message = "Dodano \(request.projects.count) projektów"
             }
         }
     }
-    func adoptGroupIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], serverIDs: [UUID], serverTags: [String], treatingExistingAsKnown: Bool) {
-        Task { await perform { _ = try await self.service?.adoptProjectsIntoRoot(root, following: following, keepingOwnSettings: keepingOwnSettings, serverIDs: serverIDs, serverTags: serverTags, treatingExistingAsKnown: treatingExistingAsKnown); self.message = "Utworzono folder \(root.name); wspólnych ustawień używa \(following.count) projektów" } }
+    func adoptGroupIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], serverIDs: [UUID], serverTags: [String], docIDs: [String], docTags: [String], treatingExistingAsKnown: Bool) {
+        Task { await perform { _ = try await self.service?.adoptProjectsIntoRoot(root, following: following, keepingOwnSettings: keepingOwnSettings, serverIDs: serverIDs, serverTags: serverTags, docIDs: docIDs, docTags: docTags, treatingExistingAsKnown: treatingExistingAsKnown); self.message = "Utworzono folder \(root.name); wspólnych ustawień używa \(following.count) projektów" } }
     }
-    func saveRoot(_ root: ProjectRoot, serverIDs: [UUID], serverTags: [String]) async { await perform { try await self.service?.updateProjectRoot(root, serverIDs: serverIDs, serverTags: serverTags); self.message = "Zapisano ustawienia folderu \(root.name)" } }
+    func saveRoot(_ root: ProjectRoot, serverIDs: [UUID], serverTags: [String], docIDs: [String], docTags: [String]) async { await perform { try await self.service?.updateProjectRoot(root, serverIDs: serverIDs, serverTags: serverTags, docIDs: docIDs, docTags: docTags); self.message = "Zapisano ustawienia folderu \(root.name)" } }
     func deleteRoot(_ root: ProjectRoot) async { await perform { try await self.service?.deleteProjectRoot(id: root.id); self.message = "Usunięto ustawienia folderu \(root.name); projekty zachowały to, co dziedziczyły" } }
     func clearIgnoredFolders(_ root: ProjectRoot) async { await perform { try await self.service?.clearIgnoredFolders(rootID: root.id); self.message = "Wyczyszczono pominięte podfoldery w \(root.name)" } }
     func ignoreDetected(_ folders: [DetectedProjectFolder]) async { await perform { try await self.service?.ignoreDetectedFolders(folders); self.message = "Pominięto \(folders.count) podfolderów" } }
@@ -152,11 +153,14 @@ import SkillboxCore
     func saveTags(_ id: String, text: String) async { await perform(autoBackup: true) { try await self.service?.setTags(skillID: id, tags: Self.csv(text)); self.message = "Zapisano tagi" } }
     func addTags(_ ids: Set<String>, text: String) async { await perform(autoBackup: true) { try await self.service?.addTags(skillIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) skilli" } }
     func deleteSkill(_ id: String) async { await perform(autoBackup: true) { try await self.service?.deleteSkill(skillID: id); if self.selection == id { self.selection = nil; self.markdown = "" }; self.updateAvailable.remove(id); self.message = "Usunięto skill \(id)" } }
-    func addProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async { await perform { _ = try await self.service?.addProject(project, serverIDs: serverIDs, serverTags: serverTags); self.message = "Dodano projekt" } }
-    func updateProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async { await perform { try await self.service?.updateProject(project, serverIDs: serverIDs, serverTags: serverTags); self.message = "Zapisano projekt" } }
+    func addProject(_ project: Project, serverIDs: [UUID], serverTags: [String], docIDs: [String], docTags: [String]) async { await perform { _ = try await self.service?.addProject(project, serverIDs: serverIDs, serverTags: serverTags, docIDs: docIDs, docTags: docTags); self.message = "Dodano projekt" } }
+    func updateProject(_ project: Project, serverIDs: [UUID], serverTags: [String], docIDs: [String], docTags: [String]) async { await perform { try await self.service?.updateProject(project, serverIDs: serverIDs, serverTags: serverTags, docIDs: docIDs, docTags: docTags); self.message = "Zapisano projekt" } }
     func selectedMCPServerIDs(for project: Project) -> [UUID] { selectedMCPServerIDs(selectionID: (inheritsRoot(project) ? project.rootID : nil) ?? project.id) }
     func selectedMCPServerIDs(selectionID: UUID) -> [UUID] { mcp.projectServerIDs?[selectionID.uuidString] ?? [] }
     func selectedMCPServerTags(for project: Project) -> [String] { mcp.projectServerTags?[((inheritsRoot(project) ? project.rootID : nil) ?? project.id).uuidString] ?? [] }
+    func selectedDocIDs(for project: Project) -> [String] { selectedDocIDs(selectionID: (inheritsRoot(project) ? project.rootID : nil) ?? project.id) }
+    func selectedDocIDs(selectionID: UUID) -> [String] { docs.projectDocIDs?[selectionID.uuidString] ?? [] }
+    func selectedDocTags(for project: Project) -> [String] { docs.projectDocTags?[((inheritsRoot(project) ? project.rootID : nil) ?? project.id).uuidString] ?? [] }
     func deleteProject(_ project: Project, removingFiles: Bool) async {
         await perform {
             if removingFiles {
@@ -212,9 +216,27 @@ import SkillboxCore
             message = "Zapisano serwer MCP"; record(.success, message); await reload(); scheduleAutomaticBackup(); return true
         } catch { message = error.localizedDescription; record(.error, message); await reload(); return false }
     }
+    func createDoc(id: String, name: String, tags: [String], content: String) async -> Bool {
+        isWorking = true; defer { isWorking = false }
+        do {
+            let doc = try await service?.createDoc(id: id, name: name, tags: tags, content: content)
+            if let doc { selection = nil; message = "Utworzono dokument \(doc.id)" } else { message = "Utworzono dokument" }
+            record(.success, message); await reload(); scheduleAutomaticBackup(); return true
+        } catch { message = error.localizedDescription; record(.error, message); return false }
+    }
+    func saveDocContent(_ id: String, name: String, content: String) async -> Bool {
+        isWorking = true; defer { isWorking = false }
+        do {
+            try await service?.saveDocContent(docID: id, name: name, content: content)
+            message = "Zapisano \(id)"; record(.success, message); await reload(); scheduleAutomaticBackup(); return true
+        } catch { message = error.localizedDescription; record(.error, message); return false }
+    }
+    func saveDocTags(_ id: String, text: String) async { await perform(autoBackup: true) { try await self.service?.setDocTags(docID: id, tags: Self.csv(text)); self.message = "Zapisano tagi" } }
+    func addDocTags(_ ids: Set<String>, text: String) async { await perform(autoBackup: true) { try await self.service?.addDocTags(docIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) dokumentów" } }
+    func deleteDoc(_ id: String) async { await perform(autoBackup: true) { try await self.service?.deleteDoc(id: id); self.message = "Usunięto dokument \(id)" } }
     func previewMCP(_ project: Project) async throws -> [MCPPreview] { try await service?.previewMCP(projectID: project.id) ?? [] }
     func previewProjectSync(_ project: Project) async throws -> ProjectSyncPreview { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewProjectSync(projectID: project.id) }
-    func syncEverything(_ project: Project) async { await perform { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille i MCP dla \(project.name)" } }
+    func syncEverything(_ project: Project) async { await perform { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille, MCP i dokumenty dla \(project.name)" } }
     func previewAllProjectsSync() async throws -> [ProjectSyncPlan] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewAllProjectsSync() }
     func syncAllProjects() async -> [ProjectSyncOutcome] {
         isWorking = true
