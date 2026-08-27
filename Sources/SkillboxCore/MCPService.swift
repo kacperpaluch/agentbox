@@ -90,27 +90,13 @@ extension SkillboxService {
         try await store.save(config)
     }
 
-    public func saveMCPPreset(_ preset: MCPPreset) async throws {
-        var config = try await store.mcpConfiguration()
-        if let index = config.presets.firstIndex(where: { $0.id == preset.id }) { config.presets[index] = preset }
-        else { config.presets.append(preset) }
-        try await store.save(config)
-    }
-
     public func deleteMCPServer(id: UUID) async throws {
         var config = try await store.mcpConfiguration()
         if let server = config.servers.first(where: { $0.id == id }) {
             try await store.deleteSecrets(accounts: Array((server.secretEnvironment ?? [:]).values) + Array((server.secretHeaders ?? [:]).values))
         }
         config.servers.removeAll { $0.id == id }
-        for index in config.presets.indices { config.presets[index].serverIDs.removeAll { $0 == id } }
         if var assignments = config.projectServerIDs { for key in assignments.keys { assignments[key]?.removeAll { $0 == id } }; config.projectServerIDs = assignments }
-        try await store.save(config)
-    }
-
-    public func setMCPPresets(projectID: UUID, presetIDs: [UUID]) async throws {
-        var config = try await store.mcpConfiguration()
-        config.projectPresetIDs[projectID.uuidString] = presetIDs
         try await store.save(config)
     }
 
@@ -138,9 +124,7 @@ extension SkillboxService {
         // A project following a parent folder reads the folder's MCP selection, so adding a server
         // to the folder reaches every project in it.
         let selectionID = local.mcpSelectionID(for: project).uuidString
-        let presetIDs = Set(mcp.projectPresetIDs[selectionID] ?? [])
-        var serverIDs = Set(mcp.presets.filter { presetIDs.contains($0.id) }.flatMap(\.serverIDs))
-        serverIDs.formUnion(mcp.projectServerIDs?[selectionID] ?? [])
+        let serverIDs = Set(mcp.projectServerIDs?[selectionID] ?? [])
         // Lowercased on both sides, so tags saved before normalization keep matching.
         let tags = Set((mcp.projectServerTags?[selectionID] ?? []).map { $0.lowercased() })
         var servers = mcp.servers.filter { serverIDs.contains($0.id) || !tags.isDisjoint(with: ($0.tags ?? []).map { $0.lowercased() }) }.filter(\.enabled)

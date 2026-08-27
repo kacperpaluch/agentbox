@@ -10,7 +10,8 @@ public enum AgentboxCommand {
       agentbox add <folder|git-url> [--path subdir] [--branch main] [--id name]
       agentbox list | tag <skill> <tag...> | update <skill|--all>
       agentbox new <id> [--name x] [--description y] [--tags a,b] [--file plik|-]
-      agentbox project add|set|list|status|adopt|unsync ...
+      agentbox delete <skill>
+      agentbox project add|set|list|status|adopt|unsync|remove ...
       agentbox project root-add|root-adopt|roots|scan|adopt-new|ignore-new ...
       agentbox sync project <name> [--dry-run]
       agentbox sync all [--dry-run]
@@ -63,6 +64,9 @@ public enum AgentboxCommand {
             var lines = ["Dostępne aktualizacje: \(ids.count)"]
             for id in ids { _ = try await service.update(skillID: id); lines.append("Zaktualizowano \(id)") }
             return lines
+        case "delete" where rest.count >= 1:
+            try await service.deleteSkill(skillID: rest[0])
+            return ["Usunięto skill \(rest[0])"]
         case "project": return try await project(rest, service: service, args: args)
         case "sync": return try await sync(rest, service: service, args: args)
         case "refresh": return try await refresh(service: service, args: args)
@@ -112,6 +116,16 @@ public enum AgentboxCommand {
             let project = try await resolve(rest[1], service: service)
             let removed = try await service.unsyncProject(id: project.id)
             return ["Usunięto z \(project.name): \(removed.count) elementów"] + removed.map { "  \($0)" }
+        case "remove" where rest.count >= 2:
+            let project = try await resolve(rest[1], service: service)
+            var lines: [String] = []
+            if args.contains("--clean") {
+                let removed = try await service.unsyncProject(id: project.id)
+                lines.append("Usunięto z folderu projektu: \(removed.count) elementów")
+            }
+            try await service.deleteProject(id: project.id)
+            lines.append("Usunięto projekt \(project.name) z Agentbox" + (args.contains("--clean") ? "" : "; pliki w jego folderze zostały bez zmian"))
+            return lines
         case "root-add" where rest.count >= 3:
             let tools = (option("--tools", in: args) ?? "claude,codex,opencode").split(separator: ",").compactMap { Tool(rawValue: String($0)) }
             let folderURL = URL(fileURLWithPath: rest[2]).standardizedFileURL
@@ -185,7 +199,7 @@ public enum AgentboxCommand {
         return found.filter { $0.rootID == root.id }
     }
 
-    private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode] | set <nazwa> [--skills a,b] [--tags web] | list | status | adopt <nazwa> [--yes] | unsync <nazwa> | root-adopt <nazwa> <folder> [--skills a,b] [--tags x] [--keep-own projekt] | root-add <nazwa> <folder> [--tools t] [--skills a,b] [--tags x] [--folders alpha,beta] [--no-watch] | roots | scan [--root nazwa] | adopt-new [--root nazwa] [--yes] [--sync] | ignore-new [--root nazwa] | unignore <folder>"
+    private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode] | set <nazwa> [--skills a,b] [--tags web] | list | status | adopt <nazwa> [--yes] | unsync <nazwa> | remove <nazwa> [--clean] | root-adopt <nazwa> <folder> [--skills a,b] [--tags x] [--keep-own projekt] | root-add <nazwa> <folder> [--tools t] [--skills a,b] [--tags x] [--folders alpha,beta] [--no-watch] | roots | scan [--root nazwa] | adopt-new [--root nazwa] [--yes] [--sync] | ignore-new [--root nazwa] | unignore <folder>"
 
     private static func sync(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
         guard let mode = rest.first else { return [syncUsage] }
@@ -297,6 +311,11 @@ public enum AgentboxCommand {
                 try await service.saveMCPServer(MCPServer(name: name, transport: .stdio, command: command, arguments: csv("--args", in: args), environment: map("--env", in: args), tags: csv("--tags", in: args)))
             } else { throw SkillboxError.invalidSkill("podaj --url lub --command") }
             return ["Dodano serwer \(name)"]
+        case "server" where rest.count >= 3 && rest[1] == "remove":
+            let name = rest[2]
+            guard let server = config.servers.first(where: { $0.name == name }) else { throw SkillboxError.mcpConflict("serwer MCP nie istnieje: \(name)") }
+            try await service.deleteMCPServer(id: server.id)
+            return ["Usunięto serwer \(name)"]
         case "assign" where rest.count >= 2:
             let project = try await resolve(rest[1], service: service)
             let names = Set(csv("--servers", in: args))
@@ -313,7 +332,7 @@ public enum AgentboxCommand {
         }
     }
 
-    private static let mcpUsage = "Użycie: agentbox mcp list | server add <name> --url URL|--command CMD [--args a,b] [--tags x,y] | assign <project> --servers a,b [--tags x,y] | preview <project> | sync <project>"
+    private static let mcpUsage = "Użycie: agentbox mcp list | server add <name> --url URL|--command CMD [--args a,b] [--tags x,y] | server remove <name> | assign <project> --servers a,b [--tags x,y] | preview <project> | sync <project>"
 
     private static func resolve(_ name: String, service: SkillboxService) async throws -> Project {
         guard let project = try await service.listProjects().first(where: { $0.name == name }) else { throw SkillboxError.projectNotFound(name) }

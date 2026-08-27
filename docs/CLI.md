@@ -24,11 +24,12 @@ agentbox add https://github.com/user/repo.git [--path skills] [--branch main] [-
 agentbox tag nazwa-skilla seo audit
 agentbox update nazwa-skilla
 agentbox update --all
+agentbox delete nazwa-skilla
 ```
 
 `new` tworzy skill prosto w bibliotece z podanej treści. `--file` wskazuje plik, a `--file -` czyta standardowe wejście, więc skill można podać potokiem. Bez `--file` powstaje krótki szkic do uzupełnienia. Treść zaczynająca się od bloku `---` jest zapisywana bez zmian; w pozostałych przypadkach Agentbox dopisuje nagłówek YAML z `--name` i `--description`.
 
-`add` kopiuje lokalny skill albo importuje wszystkie znalezione `SKILL.md` z Git. `tag` zastępuje listę tagów wskazanego skilla. `update` działa dla skilli pochodzących z Git.
+`add` kopiuje lokalny skill albo importuje wszystkie znalezione `SKILL.md` z Git. `tag` zastępuje listę tagów wskazanego skilla. `update` działa dla skilli pochodzących z Git. `delete` usuwa skill z biblioteki i jego bezpośrednie przypisania do projektów — tak samo jak `Usuń` w szczegółach skilla; nie rusza katalogu źródłowego ani repozytorium.
 
 `agentbox update --all` najpierw sprawdza zdalne rewizje wszystkich skilli Git, a następnie pobiera wyłącznie dostępne aktualizacje. Skille lokalne są pomijane. Aktualizacja biblioteki nie zmienia automatycznie plików projektów — po niej uruchom `agentbox sync project <nazwa>` dla projektów, które mają otrzymać nowe wersje.
 
@@ -47,6 +48,8 @@ agentbox project status
 agentbox project adopt sklep
 agentbox project adopt sklep --yes
 agentbox project unsync sklep
+agentbox project remove sklep
+agentbox project remove sklep --clean
 ```
 
 `project status` pokazuje jednym rzutem, które projekty odstają od biblioteki: `✓` aktualny, `●` z liczbą zmian, `✗` zablokowany przez niezarządzany katalog lub wpis, `?` brak folderu projektu.
@@ -54,6 +57,8 @@ agentbox project unsync sklep
 `project adopt` wypisuje katalogi ze `SKILL.md`, które leżą w projekcie, nie są zarządzane przez Agentbox i nie mają odpowiednika w bibliotece. Bez `--yes` tylko je wylicza; z `--yes` kopiuje je do biblioteki jako skille lokalne.
 
 `project unsync` usuwa z folderu projektu wyłącznie to, co Agentbox ma w swoich manifestach. Ręcznie dodane skille i serwery MCP zostają nietknięte, a przed zmianą powstaje backup.
+
+`project remove` usuwa wpis projektu i jego przypisania MCP z Agentbox — folder projektu i jego pliki zostają bez zmian. `--clean` najpierw robi to, co `project unsync` (sprząta katalogi skilli i wpisy MCP z manifestów Agentbox), a dopiero potem usuwa projekt.
 
 ### Foldery nadrzędne i nowe podfoldery
 
@@ -131,17 +136,20 @@ agentbox mcp server add context7 \
   --env TOKEN=TOKEN \
   --tags seo,docs
 
-agentbox mcp server add senuto \
-  --url https://mcp.senuto.com/mcp \
-  --headers Authorization=SENUTO_TOKEN \
+agentbox mcp server add docsearch \
+  --url https://mcp.example.com/mcp \
+  --headers Authorization=DOCSEARCH_TOKEN \
   --tags seo
 
 agentbox mcp assign sklep --servers context7 --tags seo
 agentbox mcp preview sklep
 agentbox mcp sync sklep
+agentbox mcp server remove docsearch
 ```
 
 `mcp assign` zastępuje bezpośrednie serwery i tagi MCP projektu. Wartości `--env` i `--headers` są odwołaniami do zmiennych systemowych, nie lokalnymi sekretami. Pełną klasyfikacją sekretów istniejącego MCP zarządza obecnie interfejs aplikacji.
+
+`mcp server remove` usuwa serwer z biblioteki, jego bezpośrednie przypisania do projektów i jego wartości z lokalnego pliku sekretów — tak samo jak `Usuń` przy serwerze w aplikacji.
 
 ## Odtworzenie biblioteki
 
@@ -150,6 +158,8 @@ agentbox restore --remote git@github.com:user/agentbox-backup.git
 ```
 
 Pobiera skille, `catalog.json` i `mcp.json` z repozytorium backupu — na przykład przy konfiguracji nowego Maca. Projekty, lokalne ścieżki i sekrety tego Maca pozostają bez zmian. Przed zapisem powstaje pełny backup lokalny, a `.git` klona jest przejmowany, więc kolejne `agentbox backup` wypychają do tego samego repozytorium.
+
+Sekrety MCP celowo nie trafiają do tego repozytorium, więc serwery, które ich wymagają, ruszą na nowym Maku dopiero po ich uzupełnieniu. Najszybciej: skopiuj `mcp-secrets.json` z ostatniego pełnego backupu starego Maca (`<biblioteka>/backups/full/<data>/mcp-secrets.json`) do folderu nowej biblioteki przez AirDrop albo inny bezpieczny kanał.
 
 ## Backup Git
 

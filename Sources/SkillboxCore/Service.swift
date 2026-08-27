@@ -327,8 +327,6 @@ public actor SkillboxService {
         var tagAssignments = mcp.projectServerTags ?? [:]
         tagAssignments[projectID.uuidString] = normalizedTags(tags)
         mcp.projectServerTags = tagAssignments
-        // Legacy presets are replaced by the direct selection saved here.
-        mcp.projectPresetIDs[projectID.uuidString] = []
     }
 
     static func prunedServerIDs(_ serverIDs: [UUID], tags: [String], servers: [MCPServer]) -> [UUID] {
@@ -408,10 +406,6 @@ public actor SkillboxService {
             config.projectRoots = roots
         }
         var mcp = try await store.mcpConfiguration()
-        mcp.projectPresetIDs.removeValue(forKey: id.uuidString)
-        var profiles = mcp.projectProfileSelections ?? [:]
-        profiles.removeValue(forKey: id.uuidString)
-        mcp.projectProfileSelections = profiles
         var servers = mcp.projectServerIDs ?? [:]; servers.removeValue(forKey: id.uuidString); mcp.projectServerIDs = servers
         var tags = mcp.projectServerTags ?? [:]; tags.removeValue(forKey: id.uuidString); mcp.projectServerTags = tags
         try await store.save(config, mcp)

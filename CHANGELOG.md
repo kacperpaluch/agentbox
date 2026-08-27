@@ -6,6 +6,21 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-27
+
+### Dodano
+
+- CLI: `agentbox delete <skill>`, `agentbox project remove <nazwa> [--clean]` i `agentbox mcp server remove <nazwa>` — dotąd usuwanie skilli, projektów i serwerów MCP było możliwe wyłącznie w GUI.
+- Pełny backup lokalny powstaje teraz automatycznie raz dziennie (dopóki włączona jest automatyzacja w `Backup → Automatyzacja`), zamiast wymagać ręcznego kliknięcia. To jedyny mechanizm chroniący projekty i sekrety, więc łatwo było o nim zapomnieć. Zachowywanych jest 14 ostatnich kopii, starsze są usuwane automatycznie.
+- `MCP → Importuj z JSON` ma teraz przycisk „Jaki format?” z przykładem wszystkich trzech obsługiwanych wariantów wklejanego JSON-a.
+- Dokumentacja odtwarzania biblioteki na nowym Macu opisuje wprost, jak dostarczyć `mcp-secrets.json` poza Gitem (kopia z pełnego backupu przez AirDrop) — sekrety MCP celowo nie trafiają do repozytorium backupu, więc dotąd trzeba było się domyślić, że wymagają osobnego kroku.
+
+### Usunięto
+
+- Asystent AI do generowania configu MCP z instrukcji (OpenAI/Anthropic) — rzadko używana funkcja, spory kawałek UI w Ustawieniach i w oknie importu. Import z gotowego JSON-a zostaje, teraz jako `Importuj z JSON`.
+- Martwy kod po starych presetach MCP (`presets`, `projectPresetIDs`) i nieużywanych polach `group`/`profile` serwera MCP — pozostałość po funkcji usuniętej w 0.3.1, którą aplikacja dotąd bezcelowo dźwigała dalej. Biblioteki, które jeszcze mają stare przypisania przez presety, migrują się automatycznie przy pierwszym otwarciu (przypisanie trafia do bezpośrednich serwerów projektu, nic nie znika).
+- Ramowanie „MVP” w README — projekt ma już kilkanaście wydań i codzienne użycie.
+
 ## [0.11.2] - 2026-08-27
 
 ### Zmieniono

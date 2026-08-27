@@ -5,8 +5,8 @@ public actor SkillboxStore {
     public var skillsDirectory: URL { root.appending(path: "skills") }
     private var catalogURL: URL { root.appending(path: "catalog.json") }
     private var localURL: URL { root.appending(path: "projects.local.json") }
-    private var mcpURL: URL { root.appending(path: "mcp.json") }
-    private var secretsURL: URL { root.appending(path: "mcp-secrets.json") }
+    nonisolated private var mcpURL: URL { root.appending(path: "mcp.json") }
+    nonisolated private var secretsURL: URL { root.appending(path: "mcp-secrets.json") }
     private var snapshotsDirectory: URL { root.appending(path: ".agentbox-snapshots") }
     private let fm = FileManager.default
     private let encoder: JSONEncoder
@@ -19,6 +19,53 @@ public actor SkillboxStore {
         encoder.dateEncodingStrategy = .iso8601; decoder.dateDecodingStrategy = .iso8601
         try fm.createDirectory(at: self.root, withIntermediateDirectories: true)
         try fm.createDirectory(at: self.root.appending(path: "skills"), withIntermediateDirectories: true)
+        migrateLegacyMCPPresetsIfNeeded()
+        removeOrphanedAIKeysIfNeeded()
+    }
+
+    /// The AI-assisted MCP config generator was removed as a feature — any API key it saved is now
+    /// dead weight sitting in a secrets file. Old copies belong nowhere else, so wipe them.
+    nonisolated private func removeOrphanedAIKeysIfNeeded() {
+        guard let data = try? Data(contentsOf: secretsURL),
+              var raw = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return }
+        let aiKeys = raw.keys.filter { $0.hasPrefix("ai/") && $0.hasSuffix("/api-key") }
+        guard !aiKeys.isEmpty else { return }
+        aiKeys.forEach { raw.removeValue(forKey: $0) }
+        guard let newData = try? JSONSerialization.data(withJSONObject: raw, options: [.prettyPrinted, .sortedKeys]) else { return }
+        let temp = root.appending(path: ".mcp-secrets-\(UUID().uuidString).tmp")
+        guard FileManager.default.createFile(atPath: temp.path, contents: newData, attributes: [.posixPermissions: 0o600]) else { return }
+        _ = rename(temp.path, secretsURL.path)
+    }
+
+    /// One-time cleanup for libraries written before presets were replaced by direct/tag MCP
+    /// assignment (removed as a feature in 0.3.1, but `mcp.json` kept carrying the old fields
+    /// forever as dead migration weight). Runs on raw JSON, independent of `MCPConfiguration`'s
+    /// current shape, so any project still resolving servers only through a legacy preset keeps
+    /// working after those fields are gone from the type.
+    nonisolated private func migrateLegacyMCPPresetsIfNeeded() {
+        guard let data = try? Data(contentsOf: mcpURL),
+              let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        guard let presets = raw["presets"] as? [[String: Any]],
+              let projectPresetIDs = raw["projectPresetIDs"] as? [String: [String]],
+              !presets.isEmpty, !projectPresetIDs.isEmpty else { return }
+        var serverIDsByPreset: [String: [String]] = [:]
+        for preset in presets {
+            guard let id = preset["id"] as? String else { continue }
+            serverIDsByPreset[id] = preset["serverIDs"] as? [String] ?? []
+        }
+        var projectServerIDs = raw["projectServerIDs"] as? [String: [String]] ?? [:]
+        for (projectID, presetIDs) in projectPresetIDs {
+            let resolved = presetIDs.flatMap { serverIDsByPreset[$0] ?? [] }
+            guard !resolved.isEmpty else { continue }
+            projectServerIDs[projectID] = Array(Set(projectServerIDs[projectID] ?? []).union(resolved)).sorted()
+        }
+        var updated = raw
+        updated["projectServerIDs"] = projectServerIDs
+        updated.removeValue(forKey: "presets")
+        updated.removeValue(forKey: "projectPresetIDs")
+        updated.removeValue(forKey: "projectProfileSelections")
+        guard let newData = try? JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys]) else { return }
+        try? newData.write(to: mcpURL, options: .atomic)
     }
 
     public func catalog() throws -> Catalog { try read(catalogURL, fallback: Catalog()) }
@@ -167,6 +214,10 @@ public actor SkillboxStore {
         try atomicWrite(FullBackupMetadata(applicationVersion: applicationVersion), to: stage.appending(path: "backup.json"))
         if fm.fileExists(atPath: skillsDirectory.path) { try fm.copyItem(at: skillsDirectory, to: stage.appending(path: "skills")) } else { try fm.createDirectory(at: stage.appending(path: "skills"), withIntermediateDirectories: true) }
         try fm.moveItem(at: stage, to: target)
+        // Manual backups used to accumulate forever — the only cleanup was the user remembering to
+        // delete old ones by hand. Now that a daily one is created automatically, an unbounded list
+        // would just grow silently; capped the same way snapshots and restore rollbacks already are.
+        try pruneFullRestoreBackups(at: directory, keeping: 14)
         return FullBackupInfo(name: name, createdAt: .now, applicationVersion: applicationVersion)
     }
 

@@ -18,6 +18,37 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertEqual(reopenedIDs, ["legacy"])
     }
 
+    /// Presets were removed as a feature in 0.3.1, but `mcp.json` written by older versions can
+    /// still carry `presets`/`projectPresetIDs` — the only thing resolving a project's servers.
+    /// Opening that library must not silently drop its MCP assignment.
+    func testLegacyMCPPresetsAreMigratedToDirectServerAssignmentOnLoad() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let projectID = UUID().uuidString
+        let presetID = UUID().uuidString
+        let serverID = UUID().uuidString
+        let alreadyDirectServerID = UUID().uuidString
+        let legacyJSON = """
+        {
+          "version": 1,
+          "servers": [{"id": "\(serverID)", "name": "context7", "transport": "stdio", "command": "npx", "arguments": [], "url": "", "environment": {}, "headers": {}, "enabled": true}],
+          "presets": [{"id": "\(presetID)", "name": "seo", "serverIDs": ["\(serverID)"]}],
+          "projectPresetIDs": {"\(projectID)": ["\(presetID)"]},
+          "projectServerIDs": {"\(projectID)": ["\(alreadyDirectServerID)"]}
+        }
+        """
+        try legacyJSON.write(to: root.appending(path: "mcp.json"), atomically: true, encoding: .utf8)
+
+        let service = try SkillboxService(root: root)
+        let config = try await service.mcpConfiguration()
+        let assigned = Set(config.projectServerIDs?[projectID] ?? [])
+        XCTAssertEqual(assigned, [UUID(uuidString: serverID)!, UUID(uuidString: alreadyDirectServerID)!])
+
+        let raw = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appending(path: "mcp.json"))) as! [String: Any]
+        XCTAssertNil(raw["presets"])
+        XCTAssertNil(raw["projectPresetIDs"])
+    }
+
     func testGitHubTreeURLIsNormalizedToRepositoryBranchAndSubpath() {
         let value = SkillboxService.normalizeGitInput(url: "https://github.com/anthropics/skills/tree/main/skills/docx", subpath: nil, branch: nil)
         XCTAssertEqual(value.url, "https://github.com/anthropics/skills.git")
@@ -45,14 +76,13 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertTrue(projectsAfterDelete.isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: projectFolder.path))
     }
-    func testAnalyzesClaudeBackupSeparatesSecretsWithoutInventingProfiles() async throws {
+    func testAnalyzesClaudeBackupSeparatesSecretsFromLiteralValues() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let service = try SkillboxService(root: root)
         let json = #"{"n8n-mcp":{"type":"stdio","command":"npx","args":["-y","n8n-mcp"],"env":{"N8N_API_KEY":"secret-one","N8N_API_URL":"http://lan:5678"}},"n8n-tailscale":{"type":"stdio","command":"npx","args":["-y","n8n-mcp"],"env":{"N8N_API_KEY":"secret-two","N8N_API_URL":"http://tailnet:5678"}},"context7":{"type":"http","url":"https://mcp.context7.com/mcp","headers":{"CONTEXT7_API_KEY":"secret-three"}}}"#
         let summary = try await service.analyzeMCPJSON(json)
         XCTAssertEqual(summary.servers.count, 3)
         XCTAssertEqual(summary.secretCount, 3)
-        XCTAssertNil(summary.servers.first(where: { $0.name == "n8n-mcp" })?.group)
         XCTAssertEqual(summary.servers.first(where: { $0.name == "n8n-mcp" })?.literalEnvironment?["N8N_API_URL"], "http://lan:5678")
         XCTAssertNotNil(summary.servers.first(where: { $0.name == "context7" })?.secretHeaders?["CONTEXT7_API_KEY"])
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appending(path: "mcp-secrets.json").path))
@@ -229,8 +259,7 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertEqual(imported.servers[0].literalEnvironment?["COUNT"], "3")
         XCTAssertEqual(imported.servers[0].literalEnvironment?["ENABLED"], "1")
         let project = try await service.addProject(name: "open", path: projectURL.path, tools: [.opencode])
-        let preset = MCPPreset(name: "all", serverIDs: imported.servers.map(\.id))
-        try await service.saveMCPPreset(preset); try await service.setMCPPresets(projectID: project.id, presetIDs: [preset.id])
+        try await service.setMCPServers(projectID: project.id, serverIDs: imported.servers.map(\.id), tags: [])
         let preview = try await service.previewMCP(projectID: project.id)[0]
         let object = try JSONSerialization.jsonObject(with: Data(preview.content.utf8)) as! [String: Any]
         let mcp = object["mcp"] as! [String: Any]
@@ -251,8 +280,7 @@ final class SkillboxCoreTests: XCTestCase {
         let json = #"{"local":{"command":"npx","args":["-y","pkg"],"env":{"TOKEN":"${TOKEN}"}},"remote":{"type":"http","url":"https://example.com/mcp","headers":{"Authorization":"Bearer dummy-secret"}}}"#
         let imported = try await service.importMCPJSON(json)
         let project = try await service.addProject(name: "golden", path: projectURL.path, tools: Tool.allCases)
-        let preset = MCPPreset(name: "all", serverIDs: imported.servers.map(\.id))
-        try await service.saveMCPPreset(preset); try await service.setMCPPresets(projectID: project.id, presetIDs: [preset.id])
+        try await service.setMCPServers(projectID: project.id, serverIDs: imported.servers.map(\.id), tags: [])
         let previews = try await service.previewMCP(projectID: project.id)
         let fixtures: [Tool: String] = [.claude: "claude-mcp.json", .codex: "codex-mcp.toml", .opencode: "opencode-mcp.json"]
         for preview in previews {
@@ -306,7 +334,7 @@ final class SkillboxCoreTests: XCTestCase {
         do { try await service.saveMCPServer(renamed); XCTFail("Oczekiwano konfliktu nazwy") } catch {}
     }
 
-    func testMCPPresetPreviewAndThreeToolSync() async throws {
+    func testDirectMCPAssignmentPreviewAndThreeToolSync() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let projectURL = root.appending(path: "project")
         try FileManager.default.createDirectory(at: projectURL.appending(path: ".codex"), withIntermediateDirectories: true)
@@ -317,9 +345,7 @@ final class SkillboxCoreTests: XCTestCase {
         let project = try await service.addProject(name: "mcp", path: projectURL.path, tools: Tool.allCases)
         let server = MCPServer(name: "context7", transport: .stdio, command: "npx", arguments: ["-y", "context7"], environment: ["CONTEXT7_TOKEN": "CONTEXT7_TOKEN"])
         try await service.saveMCPServer(server)
-        let preset = MCPPreset(name: "Web", serverIDs: [server.id])
-        try await service.saveMCPPreset(preset)
-        try await service.setMCPPresets(projectID: project.id, presetIDs: [preset.id])
+        try await service.setMCPServers(projectID: project.id, serverIDs: [server.id], tags: [])
         let previews = try await service.previewMCP(projectID: project.id)
         XCTAssertEqual(previews.count, 3)
         _ = try await service.syncMCP(projectID: project.id)
@@ -331,7 +357,7 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertTrue(opencode.contains("context7") && opencode.contains("theme"))
         XCTAssertTrue(FileManager.default.fileExists(atPath: projectURL.appending(path: ".skillbox/mcp-manifest.json").path))
 
-        try await service.saveMCPPreset(MCPPreset(id: preset.id, name: preset.name, serverIDs: []))
+        try await service.setMCPServers(projectID: project.id, serverIDs: [], tags: [])
         _ = try await service.syncMCP(projectID: project.id)
         let claudeAfterRemoval = try String(contentsOf: projectURL.appending(path: ".mcp.json"), encoding: .utf8)
         XCTAssertFalse(claudeAfterRemoval.contains("context7"))
@@ -348,9 +374,7 @@ final class SkillboxCoreTests: XCTestCase {
         let project = try await service.addProject(name: "conflict", path: projectURL.path, tools: [.claude])
         let server = MCPServer(name: "context7", transport: .stdio, command: "npx")
         try await service.saveMCPServer(server)
-        let preset = MCPPreset(name: "Web", serverIDs: [server.id])
-        try await service.saveMCPPreset(preset)
-        try await service.setMCPPresets(projectID: project.id, presetIDs: [preset.id])
+        try await service.setMCPServers(projectID: project.id, serverIDs: [server.id], tags: [])
         do { _ = try await service.previewMCP(projectID: project.id); XCTFail("Oczekiwano konfliktu") }
         catch let error as SkillboxError { XCTAssertTrue(error.localizedDescription.contains("Konflikt MCP")) }
         XCTAssertEqual(try String(contentsOf: projectURL.appending(path: ".mcp.json"), encoding: .utf8), manual)
@@ -474,8 +498,8 @@ final class SkillboxCoreTests: XCTestCase {
         try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
         let service = try SkillboxService(root: root.appending(path: "data"))
         let project = try await service.addProject(name: "mcp-tags", path: projectURL.path, tools: [.claude])
-        let direct = MCPServer(name: "n8n", transport: .http, url: "https://example.test/mcp", group: "n8n", profile: "Domyślny", tags: ["automation"])
-        let tagged = MCPServer(name: "n8n-tailscale", transport: .http, url: "https://tailscale.example.test/mcp", group: "n8n", profile: "Tailscale", tags: ["private"])
+        let direct = MCPServer(name: "n8n", transport: .http, url: "https://example.test/mcp", tags: ["automation"])
+        let tagged = MCPServer(name: "n8n-tailscale", transport: .http, url: "https://tailscale.example.test/mcp", tags: ["private"])
         try await service.saveMCPServer(direct); try await service.saveMCPServer(tagged)
         try await service.setMCPServers(projectID: project.id, serverIDs: [direct.id], tags: ["private"])
         let previews = try await service.previewMCP(projectID: project.id)
@@ -560,6 +584,17 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertNotNil(restoredMCP.servers.first?.secretHeaders?["Authorization"])
         let secrets = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: root.appending(path: "data/mcp-secrets.json")))
         XCTAssertTrue(secrets.values.contains("dummy-secret"))
+    }
+
+    /// Full backups used to accumulate forever — the only cleanup was the user remembering to
+    /// delete old ones by hand. Now that one is created automatically every day, it must cap itself
+    /// the same way library snapshots already do.
+    func testFullLocalBackupsArePrunedToTheFourteenMostRecent() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let service = try SkillboxService(root: root)
+        for _ in 0..<16 { _ = try await service.createFullBackup(applicationVersion: "test") }
+        let backups = try await service.fullBackups()
+        XCTAssertEqual(backups.count, 14)
     }
 
     func testSyncRefusesToReplaceSkillDirectoryThatAgentboxDoesNotManage() async throws {
@@ -1071,11 +1106,6 @@ final class SkillboxCoreTests: XCTestCase {
     }
 
 
-    func testAIModelDefaultsComeFromOnePlace() {
-        XCTAssertEqual(MCPAISettings().openAIModel, MCPAIDefaults.openAIModel)
-        XCTAssertEqual(MCPAISettings().claudeModel, MCPAIDefaults.claudeModel)
-    }
-
     func testLocalSkillCanBeEditedInPlaceAndMarksProjectsOutdated() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let source = root.appending(path: "source/notes"); let projectURL = root.appending(path: "project")
@@ -1246,6 +1276,45 @@ final class SkillboxCoreTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let service = try SkillboxService(root: root)
         await XCTAssertThrowsErrorAsync(try await AgentboxCommand.run(["sync", "project", "nieistniejacy"], service: service))
+    }
+
+    /// `delete`, `project remove` and `mcp server remove` are the CLI's counterpart to the GUI's
+    /// only-in-app delete buttons — a CLI-first workflow should not need to open the app just to
+    /// remove something it can already create.
+    func testCommandLineDeletesSkillsProjectsAndMCPServers() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/notes"); let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        try "skill".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+
+        _ = try await AgentboxCommand.run(["add", source.path], service: service)
+        let addedSkills = try await service.listSkills().map(\.id)
+        XCTAssertEqual(addedSkills, ["notes"])
+
+        _ = try await AgentboxCommand.run(["mcp", "server", "add", "context7", "--command", "npx"], service: service)
+        let addedServers = try await service.mcpConfiguration().servers.map(\.name)
+        XCTAssertEqual(addedServers, ["context7"])
+        _ = try await AgentboxCommand.run(["mcp", "server", "remove", "context7"], service: service)
+        let serversAfterRemoval = try await service.mcpConfiguration().servers
+        XCTAssertTrue(serversAfterRemoval.isEmpty)
+        await XCTAssertThrowsErrorAsync(try await AgentboxCommand.run(["mcp", "server", "remove", "nieistniejacy"], service: service))
+
+        _ = try await AgentboxCommand.run(["project", "add", "app", projectURL.path, "--tools", "claude"], service: service)
+        _ = try await AgentboxCommand.run(["project", "set", "app", "--skills", "notes"], service: service)
+        _ = try await AgentboxCommand.run(["sync", "project", "app"], service: service)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: projectURL.appending(path: ".claude/skills/notes").path))
+
+        _ = try await AgentboxCommand.run(["project", "remove", "app", "--clean"], service: service)
+        let projectsAfterRemoval = try await service.listProjects()
+        XCTAssertTrue(projectsAfterRemoval.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: projectURL.appending(path: ".claude/skills/notes").path), "--clean sprząta pliki w folderze projektu")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: projectURL.path), "usunięcie projektu nigdy nie usuwa jego folderu")
+
+        _ = try await AgentboxCommand.run(["delete", "notes"], service: service)
+        let skillsAfterDeletion = try await service.listSkills()
+        XCTAssertTrue(skillsAfterDeletion.isEmpty)
     }
 
     func testTagsMatchRegardlessOfLetterCase() async throws {

@@ -7,10 +7,6 @@ import SkillboxCore
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     let updater: SPUUpdater
-    @State private var openAIModel = MCPAIDefaults.openAIModel
-    @State private var anthropicModel = MCPAIDefaults.claudeModel
-    @State private var openAIKey = ""
-    @State private var anthropicKey = ""
     var body: some View {
         ScrollView { VStack(alignment: .leading, spacing: 20) {
             Label("Ustawienia", systemImage: "gearshape").font(.largeTitle.bold())
@@ -18,24 +14,10 @@ struct SettingsView: View {
             CLISettingsCard()
             GroupBox("Folder biblioteki") { VStack(alignment: .leading, spacing: 12) { Text(model.rootPath).font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading); Text("Tutaj Agentbox przechowuje skille, katalog, konfigurację projektów i repozytorium backupu Git.").font(.caption).foregroundStyle(.secondary); Button("Wybierz nowy folder…") { chooseFolder() } }.padding(8) }
             Text("Istniejąca biblioteka Agentbox/Skillbox zostanie podłączona bez kopiowania. Jeśli wskażesz pusty folder, obecna biblioteka zostanie do niego skopiowana.").foregroundStyle(.secondary)
-            Text("Asystent AI do konfiguracji MCP").font(.title2.bold())
-            HStack(alignment: .top, spacing: 16) {
-                AIProviderSettingsCard(title: "OpenAI", icon: "sparkles", modelLabel: "Model OpenAI", modelName: $openAIModel, key: $openAIKey, hasSavedKey: model.hasOpenAIKey) { Task { await model.saveAIProvider(.openAI, model: openAIModel, key: openAIKey.isEmpty ? nil : openAIKey); openAIKey = "" } }
-                AIProviderSettingsCard(title: "Anthropic", icon: "brain.head.profile", modelLabel: "Model Anthropic", modelName: $anthropicModel, key: $anthropicKey, hasSavedKey: model.hasAnthropicKey) { Task { await model.saveAIProvider(.claude, model: anthropicModel, key: anthropicKey.isEmpty ? nil : anthropicKey); anthropicKey = "" } }
-            }
-            Label("Klucze są przechowywane lokalnie bez szyfrowania w mcp-secrets.json i nie trafiają do backupu Git.", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
             Spacer()
-        }.padding(28) }.navigationTitle("Ustawienia").onAppear { if let settings = model.mcp.aiSettings { openAIModel = settings.openAIModel; anthropicModel = settings.claudeModel } }
+        }.padding(28) }.navigationTitle("Ustawienia")
     }
     private func chooseFolder() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true; panel.prompt = "Wybierz"; if panel.runModal() == .OK, let url = panel.url { Task { await model.moveLibrary(to: url) } } }
-}
-struct AIProviderSettingsCard: View {
-    let title: String, icon: String, modelLabel: String
-    @Binding var modelName: String
-    @Binding var key: String
-    let hasSavedKey: Bool
-    let onSave: () -> Void
-    var body: some View { GroupBox { VStack(alignment: .leading, spacing: 12) { Label(title, systemImage: icon).font(.headline); TextField(modelLabel, text: $modelName); SecureField(hasSavedKey ? "Nowy klucz — obecny pozostanie bez zmian" : "Klucz API", text: $key); if hasSavedKey { Label("Klucz zapisany: ••••••••", systemImage: "checkmark.shield.fill").font(.caption).foregroundStyle(.green) } else { Label("Brak zapisanego klucza", systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.secondary) }; HStack { Spacer(); Button("Zapisz \(title)", action: onSave).buttonStyle(.borderedProminent).disabled(modelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) } }.padding(8) }.frame(maxWidth: .infinity) }
 }
 /// The settings a project and a parent folder share. Both edit them through this one view, so a
 /// folder can never offer less than a project — including the rule that a tag owns everything it

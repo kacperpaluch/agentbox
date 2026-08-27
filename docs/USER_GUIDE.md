@@ -80,7 +80,7 @@ Agentbox usuwa i zastępuje wyłącznie katalogi wymienione w swoim manifeście 
 
 Serwery MCP wybiera się tak samo jak skille: pojedynczo albo dynamicznie według tagów. Oba sposoby można łączyć, a projekt może korzystać równocześnie z dowolnej liczby serwerów, również takich, które wcześniej były traktowane jako wzajemnie wykluczające się warianty.
 
-Tagi dodaje się w szczegółach serwera MCP. Menu `Używane tagi` pokazuje istniejące wartości, co pomaga zachować jednolite nazwy. To samo menu jest dostępne podczas tagowania pojedynczych i wielu skilli. Wielkość liter nie ma znaczenia — tagi są zapisywane małymi literami, a `SEO` i `seo` to ten sam tag. Stare przypisania presetów są zachowane przy odczycie i zamieniane na bezpośredni wybór serwerów przy następnym zapisie projektu.
+Tagi dodaje się w szczegółach serwera MCP. Menu `Używane tagi` pokazuje istniejące wartości, co pomaga zachować jednolite nazwy. To samo menu jest dostępne podczas tagowania pojedynczych i wielu skilli. Wielkość liter nie ma znaczenia — tagi są zapisywane małymi literami, a `SEO` i `seo` to ten sam tag. Biblioteka ze starymi przypisaniami presetów (usuniętych jako funkcja w 0.3.1) migruje je automatycznie do bezpośredniego wyboru serwerów przy pierwszym otwarciu — bez utraty przypisań i bez żadnej akcji ze strony użytkownika.
 
 ### Wykluczenia w projekcie
 
@@ -170,7 +170,7 @@ W przypadku błędu synchronizacji:
 
 ## Odzyskiwanie
 
-Odzyskiwanie ma teraz wspólne miejsce z resztą backupów w sekcji `Backup`, zamiast osobnej pozycji w pasku bocznym — to jedno pytanie („jak chronię i odzyskuję dane"), nie dwa.
+Odzyskiwanie ma teraz wspólne miejsce z resztą backupów w sekcji `Backup`, zamiast osobnej pozycji w pasku bocznym — to jedno pytanie („jak chronię i odzyskuję dane”), nie dwa.
 
 Przed zmianą plików danych Agentbox zachowuje rotacyjne snapshoty w:
 
@@ -188,7 +188,7 @@ Kopia sprzed zapisu istnieje wyłącznie przez czas trwania jednej synchronizacj
 
 Agentbox nie prowadzi historii kopii w folderach projektów. Nie jest potrzebna, bo biblioteka jest źródłem prawdy, manifesty mówią, co należy do Agentboxa, a stan projektu odtwarza się dwoma ruchami: `Usuń i posprzątaj pliki` (albo `agentbox project unsync`) czyści to, co Agentbox tam zapisał, a ponowna synchronizacja odtwarza to z biblioteki.
 
-W folderze projektu zostają wyłącznie manifesty własności: `.skillbox/mcp-manifest.json` i `.skillbox.json` w każdym katalogu skilli. To małe pliki JSON odpowiadające na pytanie „które wpisy tutaj są moje" — bez nich Agentbox nadpisałby ręcznie dodane skille i serwery.
+W folderze projektu zostają wyłącznie manifesty własności: `.skillbox/mcp-manifest.json` i `.skillbox.json` w każdym katalogu skilli. To małe pliki JSON odpowiadające na pytanie „które wpisy tutaj są moje” — bez nich Agentbox nadpisałby ręcznie dodane skille i serwery.
 
 Wersje do 0.7.0 zostawiały historię kopii w `<projekt>/.skillbox/sync-backups/` i `mcp-backups/`. Przy najbliższej synchronizacji te katalogi są usuwane z repozytorium.
 
@@ -196,21 +196,21 @@ Projekt, w którym nic się nie zmieniło, jest pomijany — nic nie jest zapisy
 
 Ta część sekcji `Backup` dotyczy wyłącznie biblioteki: snapshotów metadanych i pełnego backupu lokalnego.
 
-
-
 Backup Git obejmuje `catalog.json`, `mcp.json` i `skills/`. Nie obejmuje lokalnych ścieżek projektów ani sekretów. Git zapewnia długoterminową historię biblioteki, natomiast snapshoty chronią ostatni stan przed przypadkowym lub uszkodzonym zapisem.
 
 ### Pełny backup lokalny
 
-Sekcja `Backup → Pełny backup lokalny` tworzy czytelną kopię w `<biblioteka>/backups/full/<data>/`. Zawiera `catalog.json`, `projects.local.json`, `mcp.json`, `mcp-secrets.json`, metadane `backup.json` oraz cały katalog `skills/`. Obejmuje więc adresy Git skilli, lokalne ścieżki projektów, wszystkie MCP, sekrety i klucze AI.
+To jedyny mechanizm chroniący projekty i sekrety — ani backup Git, ani snapshoty ich nie obejmują. Powstaje automatycznie raz dziennie, dopóki włączona jest automatyzacja w `Backup → Automatyzacja` (ten sam przełącznik co dla commitów Git); `Backup → Utwórz teraz` robi to samo na żądanie. Tworzy czytelną kopię w `<biblioteka>/backups/full/<data>/`. Zawiera `catalog.json`, `projects.local.json`, `mcp.json`, `mcp-secrets.json`, metadane `backup.json` oraz cały katalog `skills/`. Obejmuje więc adresy Git skilli, lokalne ścieżki projektów, wszystkie MCP i sekrety.
 
-Folder `backups/` jest wyłączony z Git. Pełny backup nie jest szyfrowany — nie umieszczaj go w chmurze ani repozytorium bez dodatkowego szyfrowania. Przed przywróceniem Agentbox waliduje wszystkie pliki JSON i katalog skilli, następnie zapisuje aktualny stan w `backups/restore-rollbacks/`. Nieudana operacja automatycznie odtwarza poprzednie dane. Z interfejsu można również usunąć wybraną pełną kopię po potwierdzeniu.
+Folder `backups/` jest wyłączony z Git. Pełny backup nie jest szyfrowany — nie umieszczaj go w chmurze ani repozytorium bez dodatkowego szyfrowania. Zachowywanych jest 14 ostatnich kopii; starsze są usuwane automatycznie, więc miejsce na dysku nie rośnie bez końca. Przed przywróceniem Agentbox waliduje wszystkie pliki JSON i katalog skilli, następnie zapisuje aktualny stan w `backups/restore-rollbacks/`. Nieudana operacja automatycznie odtwarza poprzednie dane. Z interfejsu można również usunąć wybraną pełną kopię po potwierdzeniu.
 
 ### Odtworzenie biblioteki ze zdalnego repozytorium
 
 `Backup → Odtworzenie biblioteki ze zdalnego repozytorium` pobiera bibliotekę z repozytorium backupu. Służy przede wszystkim do konfiguracji nowego Maca albo odtworzenia biblioteki po awarii dysku.
 
 Zastępowane są `catalog.json`, `mcp.json`, katalog `skills/` oraz `.gitignore`. **Nie** są zmieniane `projects.local.json` ani `mcp-secrets.json` — projekty, lokalne ścieżki i sekrety należą do tego Maca i nie trafiają do repozytorium. Przed zapisem Agentbox tworzy pełny backup lokalny, waliduje pliki JSON z repozytorium i przy błędzie odtwarza poprzedni stan. Klon zachowuje swoje `.git`, więc kolejne backupy wypychają do tego samego repozytorium.
+
+Serwery MCP wymagające sekretów nie zadziałają od razu na nowym Maku — sekrety trzeba dostarczyć osobno, poza Gitem. Najszybciej: skopiuj `mcp-secrets.json` z ostatniego pełnego backupu starego Maca (`<biblioteka>/backups/full/<data>/mcp-secrets.json`) do folderu nowej biblioteki przez AirDrop albo inny bezpieczny kanał — jednorazowo, przy każdym nowym Maku.
 
 Po odtworzeniu przypisz skille do projektów i uruchom synchronizację — pliki projektów nie są zmieniane automatycznie.
 

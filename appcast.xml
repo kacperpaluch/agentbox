@@ -6,6 +6,28 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.12.0</title>
+      <pubDate>Thu, 27 Aug 2026 08:34:26 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.12.0</link>
+      <sparkle:version>28</sparkle:version>
+      <sparkle:shortVersionString>0.12.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.12.0</h2>
+        <ul>
+          <li>Nowość: <code>agentbox delete</code>, <code>agentbox project remove [--clean]</code> i <code>agentbox mcp server remove</code> — usuwanie skilli, projektów i serwerów MCP nie wymaga już otwierania GUI.</li>
+          <li>Pełny backup lokalny (jedyny mechanizm chroniący projekty i sekrety) powstaje teraz automatycznie raz dziennie, zamiast wymagać ręcznego kliknięcia. Zachowywanych jest 14 ostatnich kopii.</li>
+          <li><code>MCP → Importuj z JSON</code> ma przycisk „Jaki format?” z przykładem wszystkich obsługiwanych wariantów.</li>
+          <li>Usunięto asystenta AI do generowania configu MCP (rzadko używany) oraz martwy kod po starych presetach MCP — biblioteki z ich starymi przypisaniami migrują się automatycznie, bez utraty danych.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.12.0/Agentbox-0.12.0.dmg"
+        length="5323970"
+        type="application/octet-stream"
+        sparkle:edSignature="8Sg3XuNodDPN0nYjS5sNGupA660HztZeJBBWcHzNKy7k33wFYuKB5+mKG1dXRqVykdHvp8hUWspvrCkYai4gDQ==" />
+    </item>
+    <item>
       <title>Agentbox 0.11.2</title>
       <pubDate>Thu, 27 Aug 2026 08:01:05 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.11.2</link>

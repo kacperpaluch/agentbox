@@ -150,7 +150,6 @@ extension SkillboxService {
             config.projects[index].manageGitignore = nil
             var servers = mcp.projectServerIDs ?? [:]; servers.removeValue(forKey: id.uuidString); mcp.projectServerIDs = servers
             var tags = mcp.projectServerTags ?? [:]; tags.removeValue(forKey: id.uuidString); mcp.projectServerTags = tags
-            mcp.projectPresetIDs.removeValue(forKey: id.uuidString)
         }
         if treatingExistingAsKnown {
             stored.ignoredPaths = Self.knownSubfolders(of: rootURL, besides: stored.ignoredPaths, excluding: config.projects.map { URL(fileURLWithPath: $0.path).standardizedFileURL.path })
@@ -181,7 +180,6 @@ extension SkillboxService {
         config.projectRoots = config.roots.filter { $0.id != id }
         var servers = mcp.projectServerIDs ?? [:]; servers.removeValue(forKey: id.uuidString); mcp.projectServerIDs = servers
         var tags = mcp.projectServerTags ?? [:]; tags.removeValue(forKey: id.uuidString); mcp.projectServerTags = tags
-        mcp.projectPresetIDs.removeValue(forKey: id.uuidString)
         try await store.save(config, mcp)
     }
 

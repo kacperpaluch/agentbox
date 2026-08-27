@@ -60,9 +60,10 @@ struct BackupView: View {
 
                 VStack(alignment: .leading, spacing: Space.section - 2) {
                     Label("Pełny backup lokalny", systemImage: "externaldrive.fill.badge.plus").font(.title2.bold())
-                    Label("Zawiera również projekty, lokalne ścieżki, wszystkie skille, MCP, sekrety i klucze AI. Pliki są czytelne i niezaszyfrowane — nie udostępniaj folderu backups.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Text("Jedyne miejsce chroniące projekty i sekrety — Git backup ich nie obejmuje. Powstaje automatycznie raz dziennie (przy włączonej automatyzacji powyżej); ostatnie 14 kopii zostaje, starsze znikają. Przycisk obok tworzy kopię od razu, np. przed ryzykowną operacją.").foregroundStyle(.secondary)
+                    Label("Pliki są czytelne i niezaszyfrowane — nie udostępniaj folderu backups.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     HStack {
-                        Button("Utwórz pełny backup") { Task { await model.createFullBackup() } }.buttonStyle(.borderedProminent)
+                        Button("Utwórz teraz") { Task { await model.createFullBackup() } }.buttonStyle(.borderedProminent)
                         Button("Odśwież listę") { Task { await model.loadFullBackups() } }.buttonStyle(.bordered)
                         Spacer()
                         Text("\(model.rootPath)/backups/full").rowMetadata().textSelection(.enabled)

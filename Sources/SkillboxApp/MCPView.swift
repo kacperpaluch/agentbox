@@ -40,7 +40,7 @@ struct MCPView: View {
     private var actionBar: some View {
         ActionBar {
             if checked.isEmpty {
-                Button { showImport = true } label: { Label("Importuj lub użyj AI", systemImage: "sparkles") }.buttonStyle(.borderedProminent)
+                Button { showImport = true } label: { Label("Importuj z JSON", systemImage: "square.and.arrow.down") }.buttonStyle(.borderedProminent)
                 Button { editingServer = MCPServer(name: "", transport: .stdio) } label: { Label("Nowy serwer", systemImage: "plus") }.buttonStyle(.bordered)
                 Button { Task { bulkJSON = await model.exportMCPConfigurationJSON() } } label: { Label("Edytuj wszystko jako JSON", systemImage: "curlybraces") }.buttonStyle(.bordered).disabled(model.mcp.servers.isEmpty)
             } else {
@@ -140,7 +140,7 @@ struct MCPServerEditor: View {
     }.padding(24) }.frame(width: 760, height: 760).task { fields = await model.managedFields(for: original) } }
     private func save() async -> Bool {
         if editingJSON && isExisting { return await model.updateMCPServerJSON(original.id, name: name, json: jsonText, enabled: enabled, tags: AppModel.csv(tags)) }
-        let server = MCPServer(id: original.id, name: name, transport: transport, command: command, arguments: arguments.split(whereSeparator: \.isNewline).map(String.init), url: url, enabled: enabled, group: original.group, profile: original.profile, tags: AppModel.csv(tags))
+        let server = MCPServer(id: original.id, name: name, transport: transport, command: command, arguments: arguments.split(whereSeparator: \.isNewline).map(String.init), url: url, enabled: enabled, tags: AppModel.csv(tags))
         return await model.saveMCPServer(server, fields: fields)
     }
 }
@@ -155,23 +155,19 @@ struct MCPImportView: View {
     @State private var source = ""
     @State private var summary: MCPImportSummary?
     @State private var error = ""
-    @State private var useAI = false
-    @State private var provider: MCPAIProvider = .openAI
-    @State private var openAIModel = MCPAIDefaults.openAIModel
-    @State private var claudeModel = MCPAIDefaults.claudeModel
-    @State private var apiKey = ""
     @State private var working = false
     @State private var selected = Set<String>()
     @State private var classifications: [String: MCPValueClassification] = [:]
+    @State private var showFormatHelp = false
     var body: some View { VStack(alignment: .leading, spacing: 0) { ScrollView { VStack(alignment: .leading, spacing: 14) {
         Text("Import konfiguracji MCP").font(.title2.bold())
-        Picker("Tryb", selection: $useAI) { Text("Mam JSON").tag(false); Text("Mam instrukcję — przygotuj z AI").tag(true) }.pickerStyle(.segmented)
-        if useAI {
-            HStack { Picker("Dostawca", selection: $provider) { Text("OpenAI").tag(MCPAIProvider.openAI); Text("Anthropic").tag(MCPAIProvider.claude) }.frame(width: 210); TextField("Model", text: provider == .openAI ? $openAIModel : $claudeModel); SecureField("Klucz API (puste = użyj zapisanego)", text: $apiKey) }
-            if provider == .openAI ? model.hasOpenAIKey : model.hasAnthropicKey { Label("Klucz API zapisany: ••••••••", systemImage: "checkmark.shield.fill").font(.caption).foregroundStyle(.green) }
-            Text("Klucz zostanie zapisany lokalnie w niezaszyfrowanym pliku mcp-secrets.json i nigdy nie trafi do backupu Git. Instrukcja zostanie wysłana do wybranego API; istniejące sekrety MCP nie są dołączane.").font(.caption).foregroundStyle(.orange)
-            Text("Wklej README, fragment instrukcji z GitHuba albo opisz serwer").font(.caption).foregroundStyle(.secondary)
-        } else { HStack { Text("Wklej konfigurację Claude (`mcpServers` lub sam obiekt serwerów).").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Wybierz plik…") { chooseFile() } } }
+        HStack {
+            Text("Wklej konfigurację Claude (`mcpServers` lub sam obiekt serwerów).").font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Button(showFormatHelp ? "Ukryj format" : "Jaki format?") { showFormatHelp.toggle() }.buttonStyle(.link)
+            Button("Wybierz plik…") { chooseFile() }
+        }
+        if showFormatHelp { formatHelp }
         TextEditor(text: $source).font(.system(.body, design: .monospaced)).frame(minHeight: 220).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
         if let summary {
             GroupBox("Rozpoznano") { VStack(alignment: .leading, spacing: 8) {
@@ -184,12 +180,41 @@ struct MCPImportView: View {
             }.padding(6) } }
         }
         if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
-    }.padding(24) }; Divider(); HStack { if working { ProgressView() }; if summary != nil { Text("Wybrano: \(selected.count)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Anuluj") { dismiss() }; Button(useAI ? "Przygotuj z AI" : "Analizuj") { Task { await prepare() } }.disabled(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working); Button("Importuj wybrane") { Task { await importNow() } }.buttonStyle(.borderedProminent).disabled(summary == nil || selected.isEmpty || working) }.padding(16).background(.bar)
-    }.frame(width: 760, height: 680).onAppear { if let settings = model.mcp.aiSettings { provider = settings.provider; openAIModel = settings.openAIModel; claudeModel = settings.claudeModel } } }
-    private func prepare() async { working = true; error = ""; summary = nil; selected.removeAll(); classifications.removeAll(); defer { working = false }; do { if useAI { let settings = MCPAISettings(provider: provider, openAIModel: openAIModel, claudeModel: claudeModel); source = try await model.generateMCP(source, settings: settings, key: apiKey.isEmpty ? nil : apiKey) }; let analyzed = try await model.analyzeMCP(source); summary = analyzed; selected = Set(analyzed.servers.map(\.name)); classifications = Dictionary(uniqueKeysWithValues: analyzed.fields.map { ($0.id, $0.classification) }) } catch { self.error = error.localizedDescription; model.reportError(error) } }
+    }.padding(24) }; Divider(); HStack { if working { ProgressView() }; if summary != nil { Text("Wybrano: \(selected.count)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Anuluj") { dismiss() }; Button("Analizuj") { Task { await prepare() } }.disabled(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working); Button("Importuj wybrane") { Task { await importNow() } }.buttonStyle(.borderedProminent).disabled(summary == nil || selected.isEmpty || working) }.padding(16).background(.bar)
+    }.frame(width: 760, height: 680) }
+    private func prepare() async { working = true; error = ""; summary = nil; selected.removeAll(); classifications.removeAll(); defer { working = false }; do { let analyzed = try await model.analyzeMCP(source); summary = analyzed; selected = Set(analyzed.servers.map(\.name)); classifications = Dictionary(uniqueKeysWithValues: analyzed.fields.map { ($0.id, $0.classification) }) } catch { self.error = error.localizedDescription; model.reportError(error) } }
     private func importNow() async { working = true; error = ""; defer { working = false }; do { _ = try await model.importMCP(source, serverNames: selected, classifications: classifications); dismiss() } catch { self.error = error.localizedDescription; model.reportError(error) } }
     private func classificationBinding(_ field: MCPImportField) -> Binding<MCPValueClassification> { Binding(get: { classifications[field.id] ?? field.classification }, set: { classifications[field.id] = $0 }) }
     private func chooseFile() { let panel = NSOpenPanel(); panel.allowedContentTypes = [.json, .plainText]; panel.canChooseFiles = true; panel.canChooseDirectories = false; if panel.runModal() == .OK, let url = panel.url { do { source = try String(contentsOf: url, encoding: .utf8); summary = nil } catch { self.error = error.localizedDescription } } }
+
+    /// The three shapes `analyzeMCP` actually accepts — collapsed by default so it does not compete
+    /// with the paste box, but one click away the moment someone is unsure what to paste.
+    private var formatHelp: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Agentbox rozpoznaje trzy warianty tej samej mapy serwerów:").font(.caption.weight(.medium))
+                Text("• cały eksport Claude z kluczem `mcpServers` na zewnątrz").font(.caption).foregroundStyle(.secondary)
+                Text("• samą mapę serwerów, bez `mcpServers` dookoła").font(.caption).foregroundStyle(.secondary)
+                Text("• plik JSON w jednym z tych formatów — przyciskiem „Wybierz plik…”").font(.caption).foregroundStyle(.secondary)
+                Text("""
+                {
+                  "context7": {
+                    "command": "npx",
+                    "args": ["-y", "@upstash/context7-mcp"]
+                  },
+                  "docsearch": {
+                    "type": "http",
+                    "url": "https://mcp.example.com/mcp",
+                    "headers": { "Authorization": "Bearer TOKEN" }
+                  }
+                }
+                """)
+                .font(.system(.caption2, design: .monospaced)).textSelection(.enabled)
+                .padding(Space.row).frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 6))
+            }.padding(Space.row)
+        }
+    }
 }
 struct MCPPreviewView: View {
     @Environment(\.dismiss) private var dismiss

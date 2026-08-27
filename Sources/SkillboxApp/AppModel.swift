@@ -15,8 +15,6 @@ import SkillboxCore
     @Published var hasCheckedUpdates = false
     @Published var rootPath: String
     @Published var mcp = MCPConfiguration()
-    @Published var hasOpenAIKey = false
-    @Published var hasAnthropicKey = false
     @Published var operationLog: [OperationLogEntry] = []
     @Published var librarySnapshots: [LibrarySnapshot] = []
     @Published var fullBackups: [FullBackupInfo] = []
@@ -34,6 +32,7 @@ import SkillboxCore
     @Published var serviceError: String?
     private var automaticBackupTask: Task<Void, Never>?
     private var lastActivationScan = Date.distantPast
+    private var lastFullBackupCheck = Date.distantPast
     var service: SkillboxService?
     init() {
         let saved = UserDefaults.standard.string(forKey: "SkillboxLibraryRoot")
@@ -42,13 +41,13 @@ import SkillboxCore
         rootPath = saved ?? shared ?? defaultPath
         do { service = try SkillboxService(root: URL(fileURLWithPath: rootPath)) }
         catch { serviceError = "Nie można otworzyć biblioteki w \(rootPath): \(error.localizedDescription)" }
-        Task { await reload() }
+        Task { await reload(); await createFullBackupIfDue() }
     }
     // Statuses depend on the exact things reload() refreshes (skills, tags, MCP servers and their
     // tags), so it recomputes them here too. That is the only place callers need to remember to
     // call — a skill tag edit or a new tagged MCP server no longer leaves the Projects tab showing
     // a stale "synced" badge until someone happens to touch a project directly.
-    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); if let service { hasOpenAIKey = try await service.hasMCPAIKey(.openAI); hasAnthropicKey = try await service.hasMCPAIKey(.claude) }; if selection == nil { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses() }
+    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); if selection == nil { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses() }
 
     // MARK: Parent folders
 
@@ -63,9 +62,29 @@ import SkillboxCore
     /// the app is exactly when a new subfolder should be waiting for them. The scan is a directory
     /// listing per watched folder; the interval only keeps window switching from repeating it.
     func scanRootsOnActivation() async {
-        guard !projectRoots.isEmpty, Date.now.timeIntervalSince(lastActivationScan) > 5 else { return }
-        lastActivationScan = .now
-        await scanRoots()
+        if !projectRoots.isEmpty, Date.now.timeIntervalSince(lastActivationScan) > 5 {
+            lastActivationScan = .now
+            await scanRoots()
+        }
+        await createFullBackupIfDue()
+    }
+
+    /// The full local backup used to be something the user had to remember to click — the one
+    /// mechanism protecting projects and secrets, easy to forget precisely because it never
+    /// complains. Coming back to the app is checked at most every few minutes, and a new backup is
+    /// made at most once a day; `createFullBackup` prunes old ones, so this never grows unbounded.
+    private func createFullBackupIfDue() async {
+        guard Date.now.timeIntervalSince(lastFullBackupCheck) > 300 else { return }
+        lastFullBackupCheck = .now
+        guard UserDefaults.standard.object(forKey: "AgentboxAutoBackup") == nil || UserDefaults.standard.bool(forKey: "AgentboxAutoBackup") else { return }
+        guard let service else { return }
+        do {
+            let existing = try await service.fullBackups()
+            guard (existing.first?.createdAt ?? .distantPast) < Date.now.addingTimeInterval(-86400) else { return }
+            let backup = try await service.createFullBackup(applicationVersion: AppVersion.short)
+            fullBackups = try await service.fullBackups()
+            record(.success, "Automatyczny pełny backup: \(backup.name)")
+        } catch { /* best-effort safety net — a failure here should not interrupt the session */ }
     }
     func root(for project: Project) -> ProjectRoot? { project.rootID.flatMap { id in projectRoots.first { $0.id == id } } }
     func inheritsRoot(_ project: Project) -> Bool { project.overridesRoot != true && root(for: project) != nil }
@@ -136,7 +155,7 @@ import SkillboxCore
     func addProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async { await perform { _ = try await self.service?.addProject(project, serverIDs: serverIDs, serverTags: serverTags); self.message = "Dodano projekt" } }
     func updateProject(_ project: Project, serverIDs: [UUID], serverTags: [String]) async { await perform { try await self.service?.updateProject(project, serverIDs: serverIDs, serverTags: serverTags); self.message = "Zapisano projekt" } }
     func selectedMCPServerIDs(for project: Project) -> [UUID] { selectedMCPServerIDs(selectionID: (inheritsRoot(project) ? project.rootID : nil) ?? project.id) }
-    func selectedMCPServerIDs(selectionID: UUID) -> [UUID] { let key = selectionID.uuidString; let direct = mcp.projectServerIDs?[key] ?? []; let legacyPresetIDs = Set(mcp.projectPresetIDs[key] ?? []); let legacy = mcp.presets.filter { legacyPresetIDs.contains($0.id) }.flatMap(\.serverIDs); return Array(Set(direct + legacy)) }
+    func selectedMCPServerIDs(selectionID: UUID) -> [UUID] { mcp.projectServerIDs?[selectionID.uuidString] ?? [] }
     func selectedMCPServerTags(for project: Project) -> [String] { mcp.projectServerTags?[((inheritsRoot(project) ? project.rootID : nil) ?? project.id).uuidString] ?? [] }
     func deleteProject(_ project: Project, removingFiles: Bool) async {
         await perform {
@@ -245,8 +264,6 @@ import SkillboxCore
     /// Applies every server the JSON describes — no selection step, because this text is a re-edit
     /// of the library's own configuration rather than something pasted in from elsewhere.
     func importMCPJSONAll(_ text: String) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text); await reload(); scheduleAutomaticBackup(); message = "Zapisano \(result.servers.count) serwerów MCP"; record(.success, message); return result }
-    func generateMCP(_ instructions: String, settings: MCPAISettings, key: String?) async throws -> String { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; try await service.saveMCPAISettings(settings, apiKey: key); return try await service.generateMCPConfiguration(instructions: instructions, settings: settings) }
-    func saveAIProvider(_ provider: MCPAIProvider, model: String, key: String?) async { await perform { try await self.service?.saveMCPAIProvider(provider, model: model, apiKey: key); self.message = "Zapisano ustawienia \(provider == .openAI ? "OpenAI" : "Anthropic")" } }
     func moveLibrary(to url: URL) async {
         isWorking = true; defer { isWorking = false }
         do {
