@@ -6,6 +6,17 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-28
+
+### Dodano
+
+- `MCP globalne`: pojedynczy serwer, po rozwinięciu, pokazuje teraz każdy projekt folderu ze wspólnymi ustawieniami osobno, z własnym checkboxem — nie jeden zbiorczy wiersz reprezentujący cały folder. Odznaczenie projektu, który dziś dziedziczy ustawienia folderu, pyta o potwierdzenie i przełącza go na `Własne ustawienia` (zaczynając od dokładnie tego, co ma dziś — skille, serwery MCP, dokument, i to co folder wyłączał globalnie), zamiast zmieniać coś wszystkim projektom folderu naraz.
+- Przy nazwie każdego serwera — linki `Wyłącz wszędzie` / `Włącz wszędzie`, które stosują wybór do wszystkich folderów i samodzielnych projektów jedną akcją, bez klikania każdego checkboxa osobno.
+
+### Naprawiono
+
+- Folder ze wspólnymi ustawieniami i projekt, który się z niego wypisał na własne ustawienia (ten sam fizyczny katalog), trafiały w `MCP globalne` do dwóch osobnych grup tylko dlatego, że przypadkiem nosiły tę samą nazwę — wyglądało to jak dwa niepowiązane wpisy zamiast jednego folderu z kilkoma projektami.
+
 ## [0.14.0] - 2026-08-28
 
 ### Dodano

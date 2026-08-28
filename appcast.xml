@@ -6,6 +6,27 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.15.0</title>
+      <pubDate>Fri, 28 Aug 2026 07:11:47 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.15.0</link>
+      <sparkle:version>32</sparkle:version>
+      <sparkle:shortVersionString>0.15.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.15.0</h2>
+        <ul>
+          <li>„MCP globalne”: rozwinięty serwer pokazuje każdy projekt folderu ze wspólnymi ustawieniami osobno — odznaczenie jednego pyta o potwierdzenie i daje mu „Własne ustawienia”, zamiast zmieniać wszystkim naraz.</li>
+          <li>Linki „Wyłącz wszędzie” / „Włącz wszędzie” przy każdym serwerze — jedna akcja zamiast klikania każdego checkboxa.</li>
+          <li>Poprawka: folder ze wspólnymi ustawieniami i projekt, który się z niego wypisał, nie trafiają już do dwóch osobnych, przypadkiem tak samo nazwanych grup.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.15.0/Agentbox-0.15.0.dmg"
+        length="5695683"
+        type="application/octet-stream"
+        sparkle:edSignature="0cEV7nbK901ITdmibBG8WXueFMGfaYXHRJBlN3VzY46RFa5yl+x79WL6LCmStDZ2uFjzOH9yEBO/Ixeu3gnOCg==" />
+    </item>
+    <item>
       <title>Agentbox 0.14.0</title>
       <pubDate>Fri, 28 Aug 2026 06:54:26 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.14.0</link>

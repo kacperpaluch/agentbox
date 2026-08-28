@@ -271,12 +271,65 @@ import SkillboxCore
     /// instead of Projekty's structure being invisible here.
     struct MCPSelection: Identifiable, Hashable { let id: UUID; let name: String; let tools: [Tool]; let groupKey: String; let groupName: String; let isRoot: Bool }
     var mcpSelections: [MCPSelection] {
-        let fromRoots = projectRoots.map { MCPSelection(id: $0.id, name: $0.name, tools: $0.tools, groupKey: $0.id.uuidString, groupName: $0.name, isRoot: true) }
+        // A root's groupKey is its own folder path, standardized the same way a standalone project's
+        // parent directory is below — so a root and a sibling project that opted out of it (own
+        // settings, same physical folder) land in the very same group instead of two that merely
+        // happen to share a display name.
+        let fromRoots = projectRoots.map { root in
+            MCPSelection(id: root.id, name: root.name, tools: root.tools, groupKey: URL(fileURLWithPath: root.path).standardizedFileURL.path, groupName: root.name, isRoot: true)
+        }
         let standalone = projects.filter { !inheritsRoot($0) }.map { project -> MCPSelection in
             let path = URL(fileURLWithPath: project.path).deletingLastPathComponent().standardizedFileURL.path
             return MCPSelection(id: project.id, name: project.name, tools: project.tools, groupKey: path, groupName: URL(fileURLWithPath: path).lastPathComponent, isRoot: false)
         }
         return (fromRoots + standalone).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+    /// One actual project inside a shared folder, for "MCP globalne"'s expanded per-server view —
+    /// every project gets its own checkbox there, not just the folder's one collapsed default.
+    struct FolderProject: Identifiable, Hashable {
+        let project: Project
+        /// Still following the folder's shared setting (`Project.overridesRoot != true`) — as
+        /// opposed to already having "Własne ustawienia", the same flag Projekty shows a badge for.
+        let inherits: Bool
+        var id: UUID { project.id }
+    }
+    /// Every actual project belonging to one shared folder, resolved (so an inheriting one already
+    /// carries the folder's effective tools/skills/MCP/doc) and ordered the same way Projekty lists them.
+    func projects(inRoot rootID: UUID) -> [FolderProject] {
+        storedProjects.filter { $0.rootID == rootID }
+            .compactMap { stored in projects.first { $0.id == stored.id }.map { FolderProject(project: $0, inherits: stored.overridesRoot != true) } }
+            .sorted { $0.project.name.localizedCaseInsensitiveCompare($1.project.name) == .orderedAscending }
+    }
+    /// Splits a shared folder off for one project, the same "Własne ustawienia" switch the project
+    /// editor offers — done here so a single global-MCP checkbox can use it without a trip there. The
+    /// project keeps exactly what it has today (tools, skills, tags, MCP assignment, doc, and any
+    /// global-server opt-out already in effect through the folder); it just stops following future
+    /// changes to the folder.
+    @discardableResult
+    func promoteToOwnSettings(_ project: Project) async -> Bool {
+        guard let root = root(for: project) else { return true }
+        isWorking = true; defer { isWorking = false }
+        do {
+            var updated = project
+            updated.overridesRoot = true
+            try await service?.updateProject(updated, serverIDs: selectedMCPServerIDs(for: project), serverTags: selectedMCPServerTags(for: project), docIDs: selectedDocIDs(for: project), docTags: selectedDocTags(for: project))
+            // Carry over whatever the folder currently opts out of, so the split does not silently
+            // re-enable something the folder had turned off.
+            for (toolRaw, names) in mcp.projectDisabledGlobalServers?[root.id.uuidString] ?? [:] {
+                if let tool = Tool(rawValue: toolRaw) { try await service?.setDisabledGlobalServers(selectionID: project.id, tool: tool, names: names) }
+            }
+            await reload()
+            message = "\(project.name) ma teraz własne ustawienia (zaczyna od tego, co miał w folderze \(root.name))"
+            record(.success, message)
+            return true
+        } catch { reportError(error); await reload(); return false }
+    }
+    /// The project-aware counterpart of `setGlobalServerDisabled(selectionID:...)`: a project still
+    /// following its folder gets promoted to its own settings first, so the toggle lands on it alone
+    /// instead of on the whole folder.
+    func setGlobalServerDisabled(project: Project, tool: Tool, name: String, disabled: Bool) async {
+        if inheritsRoot(project) { guard await promoteToOwnSettings(project) else { return } }
+        await setGlobalServerDisabled(selectionID: project.id, tool: tool, name: name, disabled: disabled)
     }
     /// Whether one selection currently opts a named global server out, straight from the already
     /// loaded configuration — so every toggle in the "MCP globalne" table can bind to this directly
@@ -294,6 +347,21 @@ import SkillboxCore
             if disabled { names.insert(name) } else { names.remove(name) }
             try await service?.setDisabledGlobalServers(selectionID: selectionID, tool: tool, names: Array(names))
             mcp = try await service?.mcpConfiguration() ?? mcp
+        } catch { reportError(error) }
+    }
+    /// The "Wyłącz wszędzie" / "Włącz wszędzie" action next to each server: applies the same choice
+    /// to every selection at once instead of clicking through each checkbox in turn. One refresh at
+    /// the end, not one per selection.
+    func setGlobalServerDisabledEverywhere(tool: Tool, name: String, disabled: Bool, selections: [MCPSelection]) async {
+        isWorking = true; defer { isWorking = false }
+        do {
+            for selection in selections {
+                var names = Set(mcp.projectDisabledGlobalServers?[selection.id.uuidString]?[tool.rawValue] ?? [])
+                if disabled { names.insert(name) } else { names.remove(name) }
+                try await service?.setDisabledGlobalServers(selectionID: selection.id, tool: tool, names: Array(names))
+            }
+            mcp = try await service?.mcpConfiguration() ?? mcp
+            message = disabled ? "Wyłączono \(name) wszędzie (\(selections.count))" : "Włączono z powrotem \(name) wszędzie (\(selections.count))"
         } catch { reportError(error) }
     }
     func previewProjectSync(_ project: Project) async throws -> ProjectSyncPreview { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewProjectSync(projectID: project.id) }
