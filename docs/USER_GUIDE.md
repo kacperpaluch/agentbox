@@ -90,6 +90,8 @@ Agentbox nie zarządza tymi plikami i niczego w nich nie nadpisuje — tylko je 
 
 Po rozwinięciu serwera folder ze wspólnymi ustawieniami (ikona ⚙️ na liście `Projekty`) pokazuje **każdy** należący do niego projekt osobno, z własnym checkboxem — nie jeden zbiorczy wiersz. Projekt, który dziś dziedziczy ustawienia folderu, ma plakietkę `dziedziczy z folderu`, a jego checkbox pokazuje aktualny, wspólny stan. Odznaczenie takiego projektu pyta o potwierdzenie: to nie jest osobny przełącznik tylko dla tego serwera, tylko ten sam mechanizm co `Własne ustawienia` w edytorze projektu — projekt zaczyna od dokładnie tego, co ma dziś (skille, serwery MCP, dokument, i to co folder akurat wyłączał globalnie), ale przestaje automatycznie dostawać przyszłe zmiany folderu. Projekty, które tylko leżą w jednym katalogu bez wspólnych ustawień, są pogrupowane pod nazwą tego katalogu wyłącznie wizualnie — każdy zawsze miał własny, niezależny przełącznik.
 
+Po rozwinięciu serwera pierwsza pozycja to `Wyłączaj w nowych projektach i folderach`. Wyłączanie globalnego serwera jest z natury per projekt, więc bez tej opcji projekt dodany za miesiąc znów widziałby go jako aktywny i trzeba by pamiętać o ponownym kliknięciu `Wyłącz wszędzie`. Zaznaczenie nie zmienia niczego w projektach, które już istnieją — decyduje wyłącznie o tym, z czym startuje następny.
+
 Przy nazwie każdego serwera są też dwa linki — `Wyłącz wszędzie` i `Włącz wszędzie` — które stosują ten sam wybór do wszystkich folderów i samodzielnych projektów naraz, bez klikania każdego checkboxa osobno. Działają na poziomie folderów (nie forsują `Własnych ustawień` na każdym projekcie z osobna) — dokładnie odwrotność pojedynczego odznaczenia opisanego wyżej.
 
 ### Wybór dokumentu w projekcie

@@ -84,6 +84,19 @@ private struct GlobalServerRow: View {
 
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
+            // Opting out is per project, so a project added next month would silently get this
+            // server back. This is where that is decided once, instead of by remembering to click
+            // "Wyłącz wszędzie" again.
+            Toggle(isOn: Binding(
+                get: { model.isGlobalServerDisabledByDefault(tool: tool, name: name) },
+                set: { on in Task { await model.setGlobalServerDisabledByDefault(tool: tool, name: name, disabled: on) } }
+            )) {
+                Text("Wyłączaj w nowych projektach i folderach").font(.caption)
+            }
+            .toggleStyle(.checkbox)
+            .disabled(model.isWorking)
+            .help("Nie zmienia projektów, które już istnieją — decyduje tylko, z czym startuje następny")
+            .padding(.leading, Space.row)
             ForEach(groups) { group in
                 VStack(alignment: .leading, spacing: 4) {
                     Label(group.name, systemImage: "folder").font(.caption.weight(.semibold)).foregroundStyle(.secondary)

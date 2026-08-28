@@ -6,6 +6,26 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.16.0</title>
+      <pubDate>Fri, 28 Aug 2026 07:44:16 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.16.0</link>
+      <sparkle:version>35</sparkle:version>
+      <sparkle:shortVersionString>0.16.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.16.0</h2>
+        <ul>
+          <li>„MCP globalne”: opcja <b>Wyłączaj w nowych projektach i folderach</b> przy każdym serwerze — bez niej projekt dodany za miesiąc znów widziałby go jako aktywny. Istniejące projekty nie są nią ruszane.</li>
+          <li>CLI: <code>agentbox mcp global defaults [add|remove &lt;tool&gt; &lt;serwer&gt;]</code>.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.16.0/Agentbox-0.16.0.dmg"
+        length="5712857"
+        type="application/octet-stream"
+        sparkle:edSignature="WsYycKASxIhmUL91bdP9M6YadQQtVeE1tPtNBLfkY92PdKpWBExem81o1niE/vAhYb4pE4dssDEgHdgGStvrAw==" />
+    </item>
+    <item>
       <title>Agentbox 0.15.2</title>
       <pubDate>Fri, 28 Aug 2026 07:31:14 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.15.2</link>

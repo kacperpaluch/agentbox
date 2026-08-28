@@ -324,6 +324,21 @@ import SkillboxCore
         if row.inherits { guard await promoteToOwnSettings(row.project) else { return } }
         await setGlobalServerDisabled(selectionID: row.inherits ? row.project.id : row.selectionID, tool: tool, name: name, disabled: disabled)
     }
+    /// Whether a global server is on the list every newly added project starts out opted out of.
+    func isGlobalServerDisabledByDefault(tool: Tool, name: String) -> Bool {
+        mcp.defaultDisabledGlobalServers?[tool.rawValue]?.contains(name) == true
+    }
+    /// Changes that list. Existing projects are untouched by design — this only decides where the
+    /// next one starts, which is what makes it safe to flip at any time.
+    func setGlobalServerDisabledByDefault(tool: Tool, name: String, disabled: Bool) async {
+        isWorking = true; defer { isWorking = false }
+        do {
+            var names = Set(mcp.defaultDisabledGlobalServers?[tool.rawValue] ?? [])
+            if disabled { names.insert(name) } else { names.remove(name) }
+            try await service?.setDefaultDisabledGlobalServers(tool: tool, names: Array(names))
+            mcp = try await service?.mcpConfiguration() ?? mcp
+        } catch { reportError(error) }
+    }
     /// Whether one selection currently opts a named global server out, straight from the already
     /// loaded configuration — so every toggle in the "MCP globalne" table can bind to this directly
     /// without a per-row network round trip.

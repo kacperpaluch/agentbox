@@ -1056,6 +1056,59 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertFalse(heading.contains("sekrety"), heading)
     }
 
+    /// Opting out is per project, so without a default a project added next month silently gets the
+    /// global server back. The default applies when a selection is created — and only then, so
+    /// projects that already exist are never changed behind the user's back.
+    func testDefaultDisabledGlobalServerAppliesToNewProjectsOnly() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let existing = root.appending(path: "stary")
+        let fresh = root.appending(path: "nowy")
+        let folder = root.appending(path: "praca/sklep")
+        for url in [existing, fresh, folder] { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
+        let service = try SkillboxService(root: root.appending(path: "data"))
+
+        let old = try await service.addProject(name: "stary", path: existing.path, tools: [.codex])
+        try await service.setDefaultDisabledGlobalServers(tool: .codex, names: ["apple_mail"])
+        let defaults = try await service.defaultDisabledGlobalServers()
+        XCTAssertEqual(defaults, [Tool.codex: ["apple_mail"]])
+
+        // The project that already existed keeps whatever it had: nothing.
+        let oldState = try await service.disabledGlobalServers(projectID: old.id)
+        XCTAssertEqual(oldState, [:])
+
+        let new = try await service.addProject(name: "nowy", path: fresh.path, tools: [.codex])
+        let newState = try await service.disabledGlobalServers(projectID: new.id)
+        XCTAssertEqual(newState, [Tool.codex: ["apple_mail"]])
+
+        // A new folder owns the selection its projects follow, so the default lands there too.
+        _ = try await AgentboxCommand.run(["project", "root-add", "praca", root.appending(path: "praca").path, "--tools", "codex", "--folders", "sklep"], service: service)
+        let projects = try await service.listProjects()
+        let inFolder = try XCTUnwrap(projects.first { $0.name == "sklep" })
+        let folderState = try await service.disabledGlobalServers(projectID: inFolder.id)
+        XCTAssertEqual(folderState, [Tool.codex: ["apple_mail"]])
+
+        // Turning the default off again leaves every existing project exactly as it is.
+        try await service.setDefaultDisabledGlobalServers(tool: .codex, names: [])
+        let clearedDefaults = try await service.defaultDisabledGlobalServers()
+        XCTAssertEqual(clearedDefaults, [:])
+        let stillDisabled = try await service.disabledGlobalServers(projectID: new.id)
+        XCTAssertEqual(stillDisabled, [Tool.codex: ["apple_mail"]])
+    }
+
+    func testCommandLineManagesGlobalServerDefaults() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let empty = try await AgentboxCommand.run(["mcp", "global", "defaults"], service: service)
+        XCTAssertTrue(empty.joined().contains("nie startują"), empty.description)
+        _ = try await AgentboxCommand.run(["mcp", "global", "defaults", "add", "codex", "apple_mail"], service: service)
+        let listed = try await AgentboxCommand.run(["mcp", "global", "defaults"], service: service)
+        XCTAssertEqual(listed, ["default\tcodex\tapple_mail"])
+        _ = try await AgentboxCommand.run(["mcp", "global", "defaults", "remove", "codex", "apple_mail"], service: service)
+        let afterRemove = try await service.defaultDisabledGlobalServers()
+        XCTAssertEqual(afterRemove, [:])
+    }
+
     func testSwitchingToJsoncStripsEntriesLeftBehindInOpencodeJson() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let projectURL = root.appending(path: "project")

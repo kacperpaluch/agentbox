@@ -218,6 +218,11 @@ public struct MCPConfiguration: Codable, Sendable {
     /// automatically. Keyed by selection ID (project or parent folder, like `projectServerIDs`),
     /// then by `Tool.rawValue`, holding the names disabled for that selection.
     public var projectDisabledGlobalServers: [String: [String: [String]]]?
+    /// Global servers a newly added project (or parent folder) starts out opted out of, keyed by
+    /// `Tool.rawValue`. Applied once, when the selection is created, rather than consulted on every
+    /// lookup — so a project added later can still be switched back on like any other, and existing
+    /// projects are never changed behind the user's back.
+    public var defaultDisabledGlobalServers: [String: [String]]?
     public init() {}
 }
 

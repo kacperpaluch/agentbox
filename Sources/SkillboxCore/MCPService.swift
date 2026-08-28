@@ -213,6 +213,33 @@ extension SkillboxService {
         try await store.save(config)
     }
 
+    /// Global servers every newly added project or folder starts out opted out of.
+    public func defaultDisabledGlobalServers() async throws -> [Tool: [String]] {
+        let stored = try await store.mcpConfiguration().defaultDisabledGlobalServers ?? [:]
+        return Dictionary(uniqueKeysWithValues: stored.compactMap { key, names in Tool(rawValue: key).map { ($0, names) } })
+    }
+
+    /// Replaces that list for one tool. Existing projects are deliberately left alone — this only
+    /// decides where the next one starts, which is what makes it safe to change at any time.
+    public func setDefaultDisabledGlobalServers(tool: Tool, names: [String]) async throws {
+        var config = try await store.mcpConfiguration()
+        var defaults = config.defaultDisabledGlobalServers ?? [:]
+        let cleaned = Array(Set(names)).sorted()
+        if cleaned.isEmpty { defaults.removeValue(forKey: tool.rawValue) } else { defaults[tool.rawValue] = cleaned }
+        config.defaultDisabledGlobalServers = defaults.isEmpty ? nil : defaults
+        try await store.save(config)
+    }
+
+    /// Copies the defaults onto a selection that has just come into existence. A project inheriting a
+    /// parent folder is skipped by its caller: the folder's own record already governs it, and a
+    /// second one under the project's id would only be a record nothing reads.
+    static func applyDefaultDisabledGlobalServers(_ mcp: inout MCPConfiguration, selectionID: UUID) {
+        guard let defaults = mcp.defaultDisabledGlobalServers, !defaults.isEmpty else { return }
+        var perSelection = mcp.projectDisabledGlobalServers ?? [:]
+        perSelection[selectionID.uuidString] = defaults
+        mcp.projectDisabledGlobalServers = perSelection
+    }
+
     /// The project convenience: like `setMCPServers`, refuses to edit a project that follows its
     /// parent folder's settings — change them on the folder itself, or give the project its own
     /// settings first.

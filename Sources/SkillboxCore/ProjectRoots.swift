@@ -88,6 +88,8 @@ extension SkillboxService {
         config.projects.append(contentsOf: projects)
         var mcp = try await store.mcpConfiguration()
         Self.assign(&mcp, projectID: stored.id, serverIDs: serverIDs, tags: serverTags)
+        // A new folder owns the MCP selection its projects follow, so it is where the defaults land.
+        Self.applyDefaultDisabledGlobalServers(&mcp, selectionID: stored.id)
         var docs = try await store.docsConfiguration()
         Self.assignDocs(&docs, id: stored.id, docIDs: docIDs, tags: docTags)
         try await store.save(config, mcp, docs)

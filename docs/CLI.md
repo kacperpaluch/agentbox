@@ -167,6 +167,14 @@ agentbox mcp global disable praca codex apple-mail --folder
 agentbox sync all
 ```
 
+```bash
+agentbox mcp global defaults
+agentbox mcp global defaults add codex apple_mail
+agentbox mcp global defaults remove codex apple_mail
+```
+
+`defaults` decyduje, z czym startuje **następny** dodany projekt albo folder. Wyłączanie globalnego serwera jest z natury per projekt, więc bez tego projekt dodany za miesiąc znów widziałby go jako aktywny. Istniejące projekty nie są tym ruszane — zmiana obowiązuje wyłącznie przy tworzeniu nowej pozycji, więc można ją włączać i wyłączać bez skutków ubocznych.
+
 `--folder` adresuje folder nadrzędny zamiast pojedynczego projektu. To jedyny sposób, żeby zmienić wybór dla projektu, który dziedziczy ustawienia z folderu — jego własny wpis nie zawiera niczego, co dałoby się zmienić. Próba użycia takiego projektu wprost kończy się błędem, który podaje nazwę folderu i gotową komendę.
 
 `global disable`/`global enable` tylko zapisują wybór — trzeba potem zsynchronizować projekt, żeby trafił do plików. Dla Codexa Agentbox dopisuje do `.codex/config.toml` samo `enabled = false` (bez powtarzania `command`/`args` — to udokumentowany sposób Codexa na nadpisanie jednego pola z warstwy globalnej). Dla Claude Code nazwa trafia do `disabledMcpServers` w `.claude/settings.local.json`, obok pozostałych, niezwiązanych z Agentboksem ustawień w tym pliku, które zostają nietknięte. Ten plik jest dopisywany do `.git/info/exclude` dopiero wtedy, gdy faktycznie trafi do niego wyłączenie — i pod własnym nagłówkiem, nie razem z plikami MCP, które mogą zawierać sekrety.

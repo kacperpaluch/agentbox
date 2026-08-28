@@ -285,7 +285,13 @@ public actor SkillboxService {
         var config = try await store.configuration()
         guard !config.projects.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(name) już istnieje") }
         let project = Project(name: name, path: url.path, tools: tools)
-        config.projects.append(project); try await store.save(config); return project
+        config.projects.append(project)
+        // The same starting point the full `addProject` gives, so a project added from the CLI is
+        // not quietly the one that keeps letting a globally-disabled server back in.
+        var mcp = try await store.mcpConfiguration()
+        Self.applyDefaultDisabledGlobalServers(&mcp, selectionID: project.id)
+        try await store.save(config, mcp, try await store.docsConfiguration())
+        return project
     }
 
     /// Creates a project and its skill, MCP and document assignments in one operation. The GUI used
@@ -301,6 +307,8 @@ public actor SkillboxService {
         config.projects.append(stored)
         var mcp = try await store.mcpConfiguration()
         Self.assign(&mcp, projectID: stored.id, serverIDs: serverIDs, tags: serverTags)
+        // A standalone project owns its MCP selection, so it is where the global-server defaults land.
+        Self.applyDefaultDisabledGlobalServers(&mcp, selectionID: stored.id)
         var docs = try await store.docsConfiguration()
         Self.assignDocs(&docs, id: stored.id, docIDs: docIDs, tags: docTags)
         try await store.save(config, mcp, docs)

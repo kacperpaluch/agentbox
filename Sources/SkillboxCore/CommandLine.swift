@@ -336,7 +336,7 @@ public enum AgentboxCommand {
         }
     }
 
-    private static let mcpUsage = "Użycie: agentbox mcp list | server add <name> --url URL|--command CMD [--args a,b] [--tags x,y] | server remove <name> | assign <project> --servers a,b [--tags x,y] | preview <project> | sync <project> | global list <projekt|folder> [--folder] | global disable <projekt|folder> <tool> <serwer> [--folder] | global enable <projekt|folder> <tool> <serwer> [--folder]"
+    private static let mcpUsage = "Użycie: agentbox mcp list | server add <name> --url URL|--command CMD [--args a,b] [--tags x,y] | server remove <name> | assign <project> --servers a,b [--tags x,y] | preview <project> | sync <project> | global list <projekt|folder> [--folder] | global disable <projekt|folder> <tool> <serwer> [--folder] | global enable <projekt|folder> <tool> <serwer> [--folder] | global defaults [add|remove <tool> <serwer>]"
 
     /// `agentbox mcp global ...` — the per-project opt-out for MCP servers a tool already considers
     /// global (Codex's `~/.codex/config.toml`, shared with the ChatGPT desktop app; Claude Code's
@@ -347,7 +347,9 @@ public enum AgentboxCommand {
     /// the only way to reach a project that inherits from one — its own record holds no MCP
     /// selection to change.
     private static func mcpGlobal(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
-        guard let action = rest.first, rest.count >= 2 else { return [mcpUsage] }
+        guard let action = rest.first else { return [mcpUsage] }
+        if action == "defaults" { return try await mcpGlobalDefaults(rest, service: service) }
+        guard rest.count >= 2 else { return [mcpUsage] }
         let target = try await resolveGlobalTarget(rest[1], folder: args.contains("--folder"), service: service)
         switch action {
         case "list":
@@ -373,6 +375,29 @@ public enum AgentboxCommand {
             return ["\(verb) \(name) (\(parsedTool.rawValue)) dla \(target.name) — uruchom `\(sync)`, żeby zapisać zmianę"]
         default: return [mcpUsage]
         }
+    }
+
+    /// `agentbox mcp global defaults …` — what a newly added project or folder starts out opted out
+    /// of. Existing projects are never touched by this; it only decides the starting point.
+    private static func mcpGlobalDefaults(_ rest: [String], service: SkillboxService) async throws -> [String] {
+        let current = try await service.defaultDisabledGlobalServers()
+        guard rest.count >= 4 else {
+            guard !current.isEmpty else { return ["Nowe projekty nie startują z żadnym wyłączonym serwerem globalnym"] }
+            return current.sorted { $0.key.rawValue < $1.key.rawValue }.flatMap { entry in
+                entry.value.sorted().map { "default\t\(entry.key.rawValue)\t\($0)" }
+            }
+        }
+        let parsedTool = try tool(rest[2])
+        let name = rest[3]
+        var names = Set(current[parsedTool] ?? [])
+        switch rest[1] {
+        case "add": names.insert(name)
+        case "remove": names.remove(name)
+        default: return [mcpUsage]
+        }
+        try await service.setDefaultDisabledGlobalServers(tool: parsedTool, names: Array(names))
+        let verb = rest[1] == "add" ? "będą startować z wyłączonym" : "nie będą już startować z wyłączonym"
+        return ["Nowe projekty \(verb) \(name) (\(parsedTool.rawValue)); istniejące zostają bez zmian"]
     }
 
     /// Either a project or, with `--folder`, a parent folder whose settings its projects share.

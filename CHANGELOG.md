@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-08-28
+
+### Dodano
+
+- `MCP globalne`: opcja `Wyłączaj w nowych projektach i folderach` przy każdym serwerze. Wyłączanie globalnego serwera jest z natury per projekt, więc bez tego projekt dodany za miesiąc znów widziałby go jako aktywny i trzeba by pamiętać o ponownym kliknięciu `Wyłącz wszędzie`. Opcja obowiązuje wyłącznie przy tworzeniu nowego projektu albo folderu — istniejące pozycje nie są nią ruszane, więc można ją włączać i wyłączać bez skutków ubocznych. CLI: `agentbox mcp global defaults [add|remove <tool> <serwer>]`.
+
 ## [0.15.2] - 2026-08-28
 
 ### Dodano
