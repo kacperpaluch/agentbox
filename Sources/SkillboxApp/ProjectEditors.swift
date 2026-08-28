@@ -34,16 +34,23 @@ struct ProjectEditor: View {
     @State private var usesOwnSettings = true
 
     var body: some View {
-        ScrollView { VStack(alignment: .leading, spacing: 14) {
-            Text(project == nil ? "Nowy projekt" : "Edytuj projekt").font(.title2.bold())
-            TextField("Nazwa", text: $name)
-            HStack { TextField("Folder projektu", text: $path); Button("Wybierz…") { chooseFolder() } }
-            inheritanceBox
-            SharedSettingsForm(skills: skills, servers: servers, docs: docs, tools: $tools, selectedSkills: $selected, selectedTags: $selectedSkillTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, selectedDoc: $selectedDoc, selectedDocTags: $selectedDocTagSet, excluded: $excluded, manageGitignore: $manageGitignore)
-                .disabled(!usesOwnSettings)
-            HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || path.isEmpty || (usesOwnSettings && tools.isEmpty)) }
-        }.padding(24) }
-        .frame(width: 700, height: 880)
+        // The actions sit outside the ScrollView: this form is long enough that they used to scroll
+        // out of reach, and a sheet taller than the window put them under the Dock entirely.
+        VStack(spacing: 0) {
+            ScrollView { VStack(alignment: .leading, spacing: 14) {
+                Text(project == nil ? "Nowy projekt" : "Edytuj projekt").font(.title2.bold())
+                TextField("Nazwa", text: $name)
+                HStack { TextField("Folder projektu", text: $path); Button("Wybierz…") { chooseFolder() } }
+                inheritanceBox
+                SharedSettingsForm(skills: skills, servers: servers, docs: docs, tools: $tools, selectedSkills: $selected, selectedTags: $selectedSkillTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, selectedDoc: $selectedDoc, selectedDocTags: $selectedDocTagSet, excluded: $excluded, manageGitignore: $manageGitignore)
+                    .disabled(!usesOwnSettings)
+            }.padding(24) }
+            SheetFooter {
+                Button("Anuluj") { dismiss() }
+                Button("Zapisz") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || path.isEmpty || (usesOwnSettings && tools.isEmpty))
+            }
+        }
+        .sheetFrame(width: 700, height: 640)
         .onAppear { load() }
     }
 
@@ -122,31 +129,38 @@ struct ProjectRootEditor: View {
     @State private var ignoredPaths: [String] = []
 
     var body: some View {
-        ScrollView { VStack(alignment: .leading, spacing: 14) {
-            Text("Ustawienia folderu nadrzędnego").font(.title2.bold())
-            TextField("Nazwa", text: $name)
-            Text(root.path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-            Text(followingProjects == 0
-                 ? "Żaden projekt nie korzysta jeszcze z tych ustawień."
-                 : "Te ustawienia obejmują \(followingProjects) projektów. Projekty z własnymi ustawieniami pozostają nietknięte.")
-                .font(.callout).foregroundStyle(.secondary)
-            GroupBox("Nowe podfoldery") {
-                VStack(alignment: .leading, spacing: 6) {
-                    Toggle("Pytaj, gdy w tym folderze pojawi się nowy podfolder", isOn: $watchesNewFolders).toggleStyle(.checkbox)
-                    Text("Agentbox sprawdza folder przy każdym odświeżeniu listy projektów i proponuje dodanie oraz synchronizację nowych podfolderów.").font(.caption).foregroundStyle(.secondary)
-                    if !ignoredPaths.isEmpty {
-                        HStack {
-                            Text("Pominięte podfoldery: \(ignoredPaths.count)").font(.caption).foregroundStyle(.secondary)
-                            Button("Przywróć pominięte") { ignoredPaths = [] }.controlSize(.small)
+        // Actions stay pinned below the scrolling form: on a short display they used to
+        // scroll out of reach, or sit under the Dock entirely.
+        VStack(spacing: 0) {
+            ScrollView { VStack(alignment: .leading, spacing: 14) {
+                Text("Ustawienia folderu nadrzędnego").font(.title2.bold())
+                TextField("Nazwa", text: $name)
+                Text(root.path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                Text(followingProjects == 0
+                     ? "Żaden projekt nie korzysta jeszcze z tych ustawień."
+                     : "Te ustawienia obejmują \(followingProjects) projektów. Projekty z własnymi ustawieniami pozostają nietknięte.")
+                    .font(.callout).foregroundStyle(.secondary)
+                GroupBox("Nowe podfoldery") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Pytaj, gdy w tym folderze pojawi się nowy podfolder", isOn: $watchesNewFolders).toggleStyle(.checkbox)
+                        Text("Agentbox sprawdza folder przy każdym odświeżeniu listy projektów i proponuje dodanie oraz synchronizację nowych podfolderów.").font(.caption).foregroundStyle(.secondary)
+                        if !ignoredPaths.isEmpty {
+                            HStack {
+                                Text("Pominięte podfoldery: \(ignoredPaths.count)").font(.caption).foregroundStyle(.secondary)
+                                Button("Przywróć pominięte") { ignoredPaths = [] }.controlSize(.small)
+                            }
+                            Text(ignoredPaths.map { URL(fileURLWithPath: $0).lastPathComponent }.joined(separator: ", ")).font(.caption2).foregroundStyle(.tertiary).lineLimit(2)
                         }
-                        Text(ignoredPaths.map { URL(fileURLWithPath: $0).lastPathComponent }.joined(separator: ", ")).font(.caption2).foregroundStyle(.tertiary).lineLimit(2)
-                    }
-                }.padding(6)
+                    }.padding(6)
+                }
+                SharedSettingsForm(skills: skills, servers: servers, docs: docs, tools: $tools, selectedSkills: $selected, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, selectedDoc: $selectedDoc, selectedDocTags: $selectedDocTagSet, excluded: $excluded, manageGitignore: $manageGitignore)
+            }.padding(24) }
+            SheetFooter {
+                Button("Anuluj") { dismiss() }
+                Button("Zapisz") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || tools.isEmpty)
             }
-            SharedSettingsForm(skills: skills, servers: servers, docs: docs, tools: $tools, selectedSkills: $selected, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, selectedDoc: $selectedDoc, selectedDocTags: $selectedDocTagSet, excluded: $excluded, manageGitignore: $manageGitignore)
-            HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || tools.isEmpty) }
-        }.padding(24) }
-        .frame(width: 700, height: 900)
+        }
+        .sheetFrame(width: 700, height: 640)
         .onAppear {
             name = root.name; tools = Set(root.tools); selected = Set(root.skillIDs); selectedTags = Set(root.tags)
             excluded = Set(root.excludedSkillIDs ?? []); manageGitignore = root.manageGitignore ?? false
@@ -186,7 +200,7 @@ struct BatchProjectView: View {
     private var rootAlreadyAdded: Bool { !root.isEmpty && existingRoots.contains { URL(fileURLWithPath: $0.path).standardizedFileURL.path == URL(fileURLWithPath: root).standardizedFileURL.path } }
     private var rootNameTaken: Bool { existingRoots.contains { $0.name.caseInsensitiveCompare(rootName) == .orderedSame } }
 
-    var body: some View { ScrollView { VStack(alignment: .leading, spacing: 14) {
+    var body: some View { VStack(spacing: 0) { ScrollView { VStack(alignment: .leading, spacing: 14) {
         Text("Dodaj wiele projektów").font(.title2.bold())
         Text("Ustawienia zapisują się na folderze nadrzędnym i schodzą na jego podfoldery. Pojedynczy projekt może później dostać własne.").foregroundStyle(.secondary)
         HStack { TextField("Folder nadrzędny", text: $root); Button("Wybierz…") { chooseRoot() } }
@@ -209,8 +223,12 @@ struct BatchProjectView: View {
             else { HStack { Button("Zaznacz dostępne") { selectedFolders = Set(availableFolders.map(\.path)) }; Button("Wyczyść") { selectedFolders.removeAll() }; Spacer(); Text("Wybrano \(selectedFolders.count)").foregroundStyle(.secondary) }; ForEach(folders, id: \.path) { folder in let exists = existingPaths.contains(folder.standardizedFileURL.path); Toggle(isOn: folderBinding(folder)) { HStack { Image(systemName: "folder"); Text(folder.lastPathComponent); Spacer(); if exists { Text("już dodany").font(.caption).foregroundStyle(.secondary) } } }.toggleStyle(.checkbox).disabled(exists) } }
         }.padding(6) }.frame(maxHeight: 230)
         SharedSettingsForm(skills: skills, servers: servers, docs: docs, tools: $tools, selectedSkills: $selectedSkills, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, selectedDoc: $selectedDoc, selectedDocTags: $selectedDocTagSet, excluded: $excluded, manageGitignore: $manageGitignore)
-        HStack { Spacer(); Button("Anuluj") { dismiss() }; Button(sharedSettings ? "Dodaj folder i \(selectedFolders.count) projektów" : "Dodaj \(selectedFolders.count) projektów") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(saveDisabled) }
-    }.padding(24) }.frame(width: 760, height: 900) }
+    }.padding(24) }
+    // Pinned below the scrolling form, so the action stays reachable on any display.
+    SheetFooter {
+        Button("Anuluj") { dismiss() }
+        Button(sharedSettings ? "Dodaj folder i \(selectedFolders.count) projektów" : "Dodaj \(selectedFolders.count) projektów") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(saveDisabled)
+    } }.sheetFrame(width: 760, height: 640) }
 
     private var saveDisabled: Bool {
         if tools.isEmpty || rootAlreadyAdded { return true }
@@ -261,38 +279,45 @@ struct GroupRootSetupView: View {
     private var nameTaken: Bool { model.projectRoots.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame } }
 
     var body: some View {
-        ScrollView { VStack(alignment: .leading, spacing: 14) {
-            Text("Wspólne ustawienia folderu").font(.title2.bold())
-            Text(folderPath).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-            Text("Skille, tagi i serwery MCP ustawione tutaj obowiązują wszystkie zaznaczone projekty. Późniejsza zmiana w folderze obejmuje je wszystkie naraz.").foregroundStyle(.secondary)
-            TextField("Nazwa folderu", text: $name)
-            if nameTaken { Label("Folder nadrzędny o tej nazwie już istnieje.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }
-            GroupBox("Projekty w tym folderze") { VStack(alignment: .leading, spacing: 7) {
-                Text("Zaznaczone przechodzą na wspólne ustawienia. Odznaczone zostają w folderze, ale zachowują to, co mają dziś.").font(.caption).foregroundStyle(.secondary)
-                ForEach(projects) { project in
-                    Toggle(isOn: setBinding(project.id, in: $following)) {
-                        HStack {
-                            Text(project.name)
-                            Spacer()
-                            Text(change(for: project)).font(.caption).foregroundStyle(following.contains(project.id) ? .secondary : .tertiary)
-                        }
-                    }.toggleStyle(.checkbox)
-                }
-                HStack { Button("Zaznacz wszystkie") { following = Set(projects.map(\.id)) }; Button("Wyczyść") { following.removeAll() } }
-            }.padding(6) }
-            GroupBox("Nowe podfoldery") { VStack(alignment: .leading, spacing: 6) {
-                Toggle("Pytaj, gdy w tym folderze pojawi się nowy podfolder", isOn: $watchesNewFolders).toggleStyle(.checkbox)
-                Text("Nowy podfolder — na przykład świeżo sklonowane repozytorium — pojawi się jako pytanie nad listą projektów oraz jako plakietka przy `Projekty`.").font(.caption).foregroundStyle(.secondary)
-                Toggle("Pytaj tylko o podfoldery, które pojawią się od teraz", isOn: $onlyFutureFolders).toggleStyle(.checkbox).disabled(!watchesNewFolders)
-                Text(onlyFutureFolders
-                     ? "Podfoldery, które są w tym folderze teraz i nie są projektami, zostają uznane za znane. Wrócą po kliknięciu `Przywróć pominięte` w ustawieniach folderu."
-                     : "Agentbox zapyta także o podfoldery, które już tam leżą i nie są projektami.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }.padding(6) }
-            SharedSettingsForm(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, tools: $tools, selectedSkills: $selectedSkills, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, selectedDoc: $selectedDoc, selectedDocTags: $selectedDocTagSet, excluded: $excluded, manageGitignore: $manageGitignore)
-            HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Utwórz folder nadrzędny") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || nameTaken || tools.isEmpty) }
-        }.padding(24) }
-        .frame(width: 760, height: 900)
+        // Actions stay pinned below the scrolling form: on a short display they used to
+        // scroll out of reach, or sit under the Dock entirely.
+        VStack(spacing: 0) {
+            ScrollView { VStack(alignment: .leading, spacing: 14) {
+                Text("Wspólne ustawienia folderu").font(.title2.bold())
+                Text(folderPath).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                Text("Skille, tagi i serwery MCP ustawione tutaj obowiązują wszystkie zaznaczone projekty. Późniejsza zmiana w folderze obejmuje je wszystkie naraz.").foregroundStyle(.secondary)
+                TextField("Nazwa folderu", text: $name)
+                if nameTaken { Label("Folder nadrzędny o tej nazwie już istnieje.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }
+                GroupBox("Projekty w tym folderze") { VStack(alignment: .leading, spacing: 7) {
+                    Text("Zaznaczone przechodzą na wspólne ustawienia. Odznaczone zostają w folderze, ale zachowują to, co mają dziś.").font(.caption).foregroundStyle(.secondary)
+                    ForEach(projects) { project in
+                        Toggle(isOn: setBinding(project.id, in: $following)) {
+                            HStack {
+                                Text(project.name)
+                                Spacer()
+                                Text(change(for: project)).font(.caption).foregroundStyle(following.contains(project.id) ? .secondary : .tertiary)
+                            }
+                        }.toggleStyle(.checkbox)
+                    }
+                    HStack { Button("Zaznacz wszystkie") { following = Set(projects.map(\.id)) }; Button("Wyczyść") { following.removeAll() } }
+                }.padding(6) }
+                GroupBox("Nowe podfoldery") { VStack(alignment: .leading, spacing: 6) {
+                    Toggle("Pytaj, gdy w tym folderze pojawi się nowy podfolder", isOn: $watchesNewFolders).toggleStyle(.checkbox)
+                    Text("Nowy podfolder — na przykład świeżo sklonowane repozytorium — pojawi się jako pytanie nad listą projektów oraz jako plakietka przy `Projekty`.").font(.caption).foregroundStyle(.secondary)
+                    Toggle("Pytaj tylko o podfoldery, które pojawią się od teraz", isOn: $onlyFutureFolders).toggleStyle(.checkbox).disabled(!watchesNewFolders)
+                    Text(onlyFutureFolders
+                         ? "Podfoldery, które są w tym folderze teraz i nie są projektami, zostają uznane za znane. Wrócą po kliknięciu `Przywróć pominięte` w ustawieniach folderu."
+                         : "Agentbox zapyta także o podfoldery, które już tam leżą i nie są projektami.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.padding(6) }
+                SharedSettingsForm(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, tools: $tools, selectedSkills: $selectedSkills, selectedTags: $selectedTags, selectedServers: $selectedServers, selectedMCPtags: $selectedMCPtags, selectedDoc: $selectedDoc, selectedDocTags: $selectedDocTagSet, excluded: $excluded, manageGitignore: $manageGitignore)
+            }.padding(24) }
+            SheetFooter {
+                Button("Anuluj") { dismiss() }
+                Button("Utwórz folder nadrzędny") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || nameTaken || tools.isEmpty)
+            }
+        }
+        .sheetFrame(width: 760, height: 640)
         .onAppear { load() }
     }
 
@@ -396,7 +421,7 @@ struct DetectedFoldersView: View {
             }
         }
         .padding(24)
-        .frame(width: 680, height: 520)
+        .sheetFrame(width: 680, height: 520)
         .onAppear { selected = Set(model.detectedFolders.map(\.path)) }
     }
 }

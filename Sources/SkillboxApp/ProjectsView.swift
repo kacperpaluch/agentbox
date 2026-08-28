@@ -258,7 +258,7 @@ struct AllProjectsSyncPreviewView: View {
                     }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || plans == nil || model.isWorking)
                 }
             }
-        }.padding(24).frame(width: 820, height: 700).task { do { plans = try await model.previewAllProjectsSync() } catch { self.error = error.localizedDescription; model.reportError(error) } }
+        }.padding(24).sheetFrame(width: 820, height: 700).task { do { plans = try await model.previewAllProjectsSync() } catch { self.error = error.localizedDescription; model.reportError(error) } }
     }
 }
 private struct ProjectSyncOutcomeRow: View {
@@ -363,7 +363,7 @@ struct AdoptSkillsView: View {
                 }.buttonStyle(.borderedProminent).disabled(selected.isEmpty || model.isWorking)
             }
         }
-        .padding(24).frame(width: 640, height: 520)
+        .padding(24).sheetFrame(width: 640, height: 520)
         .task { do { candidates = try await model.adoptableSkills(project) } catch { self.error = error.localizedDescription } }
     }
 }

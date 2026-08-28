@@ -100,3 +100,36 @@ struct RowMenu<MenuContent: View>: View {
             .frame(width: 28)
     }
 }
+
+/// Pinned action row for a sheet: a divider and a bar that stay put while the form above scrolls.
+///
+/// Long editors used to keep `Anuluj`/`Zapisz` at the bottom of the scrolled content, so on a
+/// display shorter than the sheet the buttons ended up under the Dock with no way to reach them.
+struct SheetFooter<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(spacing: 0) {
+            Divider()
+            HStack { Spacer(); content }
+                .padding(.horizontal, Space.page)
+                .padding(.vertical, Space.section - 4)
+                .background(.bar)
+        }
+    }
+}
+
+/// Sizing every sheet in the app shares.
+///
+/// A hard `height:` is what put `Zapisz` under the Dock: the editors were tall enough to work on an
+/// external display and too tall on a laptop, and a sheet does not shrink itself to fit. The height
+/// asked for here is treated as an ideal and capped to what the active screen actually shows, so the
+/// same sheet is roomy on a big monitor and merely scrollable on a small one — without a second set
+/// of numbers to keep in sync.
+extension View {
+    func sheetFrame(width: CGFloat, height: CGFloat) -> some View {
+        // `visibleFrame` already excludes the menu bar and the Dock; the margin keeps the sheet clear
+        // of the window's title bar and its own shadow.
+        let available = (NSScreen.main?.visibleFrame.height ?? 900) - 80
+        return frame(width: width, height: min(height, max(360, available)))
+    }
+}

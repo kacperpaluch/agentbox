@@ -69,6 +69,6 @@ struct NewSkillView: View {
             HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Utwórz skill") { onCreate(NewSkillDraft(id: effectiveID, name: name, description: description, content: content, tags: AppModel.csv(tags))); dismiss() }.buttonStyle(.borderedProminent).disabled(!idValid || idTaken || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
         }
         .padding(24)
-        .frame(width: 720, height: 640)
+        .sheetFrame(width: 720, height: 640)
     }
 }

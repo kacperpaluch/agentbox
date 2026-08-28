@@ -6,6 +6,26 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.16.1</title>
+      <pubDate>Fri, 28 Aug 2026 08:00:28 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.16.1</link>
+      <sparkle:version>36</sparkle:version>
+      <sparkle:shortVersionString>0.16.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.16.1</h2>
+        <ul>
+          <li>Okna edytorów nie są już wyższe niż ekran — na laptopie przycisk <code>Zapisz</code> potrafił wylądować pod Dockiem. Wysokość liczy się teraz z faktycznej wysokości aktywnego ekranu.</li>
+          <li><code>Anuluj</code> i <code>Zapisz</code> są zapięte na dole arkusza, zamiast jechać razem z przewijanym formularzem.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.16.1/Agentbox-0.16.1.dmg"
+        length="5723507"
+        type="application/octet-stream"
+        sparkle:edSignature="iTocWSRPxnXlgcfMM7oPyMah02blYPYrepJUVLqfmoVxBlsjZ3RV4IU6gA4x5MzWdWwHoke168AZp+PRuJ4dCA==" />
+    </item>
+    <item>
       <title>Agentbox 0.16.0</title>
       <pubDate>Fri, 28 Aug 2026 07:44:16 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.16.0</link>

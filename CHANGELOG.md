@@ -6,6 +6,13 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-08-28
+
+### Naprawiono
+
+- Okna edytorów (projekt, folder nadrzędny, `Dodaj wiele`, wspólne ustawienia grupy, serwer MCP) miały sztywną wysokość 760–900 pt, większą niż okno aplikacji. Na laptopie dolna część arkusza — razem z przyciskiem `Zapisz` — lądowała pod Dockiem i nie dało się jej kliknąć. Wysokość każdego arkusza jest teraz liczona z faktycznej wysokości aktywnego ekranu (bez paska menu i Docka), więc ten sam edytor jest przestronny na monitorze zewnętrznym i po prostu przewijalny na laptopie.
+- `Anuluj` i `Zapisz` w długich edytorach jechały razem z przewijaną treścią. Są teraz zapięte na dole arkusza i widoczne niezależnie od tego, jak daleko przewinięto formularz.
+
 ## [0.16.0] - 2026-08-28
 
 ### Dodano

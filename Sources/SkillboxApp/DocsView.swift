@@ -125,7 +125,7 @@ struct NewDocView: View {
             HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Utwórz dokument") { onCreate(NewDocDraft(id: effectiveID, name: name, content: content, tags: AppModel.csv(tags))); dismiss() }.buttonStyle(.borderedProminent).disabled(!idValid || idTaken || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
         }
         .padding(24)
-        .frame(width: 720, height: 640)
+        .sheetFrame(width: 720, height: 640)
     }
 }
 
@@ -157,6 +157,6 @@ struct DocEditorView: View {
             HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { Task { if await model.saveDocContent(original.id, name: name, content: content) { dismiss() } } }.buttonStyle(.borderedProminent).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isWorking) }
         }
         .padding(24)
-        .frame(width: 760, height: 700)
+        .sheetFrame(width: 760, height: 700)
     }
 }

@@ -104,7 +104,7 @@ struct MCPBulkJSONView: View {
         TextEditor(text: $text).font(.system(.body, design: .monospaced)).frame(minHeight: 420).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
         if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
         HStack { if working { ProgressView() }; Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { Task { await save() } }.buttonStyle(.borderedProminent).disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working) }
-    }.padding(24).frame(width: 720, height: 600) }
+    }.padding(24).sheetFrame(width: 720, height: 600) }
     private func save() async {
         working = true; error = ""; defer { working = false }
         do { _ = try await model.importMCPJSONAll(text); dismiss() } catch { self.error = error.localizedDescription; model.reportError(error) }
@@ -122,7 +122,7 @@ struct MCPServerEditor: View {
     /// The JSON view only makes sense once the server is actually saved — a brand-new, unsaved one
     /// has nothing in the store yet to export or to match by id.
     private var isExisting: Bool { model.mcp.servers.contains { $0.id == original.id } }
-    var body: some View { ScrollView { Form { Text("Serwer MCP").font(.title2.bold()); TextField("Nazwa techniczna", text: $name); HStack { TextField("Tagi, oddzielone przecinkami", text: $tags); ExistingTagMenu(tags: existingTags, text: $tags) }; Toggle("Włączony", isOn: $enabled)
+    var body: some View { VStack(spacing: 0) { ScrollView { Form { Text("Serwer MCP").font(.title2.bold()); TextField("Nazwa techniczna", text: $name); HStack { TextField("Tagi, oddzielone przecinkami", text: $tags); ExistingTagMenu(tags: existingTags, text: $tags) }; Toggle("Włączony", isOn: $enabled)
         if isExisting { Picker("Widok", selection: $editingJSON) { Text("Formularz").tag(false); Text("JSON").tag(true) }.pickerStyle(.segmented).onChange(of: editingJSON) { if editingJSON { Task { jsonText = await model.exportMCPServerJSON(original.id) } } } }
         if editingJSON && isExisting {
             Text("Pełna konfiguracja tego serwera, wartości wprost — łącznie z sekretami. ${VAR} to odczyt zmiennej systemowej; klucze wyglądające na token/hasło/API key automatycznie zostają tylko na tym Macu, reszta trafia do backupu Git.").font(.caption).foregroundStyle(.secondary)
@@ -136,8 +136,12 @@ struct MCPServerEditor: View {
         if !(editingJSON && isExisting) {
             GroupBox("Zmienne i nagłówki") { VStack(alignment: .leading, spacing: 10) { Text("Wartości widać wprost — to lokalna apka na tym Macu. Typ pola decyduje, czy wartość trafia do backupu Git: „Tylko na tym Macu” nigdy nie wychodzi poza mcp-secrets.json.").font(.caption).foregroundStyle(.secondary); ForEach($fields) { $field in MCPManagedFieldRow(field: $field) { fields.removeAll { $0.id == field.id } } }; HStack { Button("Dodaj zmienną") { fields.append(MCPManagedField(location: .environment, key: "", classification: .environment)) }; Button("Dodaj nagłówek") { fields.append(MCPManagedField(location: .header, key: "", classification: .environment)) } } }.padding(7) }
         }
-        HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { Task { if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(name.isEmpty || (editingJSON && isExisting ? jsonText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty : (transport == .stdio ? command.isEmpty : url.isEmpty)) || model.isWorking) }
-    }.padding(24) }.frame(width: 760, height: 760).task { fields = await model.managedFields(for: original) } }
+    }.padding(24) }
+    // Pinned below the scrolling form, so the action stays reachable on any display.
+    SheetFooter {
+        Button("Anuluj") { dismiss() }
+        Button("Zapisz") { Task { if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(name.isEmpty || (editingJSON && isExisting ? jsonText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty : (transport == .stdio ? command.isEmpty : url.isEmpty)) || model.isWorking)
+    } }.sheetFrame(width: 760, height: 660).task { fields = await model.managedFields(for: original) } }
     private func save() async -> Bool {
         if editingJSON && isExisting { return await model.updateMCPServerJSON(original.id, name: name, json: jsonText, enabled: enabled, tags: AppModel.csv(tags)) }
         let server = MCPServer(id: original.id, name: name, transport: transport, command: command, arguments: arguments.split(whereSeparator: \.isNewline).map(String.init), url: url, enabled: enabled, tags: AppModel.csv(tags))
@@ -181,7 +185,7 @@ struct MCPImportView: View {
         }
         if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
     }.padding(24) }; Divider(); HStack { if working { ProgressView() }; if summary != nil { Text("Wybrano: \(selected.count)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Anuluj") { dismiss() }; Button("Analizuj") { Task { await prepare() } }.disabled(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working); Button("Importuj wybrane") { Task { await importNow() } }.buttonStyle(.borderedProminent).disabled(summary == nil || selected.isEmpty || working) }.padding(16).background(.bar)
-    }.frame(width: 760, height: 680) }
+    }.sheetFrame(width: 760, height: 680) }
     private func prepare() async { working = true; error = ""; summary = nil; selected.removeAll(); classifications.removeAll(); defer { working = false }; do { let analyzed = try await model.analyzeMCP(source); summary = analyzed; selected = Set(analyzed.servers.map(\.name)); classifications = Dictionary(uniqueKeysWithValues: analyzed.fields.map { ($0.id, $0.classification) }) } catch { self.error = error.localizedDescription; model.reportError(error) } }
     private func importNow() async { working = true; error = ""; defer { working = false }; do { _ = try await model.importMCP(source, serverNames: selected, classifications: classifications); dismiss() } catch { self.error = error.localizedDescription; model.reportError(error) } }
     private func classificationBinding(_ field: MCPImportField) -> Binding<MCPValueClassification> { Binding(get: { classifications[field.id] ?? field.classification }, set: { classifications[field.id] = $0 }) }
@@ -239,7 +243,7 @@ struct MCPPreviewView: View {
                 }
             } } }
             HStack { Spacer(); Button("Zamknij") { dismiss() }; Button("Synchronizuj skille, MCP i dokumenty") { Task { await model.syncEverything(project) } }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || preview == nil || model.isWorking) }
-        }.padding(24).frame(width: 820, height: 700).task { do { preview = try await model.previewProjectSync(project) } catch { self.error = error.localizedDescription; model.reportError(error) } }
+        }.padding(24).sheetFrame(width: 820, height: 700).task { do { preview = try await model.previewProjectSync(project) } catch { self.error = error.localizedDescription; model.reportError(error) } }
     }
 }
 struct SyncChangeRows: View {
