@@ -331,45 +331,58 @@ public enum AgentboxCommand {
             _ = try await service.syncMCP(projectID: project.id)
             return ["Zsynchronizowano MCP"]
         case "global" where rest.count >= 2:
-            return try await mcpGlobal(Array(rest.dropFirst()), service: service)
+            return try await mcpGlobal(Array(rest.dropFirst()), service: service, args: args)
         default: return [mcpUsage]
         }
     }
 
-    private static let mcpUsage = "Użycie: agentbox mcp list | server add <name> --url URL|--command CMD [--args a,b] [--tags x,y] | server remove <name> | assign <project> --servers a,b [--tags x,y] | preview <project> | sync <project> | global list <project> | global disable <project> <tool> <name> | global enable <project> <tool> <name>"
+    private static let mcpUsage = "Użycie: agentbox mcp list | server add <name> --url URL|--command CMD [--args a,b] [--tags x,y] | server remove <name> | assign <project> --servers a,b [--tags x,y] | preview <project> | sync <project> | global list <projekt|folder> [--folder] | global disable <projekt|folder> <tool> <serwer> [--folder] | global enable <projekt|folder> <tool> <serwer> [--folder]"
 
     /// `agentbox mcp global ...` — the per-project opt-out for MCP servers a tool already considers
     /// global (Codex's `~/.codex/config.toml`, shared with the ChatGPT desktop app; Claude Code's
     /// user scope). Agentbox only reads those files; disabling one writes a small override into the
     /// project instead of touching the global file itself.
-    private static func mcpGlobal(_ rest: [String], service: SkillboxService) async throws -> [String] {
+    ///
+    /// `--folder` addresses a parent folder's shared settings instead of a single project, which is
+    /// the only way to reach a project that inherits from one — its own record holds no MCP
+    /// selection to change.
+    private static func mcpGlobal(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
         guard let action = rest.first, rest.count >= 2 else { return [mcpUsage] }
-        let project = try await resolve(rest[1], service: service)
+        let target = try await resolveGlobalTarget(rest[1], folder: args.contains("--folder"), service: service)
         switch action {
         case "list":
-            let refs = try await service.globalMCPServers(projectID: project.id)
-            let disabled = try await service.disabledGlobalServers(projectID: project.id)
-            guard !refs.isEmpty else { return ["Brak globalnych serwerów MCP dla narzędzi tego projektu"] }
+            let refs = try await service.globalMCPServers(selectionID: target.id, tools: target.tools)
+            let disabled = try await service.disabledGlobalServers(selectionID: target.id)
+            guard !refs.isEmpty else { return ["Brak globalnych serwerów MCP dla narzędzi \(target.name)"] }
             return refs.map { ref in
                 let isOff = disabled[ref.tool]?.contains(ref.name) == true
                 return "global\t\(ref.tool.rawValue)\t\(ref.name)\t\(isOff ? "wyłączony w projekcie" : "dziedziczony")"
             }
-        case "disable" where rest.count >= 4:
+        case "disable" where rest.count >= 4, "enable" where rest.count >= 4:
             let parsedTool = try tool(rest[2])
             let name = rest[3]
-            var names = Set((try await service.disabledGlobalServers(projectID: project.id))[parsedTool] ?? [])
-            names.insert(name)
-            try await service.setDisabledGlobalServers(projectID: project.id, tool: parsedTool, names: Array(names))
-            return ["Wyłączono \(name) (\(parsedTool.rawValue)) w projekcie \(project.name) — uruchom `agentbox sync project \(project.name)`, żeby zapisać zmianę"]
-        case "enable" where rest.count >= 4:
-            let parsedTool = try tool(rest[2])
-            let name = rest[3]
-            var names = Set((try await service.disabledGlobalServers(projectID: project.id))[parsedTool] ?? [])
-            names.remove(name)
-            try await service.setDisabledGlobalServers(projectID: project.id, tool: parsedTool, names: Array(names))
-            return ["Włączono z powrotem \(name) (\(parsedTool.rawValue)) w projekcie \(project.name) — uruchom `agentbox sync project \(project.name)`, żeby zapisać zmianę"]
+            let turningOff = action == "disable"
+            var names = Set((try await service.disabledGlobalServers(selectionID: target.id))[parsedTool] ?? [])
+            if turningOff { names.insert(name) } else { names.remove(name) }
+            // A project that follows a folder is rejected here rather than silently writing a record
+            // nothing reads; the error names the folder and the exact command to use instead.
+            if target.isFolder { try await service.setDisabledGlobalServers(selectionID: target.id, tool: parsedTool, names: Array(names)) }
+            else { try await service.setDisabledGlobalServers(projectID: target.id, tool: parsedTool, names: Array(names)) }
+            let verb = turningOff ? "Wyłączono" : "Włączono z powrotem"
+            let sync = target.isFolder ? "agentbox sync all" : "agentbox sync project \(target.name)"
+            return ["\(verb) \(name) (\(parsedTool.rawValue)) dla \(target.name) — uruchom `\(sync)`, żeby zapisać zmianę"]
         default: return [mcpUsage]
         }
+    }
+
+    /// Either a project or, with `--folder`, a parent folder whose settings its projects share.
+    private static func resolveGlobalTarget(_ name: String, folder: Bool, service: SkillboxService) async throws -> (id: UUID, name: String, tools: [Tool], isFolder: Bool) {
+        guard folder else {
+            let project = try await resolve(name, service: service)
+            return (project.id, project.name, project.tools, false)
+        }
+        guard let root = try await service.projectRoots().first(where: { $0.name == name }) else { throw SkillboxError.projectNotFound("folder \(name)") }
+        return (root.id, root.name, root.tools, true)
     }
 
     private static func tool(_ raw: String) throws -> Tool {

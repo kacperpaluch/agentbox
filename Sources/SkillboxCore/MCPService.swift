@@ -219,7 +219,8 @@ extension SkillboxService {
     public func setDisabledGlobalServers(projectID: UUID, tool: Tool, names: [String]) async throws {
         let local = try await store.configuration()
         if let project = local.projects.first(where: { $0.id == projectID }), local.inheritsRoot(project) {
-            throw SkillboxError.invalidSkill("projekt \(project.name) korzysta z ustawień folderu nadrzędnego — zmień je na folderze albo nadaj projektowi własne ustawienia")
+            let folder = local.root(for: project)?.name ?? "nadrzędnego"
+            throw SkillboxError.invalidSkill("projekt \(project.name) dziedziczy ustawienia z folderu \(folder) — użyj `agentbox mcp global <disable|enable> \(folder) … --folder`, żeby zmienić je dla całego folderu, albo nadaj projektowi własne ustawienia w aplikacji")
         }
         guard let project = local.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
         try await setDisabledGlobalServers(selectionID: local.mcpSelectionID(for: project), tool: tool, names: names)
@@ -318,7 +319,7 @@ enum MCPRenderer {
         defer { try? fm.removeItem(at: backup) }
         var state = try manifest(project)
         var originals: [(file: URL, backup: URL?, existed: Bool)] = []
-        try protectGeneratedFiles(project)
+        try protectGeneratedFiles(project, previews: previews)
         do {
             for preview in previews {
                 try writeManaged(preview.content, to: URL(fileURLWithPath: preview.file), backupPrefix: preview.tool.rawValue + "-", backup: backup, originals: &originals)
@@ -560,19 +561,34 @@ enum MCPRenderer {
         return result
     }
 
-    private static func protectGeneratedFiles(_ project: URL) throws {
+    /// Keeps generated files out of the repository, in two groups with two different reasons.
+    ///
+    /// `.claude/settings.local.json` is deliberately not lumped in with the MCP configs: it holds no
+    /// secrets, it is Claude Code's own local-settings file, and Agentbox only ever adds a name to
+    /// its `disabledMcpServers`. It is therefore excluded only once the project actually has such an
+    /// opt-out, instead of being listed in every repository that merely has Claude Code ticked.
+    private static func protectGeneratedFiles(_ project: URL, previews: [MCPPreview]) throws {
         let info = project.appending(path: ".git/info")
         guard FileManager.default.fileExists(atPath: info.path) else { return }
         let url = info.appending(path: "exclude")
         var text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-        let marker = "# Skillbox MCP configs (mogą zawierać lokalne sekrety)"
-        let entries = [".mcp.json", ".codex/config.toml", "opencode.json", "opencode.jsonc", ".skillbox/", ".claude/settings.local.json"]
+        var groups: [(marker: String, entries: [String])] = [
+            ("# Skillbox MCP configs (mogą zawierać lokalne sekrety)", [".mcp.json", ".codex/config.toml", "opencode.json", "opencode.jsonc", ".skillbox/"])
+        ]
+        if previews.contains(where: { $0.disabledGlobalFile != nil && !($0.disabledGlobalContent ?? "").isEmpty }) {
+            groups.append(("# Skillbox: lokalne ustawienia Claude Code, nieprzeznaczone do współdzielenia", [".claude/settings.local.json"]))
+        }
         let present = Set(text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) })
-        let missing = entries.filter { !present.contains($0) }
-        guard !missing.isEmpty else { return }
-        if !text.isEmpty && !text.hasSuffix("\n") { text += "\n" }
-        if !text.contains(marker) { text += marker + "\n" }
-        text += missing.joined(separator: "\n") + "\n"
+        var changed = false
+        for group in groups {
+            let missing = group.entries.filter { !present.contains($0) }
+            guard !missing.isEmpty else { continue }
+            if !text.isEmpty && !text.hasSuffix("\n") { text += "\n" }
+            if !text.contains(group.marker) { text += group.marker + "\n" }
+            text += missing.joined(separator: "\n") + "\n"
+            changed = true
+        }
+        guard changed else { return }
         try text.write(to: url, atomically: true, encoding: .utf8)
     }
 

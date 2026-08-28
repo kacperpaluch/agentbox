@@ -6,6 +6,27 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.15.2</title>
+      <pubDate>Fri, 28 Aug 2026 07:31:14 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.15.2</link>
+      <sparkle:version>34</sparkle:version>
+      <sparkle:shortVersionString>0.15.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.15.2</h2>
+        <ul>
+          <li>CLI: <code>agentbox mcp global … --folder</code> adresuje folder ze wspólnymi ustawieniami — jedyna droga do projektu, który z niego dziedziczy.</li>
+          <li>Odmowa dla projektu dziedziczącego podaje nazwę folderu i gotową komendę.</li>
+          <li><code>.claude/settings.local.json</code> trafia do <code>.git/info/exclude</code> dopiero gdy faktycznie coś w nim zapisujemy, i pod własnym nagłówkiem.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.15.2/Agentbox-0.15.2.dmg"
+        length="5684668"
+        type="application/octet-stream"
+        sparkle:edSignature="D0v0DojXIEomQQb0GeZz1614AHHs8HSfTJsML6550QOLbKmfziDVmVDosy+MwXmDDTRck9jVonhIPBlFfOtqBw==" />
+    </item>
+    <item>
       <title>Agentbox 0.15.1</title>
       <pubDate>Fri, 28 Aug 2026 07:24:55 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.15.1</link>

@@ -6,6 +6,17 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-08-28
+
+### Dodano
+
+- CLI: `agentbox mcp global list|disable|enable <folder> --folder` adresuje folder ze wspólnymi ustawieniami zamiast pojedynczego projektu. Dotąd projekt dziedziczący ustawienia z folderu był odrzucany, a komendy na sam folder nie było — jedyną drogą pozostawało GUI.
+
+### Zmieniono
+
+- Odmowa dla projektu dziedziczącego podaje teraz nazwę folderu i gotową komendę z `--folder` zamiast ogólnej wskazówki.
+- `.claude/settings.local.json` trafia do `.git/info/exclude` dopiero wtedy, gdy Agentbox faktycznie zapisze w nim wyłączenie globalnego serwera, i pod własnym nagłówkiem — nie razem z plikami MCP pod nagłówkiem ostrzegającym o sekretach, których ten plik nie zawiera.
+
 ## [0.15.1] - 2026-08-28
 
 ### Naprawiono

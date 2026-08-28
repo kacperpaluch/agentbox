@@ -160,9 +160,16 @@ agentbox mcp global list sklep
 agentbox mcp global disable sklep codex apple-mail
 agentbox mcp global enable sklep codex apple-mail
 agentbox sync project sklep
+
+# folder ze wspólnymi ustawieniami — jedna decyzja dla wszystkich jego projektów
+agentbox mcp global list praca --folder
+agentbox mcp global disable praca codex apple-mail --folder
+agentbox sync all
 ```
 
-`global disable`/`global enable` tylko zapisują wybór — trzeba potem zsynchronizować projekt, żeby trafił do plików. Dla Codexa Agentbox dopisuje do `.codex/config.toml` samo `enabled = false` (bez powtarzania `command`/`args` — to udokumentowany sposób Codexa na nadpisanie jednego pola z warstwy globalnej). Dla Claude Code nazwa trafia do `disabledMcpServers` w `.claude/settings.local.json`, obok pozostałych, niezwiązanych z Agentboksem ustawień w tym pliku, które zostają nietknięte.
+`--folder` adresuje folder nadrzędny zamiast pojedynczego projektu. To jedyny sposób, żeby zmienić wybór dla projektu, który dziedziczy ustawienia z folderu — jego własny wpis nie zawiera niczego, co dałoby się zmienić. Próba użycia takiego projektu wprost kończy się błędem, który podaje nazwę folderu i gotową komendę.
+
+`global disable`/`global enable` tylko zapisują wybór — trzeba potem zsynchronizować projekt, żeby trafił do plików. Dla Codexa Agentbox dopisuje do `.codex/config.toml` samo `enabled = false` (bez powtarzania `command`/`args` — to udokumentowany sposób Codexa na nadpisanie jednego pola z warstwy globalnej). Dla Claude Code nazwa trafia do `disabledMcpServers` w `.claude/settings.local.json`, obok pozostałych, niezwiązanych z Agentboksem ustawień w tym pliku, które zostają nietknięte. Ten plik jest dopisywany do `.git/info/exclude` dopiero wtedy, gdy faktycznie trafi do niego wyłączenie — i pod własnym nagłówkiem, nie razem z plikami MCP, które mogą zawierać sekrety.
 
 ## Dokumenty
 

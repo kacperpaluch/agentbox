@@ -983,6 +983,79 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: claudeSettings.path))
     }
 
+    /// A project inheriting a folder has no MCP selection of its own, so the CLI must be able to
+    /// address the folder — and must say so, with the exact command, when it refuses the project.
+    func testCommandLineTargetsFolderForGlobalServersAndExplainsInheritedProjects() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let home = root.appending(path: "home")
+        let folder = root.appending(path: "praca")
+        try FileManager.default.createDirectory(at: folder.appending(path: "sklep"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: home.appending(path: ".codex"), withIntermediateDirectories: true)
+        try "[mcp_servers.apple-mail]\ncommand = \"npx\"\n".write(to: home.appending(path: ".codex/config.toml"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await AgentboxCommand.run(["project", "root-add", "praca", folder.path, "--tools", "codex", "--folders", "sklep"], service: service)
+        let projects = try await service.listProjects()
+        let project = try XCTUnwrap(projects.first)
+        XCTAssertEqual(project.name, "sklep")
+
+        // The project follows the folder, so targeting it directly is refused — with directions.
+        do {
+            _ = try await AgentboxCommand.run(["mcp", "global", "disable", "sklep", "codex", "apple-mail"], service: service)
+            XCTFail("Oczekiwano odmowy dla projektu dziedziczącego")
+        } catch let error as SkillboxError {
+            XCTAssertTrue(error.localizedDescription.contains("praca"), error.localizedDescription)
+            XCTAssertTrue(error.localizedDescription.contains("--folder"), error.localizedDescription)
+        }
+
+        // `--folder` records the opt-out on the folder itself. (`list` is not asserted here: it
+        // reads the real ~/.codex/config.toml, which a test cannot point elsewhere.)
+        _ = try await AgentboxCommand.run(["mcp", "global", "disable", "praca", "codex", "apple-mail", "--folder"], service: service)
+        let roots = try await service.projectRoots()
+        let folderRoot = try XCTUnwrap(roots.first)
+        let storedOptOut = try await service.disabledGlobalServers(selectionID: folderRoot.id)
+        XCTAssertEqual(storedOptOut, [Tool.codex: ["apple-mail"]])
+        // The folder's choice is what the inheriting project actually synchronizes.
+        _ = try await service.syncMCP(projectID: project.id)
+        let written = try String(contentsOf: folder.appending(path: "sklep/.codex/config.toml"), encoding: .utf8)
+        XCTAssertTrue(written.contains("[mcp_servers.apple-mail]") && written.contains("enabled = false"), written)
+
+        _ = try await AgentboxCommand.run(["mcp", "global", "enable", "praca", "codex", "apple-mail", "--folder"], service: service)
+        _ = try await service.syncMCP(projectID: project.id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appending(path: "sklep/.codex/config.toml").path))
+    }
+
+    /// `.claude/settings.local.json` holds no secrets and is Claude Code's own file, so it is only
+    /// excluded once Agentbox actually writes an opt-out into it — and never under the heading that
+    /// warns about secrets.
+    func testClaudeSettingsIsExcludedOnlyWhenManagedAndUnderItsOwnHeading() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        let home = root.appending(path: "home")
+        try FileManager.default.createDirectory(at: projectURL.appending(path: ".git/info"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try "{\"mcpServers\":{\"hubspot\":{\"type\":\"http\",\"url\":\"https://x.test\"}}}".write(to: home.appending(path: ".claude.json"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let project = try await service.addProject(name: "app", path: projectURL.path, tools: [.claude])
+        try await service.saveMCPServer(MCPServer(name: "ctx", transport: .stdio, command: "npx"))
+        let servers = try await service.mcpConfiguration().servers.map(\.id)
+        try await service.setMCPServers(projectID: project.id, serverIDs: servers, tags: [])
+        _ = try await service.syncMCP(projectID: project.id)
+        let exclude = projectURL.appending(path: ".git/info/exclude")
+        let withoutOptOut = try String(contentsOf: exclude, encoding: .utf8)
+        XCTAssertTrue(withoutOptOut.contains(".mcp.json"))
+        XCTAssertFalse(withoutOptOut.contains(".claude/settings.local.json"), withoutOptOut)
+
+        try await service.setDisabledGlobalServers(projectID: project.id, tool: .claude, names: ["hubspot"])
+        _ = try await service.syncMCP(projectID: project.id)
+        let withOptOut = try String(contentsOf: exclude, encoding: .utf8)
+        XCTAssertTrue(withOptOut.contains(".claude/settings.local.json"), withOptOut)
+        // It must sit under its own heading, not the one about secrets.
+        let lines = withOptOut.split(whereSeparator: \.isNewline).map(String.init)
+        let index = try XCTUnwrap(lines.firstIndex(of: ".claude/settings.local.json"))
+        let heading = try XCTUnwrap(lines[..<index].last { $0.hasPrefix("#") })
+        XCTAssertFalse(heading.contains("sekrety"), heading)
+    }
+
     func testSwitchingToJsoncStripsEntriesLeftBehindInOpencodeJson() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let projectURL = root.appending(path: "project")
