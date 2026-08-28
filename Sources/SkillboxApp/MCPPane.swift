@@ -3,8 +3,11 @@ import AppKit
 import Combine
 import SkillboxCore
 
-struct MCPView: View {
+/// The MCP-server half of the library. Search and the tag filter come from `LibraryView`.
+struct MCPPane: View {
     @ObservedObject var model: AppModel
+    let search: String
+    let selectedTag: String
     @State private var editingServer: MCPServer?
     @State private var serverToDelete: MCPServer?
     @State private var showImport = false
@@ -12,22 +15,32 @@ struct MCPView: View {
     @State private var checked = Set<UUID>()
     @State private var showBatchTags = false
     private var existingTags: [String] { Array(Set(model.mcp.servers.flatMap { $0.tags ?? [] })).sorted() }
+    private var filtered: [MCPServer] {
+        model.mcp.servers
+            .filter { libraryMatches(name: $0.name, id: $0.name, tags: $0.tags ?? [], search: search, selectedTag: selectedTag) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             actionBar
-            List {
-                Section("Serwery") {
-                    ForEach(model.mcp.servers.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { server in
-                        HStack(alignment: .top, spacing: Space.row + 1) {
-                            Toggle("", isOn: checkBinding(server.id)).labelsHidden().toggleStyle(.checkbox).padding(.top, 5)
-                            MCPServerRow(server: server, onDetails: { editingServer = server }, onDelete: { serverToDelete = server })
+            if model.mcp.servers.isEmpty {
+                ContentUnavailableView("Brak serwerów MCP", systemImage: "network", description: Text("Zaimportuj konfigurację z JSON albo dodaj serwer ręcznie."))
+            } else if filtered.isEmpty {
+                ContentUnavailableView("Nic nie pasuje", systemImage: "magnifyingglass", description: Text("Zmień wyszukiwanie albo wybrany tag."))
+            } else {
+                List {
+                    Section("Serwery") {
+                        ForEach(filtered) { server in
+                            HStack(alignment: .top, spacing: Space.row + 1) {
+                                Toggle("", isOn: checkBinding(server.id)).labelsHidden().toggleStyle(.checkbox).padding(.top, 5)
+                                MCPServerRow(server: server, onDetails: { editingServer = server }, onDelete: { serverToDelete = server })
+                            }
                         }
                     }
                 }
             }
         }
-        .navigationTitle("MCP")
         .sheet(isPresented: $showImport) { MCPImportView(model: model) }
         .sheet(item: $editingServer) { server in MCPServerEditor(model: model, server: server, existingTags: existingTags) }
         .sheet(item: Binding(get: { bulkJSON.map(IdentifiableString.init) }, set: { bulkJSON = $0?.value })) { text in MCPBulkJSONView(model: model, text: text.value) }
@@ -49,7 +62,7 @@ struct MCPView: View {
                 Button("Anuluj") { checked.removeAll() }.buttonStyle(.bordered)
             }
             Spacer()
-            Text("\(model.mcp.servers.count) serwerów").rowMetadata()
+            Text(filtered.count == model.mcp.servers.count ? "\(model.mcp.servers.count) serwerów" : "\(filtered.count) z \(model.mcp.servers.count)").rowMetadata()
         }
     }
 

@@ -6,11 +6,14 @@ import SkillboxCore
 enum SkillSort: String, CaseIterable, Identifiable { case name = "Nazwa", newest = "Najnowsze", source = "Źródło"; var id: String { rawValue } }
 enum SkillGrouping: String, CaseIterable, Identifiable { case repository = "Repozytorium", tag = "Tag", source = "Źródło", none = "Bez grupowania"; var id: String { rawValue } }
 
-struct LibraryView: View {
+/// The skills half of the library. Search and the tag filter come from `LibraryView`, which owns them
+/// for all three kinds; grouping and sorting stay here, because only skills have a repository to be
+/// grouped by.
+struct SkillsPane: View {
     @ObservedObject var model: AppModel; @Binding var showGit: Bool
+    let search: String
+    let selectedTag: String
     @State private var showNewSkill = false
-    @State private var search = ""
-    @State private var selectedTag = ""
     @State private var sort: SkillSort = .name
     @State private var grouping: SkillGrouping = .repository
     @State private var checked = Set<String>()
@@ -18,7 +21,7 @@ struct LibraryView: View {
     @State private var showBatchTags = false
     var tags: [String] { Array(Set(model.skills.flatMap(\.tags))).sorted() }
     var filtered: [Skill] {
-        var result = model.skills.filter { (selectedTag.isEmpty || $0.tags.contains(selectedTag)) && (search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.id.localizedCaseInsensitiveContains(search) || $0.tags.contains { $0.localizedCaseInsensitiveContains(search) }) }
+        var result = model.skills.filter { libraryMatches(name: $0.name, id: $0.id, tags: $0.tags, search: search, selectedTag: selectedTag) }
         switch sort { case .name: result.sort { $0.name < $1.name }; case .newest: result.sort { $0.updatedAt > $1.updatedAt }; case .source: result.sort { $0.source.kind.rawValue < $1.source.kind.rawValue } }
         return result
     }
@@ -54,7 +57,6 @@ struct LibraryView: View {
                 ContentUnavailableView("Wybierz skill", systemImage: "text.book.closed")
             }
         }
-        .navigationTitle("Biblioteka")
         .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: tags) { text in Task { await model.addTags(checked, text: text); checked.removeAll() } } }
         .sheet(isPresented: $showNewSkill) { NewSkillView(existingTags: tags, existingIDs: Set(model.skills.map(\.id))) { draft in Task { await model.createSkill(draft) } } }
     }
@@ -82,13 +84,12 @@ struct LibraryView: View {
 
     private var filterMenu: some View {
         Menu {
-            Picker("Tag", selection: $selectedTag) { Text("Wszystkie tagi").tag(""); ForEach(tags, id: \.self) { Text("#\($0)").tag($0) } }
             Picker("Grupowanie", selection: $grouping) { ForEach(SkillGrouping.allCases) { Text($0.rawValue).tag($0) } }
             Picker("Sortowanie", selection: $sort) { ForEach(SkillSort.allCases) { Text($0.rawValue).tag($0) } }
             Divider()
             Button("Rozwiń wszystko") { expanded = Set(groups.map(\.name)) }
             Button("Zwiń wszystko") { expanded.removeAll() }
-        } label: { Label(selectedTag.isEmpty ? "Filtruj i sortuj" : "Filtruj i sortuj (#\(selectedTag))", systemImage: "line.3.horizontal.decrease.circle") }
+        } label: { Label("Grupuj i sortuj", systemImage: "line.3.horizontal.decrease.circle") }
     }
 
     private var skillList: some View {
@@ -117,7 +118,6 @@ struct LibraryView: View {
                 }
             }
         }
-        .searchable(text: $search, prompt: "Nazwa lub tag")
     }
 
     private func checkBinding(_ id: String) -> Binding<Bool> { Binding(get: { checked.contains(id) }, set: { if $0 { checked.insert(id) } else { checked.remove(id) } }) }

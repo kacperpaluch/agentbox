@@ -6,6 +6,19 @@ Agentbox nie uruchamia serwerów MCP i nie zastępuje klientów AI — przygotow
 
 Szczegółowy opis pierwszego uruchomienia, klasyfikacji sekretów, bezpiecznej synchronizacji i odzyskiwania danych znajduje się w [instrukcji użytkownika](docs/USER_GUIDE.md). Wszystkie polecenia terminalowe opisuje [instrukcja CLI](docs/CLI.md). Historia wydań i zmian jest prowadzona w [changelogu](CHANGELOG.md).
 
+## Jak to wygląda
+
+Pasek boczny ma cztery pozycje: rzeczy, które zbierasz (`Biblioteka`), miejsca, w które trafiają (`Projekty`), oraz `Backup` i `Ustawienia`.
+
+| | |
+| --- | --- |
+| ![Biblioteka](docs/screenshots/biblioteka.png) | ![Projekty](docs/screenshots/projekty.png) |
+| **Biblioteka** — skille, serwery MCP i dokumenty na jednym ekranie, ze wspólnym wyszukiwaniem i filtrem tagów. | **Projekty** — projekty, foldery ze wspólnymi ustawieniami i `Wszystkie sesje` (ten Mac) jako pierwszy wiersz. |
+| ![Backup](docs/screenshots/backup.png) | ![Ustawienia](docs/screenshots/ustawienia.png) |
+| **Backup** — commity Git, pełne kopie lokalne i snapshoty biblioteki. | **Ustawienia** — folder biblioteki, aktualizacje, instalacja CLI. |
+
+Zrzuty pochodzą z przykładowej biblioteki przygotowanej na potrzeby dokumentacji.
+
 ## Wymagania i uruchomienie
 
 - macOS 14 lub nowszy,
@@ -41,12 +54,18 @@ Domyślna lokalizacja to `~/Library/Application Support/Skillbox`. Stara nazwa z
 ```text
 Skillbox/
 ├── catalog.json           # katalog skilli, źródła i tagi
+├── selections.json        # co jest przypięte do którego miejsca
 ├── projects.local.json    # projekty i lokalne ścieżki
-├── mcp.json               # serwery, tagi i przypisania MCP
+├── mcp.json               # definicje serwerów MCP
+├── docs.json              # definicje dokumentów
 ├── mcp-secrets.json       # sekrety MCP, bez szyfrowania
 └── skills/
     └── nazwa-skilla/SKILL.md
 ```
+
+`selections.json` odpowiada na jedno pytanie: co trafia w które miejsce. Jeden klucz na miejsce — id projektu, id folderu nadrzędnego albo `global` — a pod nim narzędzia, skille, tagi skilli, wykluczenia, serwery MCP, tagi MCP, dokument i tagi dokumentów. Pozostałe pliki trzymają już wyłącznie definicje: `catalog.json` skille, `mcp.json` serwery, `docs.json` dokumenty.
+
+Do backupu Git trafiają `catalog.json`, `selections.json`, `mcp.json`, `docs.json` i katalog `skills/`. Poza nim zostają `projects.local.json` (lokalne ścieżki tego Maca) i `mcp-secrets.json`.
 
 Dla CLI można wskazać inną bibliotekę:
 
@@ -142,7 +161,7 @@ Agentbox proponuje również klasyfikację każdej zmiennej i każdego nagłówk
 
 ### Edycja jako JSON
 
-`MCP → Szczegóły → JSON` pokazuje `command`/`args`/`url`/`env`/`headers` jednego serwera jako zwykły tekst do ręcznej edycji — łącznie z wartościami dotąd oznaczonymi jako sekret, bez maskowania: Agentbox działa lokalnie dla jednej osoby, więc nie ma czego ukrywać na ekranie. Zapis ponownie klasyfikuje każde pole tą samą heurystyką co import; klucz wyglądający na token, hasło czy API key automatycznie zostaje tylko na tym Macu, reszta trafia do backupu Git. Ten tryb zastępuje sekcję `Zmienne i nagłówki`, zamiast pokazywać ją obok — te same wartości nie pojawiają się dwa razy.
+`Biblioteka → MCP → Szczegóły → JSON` pokazuje `command`/`args`/`url`/`env`/`headers` jednego serwera jako zwykły tekst do ręcznej edycji — łącznie z wartościami dotąd oznaczonymi jako sekret, bez maskowania: Agentbox działa lokalnie dla jednej osoby, więc nie ma czego ukrywać na ekranie. Zapis ponownie klasyfikuje każde pole tą samą heurystyką co import; klucz wyglądający na token, hasło czy API key automatycznie zostaje tylko na tym Macu, reszta trafia do backupu Git. Ten tryb zastępuje sekcję `Zmienne i nagłówki`, zamiast pokazywać ją obok — te same wartości nie pojawiają się dwa razy.
 
 Przycisk `Edytuj wszystko jako JSON` na liście serwerów otwiera osobny, prosty widok dla całej konfiguracji naraz, wypełniony aktualnym stanem: popraw i `Zapisz` — bez kroku analizy i zaznaczania serwerów, bo to edycja własnej konfiguracji, a nie import z zewnątrz. Poprawki nadpisują serwery o tej samej nazwie, reszta zostaje bez zmian. Ta ceremonia (analiza, wybór serwerów, klasyfikacja pól) zostaje tam, gdzie faktycznie jest potrzebna — w `Importuj z JSON`.
 
@@ -170,7 +189,7 @@ Pliki konfiguracyjne i manifesty powstają tylko wtedy, gdy projekt ma co synchr
 
 ### Skille globalne
 
-Sekcja `Globalne` synchronizuje wybrane skille do katalogów użytkownika zamiast do projektu: `~/.claude/skills`, `~/.codex/skills` i `~/.config/opencode/skills`. Wybór narzędzi, skilli i tagów jest zapisywany, a podgląd pokazuje zmiany przed zapisem.
+Pierwszy wiersz listy w sekcji `Projekty` to `Wszystkie sesje` — ten Mac traktowany jak każde inne miejsce, w które trafiają skille. `Ustawienia globalne…` otwiera ten sam edytor co projekt i synchronizuje wybrane skille do katalogów użytkownika zamiast do projektu: `~/.claude/skills`, `~/.codex/skills` i `~/.config/opencode/skills`. Wybór narzędzi, skilli i tagów jest zapisywany, a podgląd pokazuje zmiany przed zapisem. Globalnie trafiają wyłącznie skille — pliki, w których żyłby globalny serwer MCP, to pliki, których Agentbox celowo nigdy nie zapisuje.
 
 ```bash
 swift run agentbox sync global --skills seo-audit,docx --tags seo --tools claude,opencode
@@ -198,9 +217,9 @@ Nie usuwa to pliku, który został już wcześniej dodany do Git. Zawsze warto s
 
 Serwery logujące się przez OAuth zapisuje się tylko jako URL. Logowanie przez przeglądarkę wykonuje Claude, Codex albo OpenCode. Token OAuth znajduje się w magazynie danego klienta, nie w Agentbox, i nie jest nadpisywany podczas synchronizacji. Każde narzędzie uwierzytelnia się osobno.
 
-### Globalne serwery Codex i Claude Code
+### Serwery klientów (Codex i Claude Code)
 
-Codex CLI, jego wtyczka IDE i aplikacja ChatGPT Desktop dzielą jeden plik `~/.codex/config.toml` — serwer dodany w którymkolwiek z nich ładuje się automatycznie w każdym projekcie Codexa. Claude Code ma analogiczny mechanizm: serwer dodany w zasięgu `user` (`~/.claude.json`) też trafia wszędzie. Agentbox nie zarządza tymi plikami, tylko je odczytuje i pozwala wyłączyć wybrany serwer dla jednego projektu (`agentbox mcp global list/disable/enable <projekt>` — patrz [instrukcja CLI](docs/CLI.md#globalne-serwery-codex-i-claude-code)). Dla Codexa Agentbox dopisuje samo `enabled = false` bez powtarzania `command`/`args`; dla Claude Code nazwa trafia do `disabledMcpServers` w `.claude/settings.local.json`, obok pozostałych ustawień w tym pliku.
+Codex CLI, jego wtyczka IDE i aplikacja ChatGPT Desktop dzielą jeden plik `~/.codex/config.toml` — serwer dodany w którymkolwiek z nich ładuje się automatycznie w każdym projekcie Codexa. Claude Code ma analogiczny mechanizm: serwer dodany w zasięgu `user` (`~/.claude.json`) też trafia wszędzie. Agentbox nie zarządza tymi plikami, tylko je odczytuje i pozwala wyłączyć wybrany serwer dla jednego projektu. W aplikacji otwiera to `Projekty → Serwery klientów…` (`agentbox mcp global list/disable/enable <projekt>` — patrz [instrukcja CLI](docs/CLI.md#globalne-serwery-codex-i-claude-code)). Dla Codexa Agentbox dopisuje samo `enabled = false` bez powtarzania `command`/`args`; dla Claude Code nazwa trafia do `disabledMcpServers` w `.claude/settings.local.json`, obok pozostałych ustawień w tym pliku.
 
 ### CLI MCP
 
@@ -216,7 +235,7 @@ CLI rozdziela synchronizację skilli (`agentbox sync project`) i MCP (`agentbox 
 
 ## Dokumenty (AGENTS.md / CLAUDE.md)
 
-Sekcja `Dokumenty` to biblioteka współdzielonych tekstów, przypisywanych do projektów wprost albo przez tag — dokładnie tak samo jak skille i serwery MCP. Każdy dokument ma swój tekst, zapisywany raz.
+Zakładka `Dokumenty` w `Bibliotece` zbiera współdzielone teksty, przypisywane do projektów wprost albo przez tag — dokładnie tak samo jak skille i serwery MCP. Każdy dokument ma swój tekst, zapisywany raz.
 
 Zsynchronizowany dokument trafia zawsze jako **para plików w katalogu głównym projektu**: `AGENTS.md` z pełną treścią i `CLAUDE.md` wygenerowany automatycznie jako jedna linijka — `@AGENTS.md`. To udokumentowany mechanizm importu plików w Claude Code (Claude Code czyta `CLAUDE.md`, nie czyta `AGENTS.md` samodzielnie), więc jeden tekst obsługuje oba bez ręcznego duplikowania go. `CLAUDE.md` nie jest edytowalny osobno.
 

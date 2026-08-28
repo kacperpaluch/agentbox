@@ -6,6 +6,30 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.17.0</title>
+      <pubDate>Fri, 28 Aug 2026 10:30:00 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.17.0</link>
+      <sparkle:version>37</sparkle:version>
+      <sparkle:shortVersionString>0.17.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.17.0</h2>
+        <ul>
+          <li>Pasek boczny ma cztery pozycje zamiast ośmiu: <code>Biblioteka</code>, <code>Projekty</code>, <code>Backup</code>, <code>Ustawienia</code>. Żadna funkcja nie zniknęła — zmieniła się oś podziału.</li>
+          <li><code>Skille</code>, <code>MCP</code> i <code>Dokumenty</code> to jedna <code>Biblioteka</code> z przełącznikiem typu, wspólnym wyszukiwaniem i filtrem tagów. Serwery MCP i dokumenty zyskały przy okazji wyszukiwanie i filtrowanie po tagu.</li>
+          <li>Skille globalne przestały być osobną zakładką — ten Mac jest pierwszym wierszem listy w <code>Projekty</code> i otwiera ten sam edytor co projekt.</li>
+          <li><code>MCP globalne</code> nazywa się <code>Serwery klientów</code> i otwiera się z <code>Projekty</code>. Stara nazwa zderzała się z <code>Globalne</code>, a znaczyła coś przeciwnego.</li>
+          <li>Nowy plik <code>selections.json</code>: wszystko, co jest do czegoś przypięte, leży w jednym miejscu zamiast w trzech plikach w trzech kształtach. <code>restore</code> odtwarza teraz także przypisania skilli.</li>
+        </ul>
+      ]]></description>
+      <enclosure url="https://github.com/kacperpaluch/agentbox/releases/download/v0.17.0/Agentbox-0.17.0.dmg"
+                 sparkle:version="37"
+                 sparkle:shortVersionString="0.17.0"
+                 length="5796081"
+                 type="application/octet-stream"
+                 sparkle:edSignature="yldtpCe+33wL4+50r/ATaZpjKNadZfCKfr/OHgy55o0543iX5K3IWnAT/FVGmiNPNNVhvrrZbVFe/JJ+hOzmCg=="/>
+    </item>
+    <item>
       <title>Agentbox 0.16.1</title>
       <pubDate>Fri, 28 Aug 2026 08:00:28 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.16.1</link>

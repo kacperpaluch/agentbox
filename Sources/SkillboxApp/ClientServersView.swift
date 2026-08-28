@@ -7,34 +7,40 @@ import SkillboxCore
 /// lets each folder or standalone project opt one server out, without ever touching the global file
 /// itself.
 ///
-/// This tab lists it from the server's side, one row per (tool, server name) with a toggle per
+/// This view lists them from the server's side, one row per (tool, server name) with a toggle per
 /// place that can see it — the natural way to answer "where is this server active", instead of
 /// hunting through Projekty one folder at a time for the same information.
-struct GlobalMCPView: View {
+///
+/// Named "Serwery klientów" rather than anything with "globalne" in it: the old name collided with
+/// the global *skill* selection, which pushes files out, where this one only opts out of files
+/// somebody else already wrote. Syncing lives in Projekty — this view only records the choice.
+struct ClientServersView: View {
     @ObservedObject var model: AppModel
-    @State private var showAllSync = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 0) {
-            ActionBar {
-                Button { showAllSync = true } label: { Label("Synchronizuj wszystkie projekty", systemImage: "arrow.triangle.2.circlepath") }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.projects.isEmpty || model.isWorking)
-                    .help("Zapisuje na dysku każdą zmianę zrobioną na tej liście — nie tylko globalne serwery")
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Serwery klientów").font(.title2.bold())
+                    Text("Serwery MCP spoza Agentbox, ładowane automatycznie przez Codex i Claude Code").rowMetadata()
+                }
                 Spacer()
+                Button("Zamknij") { dismiss() }
             }
+            .padding(.horizontal, Space.page).padding(.vertical, Space.section - 2)
+            Divider()
             List {
                 explanation
                 toolSection(.codex, title: "Codex", source: "~/.codex/config.toml — dzielony z aplikacją ChatGPT Desktop i wtyczką IDE")
                 toolSection(.claude, title: "Claude Code", source: "zasięg „user” w ~/.claude.json")
             }
         }
-        .navigationTitle("MCP globalne")
-        .sheet(isPresented: $showAllSync) { AllProjectsSyncPreviewView(model: model) }
+        .sheetFrame(width: 760, height: 640)
     }
 
     private var explanation: some View {
-        Text("Serwery poniżej nie są zarządzane przez Agentbox — Codex albo Claude Code same je ładują w każdym projekcie. Odznaczenie folderu albo projektu przy serwerze dopisuje dla niego lokalny override (bez zmiany globalnego pliku); przełącznik zapisuje tylko wybór — kliknij „Synchronizuj”, żeby zmiana trafiła na dysk.")
+        Text("Serwery poniżej nie są zarządzane przez Agentbox — Codex albo Claude Code same je ładują w każdym projekcie. Odznaczenie folderu albo projektu przy serwerze dopisuje dla niego lokalny override (bez zmiany globalnego pliku); przełącznik zapisuje tylko wybór — zmiana trafia na dysk po „Synchronizuj wszystkie” w Projektach.")
             .font(.caption).foregroundStyle(.secondary)
             .listRowSeparator(.hidden)
     }

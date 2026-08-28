@@ -134,8 +134,9 @@ public enum AgentboxCommand {
             // `--folders` picks subfolders by name; without it nothing is added yet and the folder's
             // own scan proposes everything it holds.
             let picked = csv("--folders", in: args).map { folderURL.appending(path: $0).path }
-            let root = ProjectRoot(name: rest[1], path: folderURL.path, tools: tools, skillIDs: csv("--skills", in: args), tags: csv("--tags", in: args), manageGitignore: args.contains("--gitignore"), watchesNewFolders: !args.contains("--no-watch"))
-            let stored = try await service.addProjectRoot(root, folders: picked, serverIDs: [], serverTags: [])
+            let root = ProjectRoot(name: rest[1], path: folderURL.path, manageGitignore: args.contains("--gitignore"), watchesNewFolders: !args.contains("--no-watch"))
+            let selection = AttachmentSelection(tools: tools, skillIDs: csv("--skills", in: args), skillTags: csv("--tags", in: args))
+            let stored = try await service.addProjectRoot(root, folders: picked, selection: selection)
             return ["Dodano folder nadrzędny \(stored.name) (\(picked.count) projektów)"]
         case "root-adopt" where rest.count >= 3:
             // Existing projects in the folder join it; --keep-own names the ones that stay on their
@@ -147,8 +148,13 @@ public enum AgentboxCommand {
             let owners = inside.filter { keepOwn.contains($0.name) }.map(\.id)
             let followers = inside.filter { !keepOwn.contains($0.name) }.map(\.id)
             let tools = (option("--tools", in: args) ?? "").split(separator: ",").compactMap { Tool(rawValue: String($0)) }
-            let root = ProjectRoot(name: rest[1], path: folderURL.path, tools: tools.isEmpty ? Array(Set(inside.flatMap(\.tools))) : tools, skillIDs: csv("--skills", in: args), tags: csv("--tags", in: args), manageGitignore: args.contains("--gitignore"), watchesNewFolders: !args.contains("--no-watch"))
-            let stored = try await service.adoptProjectsIntoRoot(root, following: followers, keepingOwnSettings: owners, serverIDs: [], serverTags: [])
+            let root = ProjectRoot(name: rest[1], path: folderURL.path, manageGitignore: args.contains("--gitignore"), watchesNewFolders: !args.contains("--no-watch"))
+            // Without --tools the folder starts from the union of what its projects use today, so
+            // adopting them never silently drops a client one of them was configured for.
+            let existing = try await service.listProjects().filter { project in inside.contains { $0.id == project.id } }
+            let selection = AttachmentSelection(tools: tools.isEmpty ? Array(Set(existing.flatMap(\.tools))).sorted { $0.rawValue < $1.rawValue } : tools,
+                                                skillIDs: csv("--skills", in: args), skillTags: csv("--tags", in: args))
+            let stored = try await service.adoptProjectsIntoRoot(root, following: followers, keepingOwnSettings: owners, selection: selection)
             return ["Utworzono folder nadrzędny \(stored.name): \(followers.count) projektów na wspólnych ustawieniach, \(owners.count) z własnymi"]
         case "roots":
             let roots = try await service.projectRoots()
@@ -215,7 +221,7 @@ public enum AgentboxCommand {
             let ids = csv("--skills", in: args), tags = csv("--tags", in: args)
             if !ids.isEmpty || !tags.isEmpty {
                 let tools = (option("--tools", in: args) ?? "claude,codex,opencode").split(separator: ",").compactMap { Tool(rawValue: String($0)) }
-                try await service.setGlobalSelection(GlobalSkillSelection(tools: tools, skillIDs: ids, tags: tags))
+                try await service.setSelection(AttachmentSelection(tools: tools, skillIDs: ids, skillTags: tags), for: .global)
             }
             let previews = dry ? try await service.previewGlobalSync() : try await service.syncGlobalSelection()
             guard !previews.isEmpty else { return ["Nie wybrano narzędzi dla synchronizacji globalnej"] }

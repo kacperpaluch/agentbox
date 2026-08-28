@@ -6,6 +6,19 @@ Wersja DMG zawiera aplikację oraz polecenie terminalowe. Po przeniesieniu Agent
 
 Po instalacji otwórz nowe okno Terminala i wykonaj np. `agentbox project list`. Polecenie `agentbox update --all` sprawdza i pobiera wszystkie dostępne aktualizacje skilli Git do biblioteki. Nie kopiuje ich automatycznie do projektów — użyj potem `agentbox sync project <nazwa>` albo `Synchronizuj wszystko` w GUI. Komenda `agentbox refresh` łączy aktualizację skilli, pełny backup lokalny, backup Git i transakcyjną synchronizację wszystkich projektów w jeden workflow. Pełna lista poleceń znajduje się w [instrukcji CLI](CLI.md).
 
+## Nawigacja
+
+Pasek boczny ma cztery pozycje, odpowiadające dwóm pojęciom: rzeczom, które zbierasz, i miejscom, w które trafiają.
+
+| Sekcja | Co w niej jest |
+| --- | --- |
+| `Biblioteka` | skille, serwery MCP i dokumenty — jedna lista z przełącznikiem typu, wspólnym wyszukiwaniem i filtrem tagów |
+| `Projekty` | projekty, foldery nadrzędne oraz `Wszystkie sesje` (ten Mac) jako pierwszy wiersz; stąd otwiera się też `Serwery klientów…` |
+| `Backup` | backup Git, pełne backupy lokalne i snapshoty biblioteki |
+| `Ustawienia` | folder biblioteki, aktualizacje, CLI |
+
+Wcześniej tych pozycji było osiem. Pięć z nich to były te same dwa pojęcia pokrojone po typie i po zasięgu: `Skille`, `MCP` i `Dokumenty` to jedna biblioteka z trzema rodzajami wpisu, a `Globalne` to miejsce, nie osobny ekran. Żadna funkcja nie zniknęła — zmieniła się tylko oś podziału.
+
 ## Pierwsze uruchomienie
 
 1. Dodaj skill z lokalnego katalogu albo repozytorium Git.
@@ -35,7 +48,7 @@ Automatyczne rozpoznawanie jest tylko sugestią. Agentbox uznaje za podejrzane n
 
 Sekret przechowywany poza backupem biblioteki może zostać zapisany jawnie w wynikowym pliku MCP projektu, jeśli format klienta tego wymaga. Przed synchronizacją Agentbox pokazuje pełną treść wynikowych konfiguracji. Preferuj zmienne systemowe, jeśli klient je obsługuje.
 
-Po imporcie klasyfikacją nadal można zarządzać w `MCP → Szczegóły`. Sekcja `Zmienne i nagłówki` pokazuje każdą wartość wprost, łącznie z sekretami — Agentbox jest lokalną aplikacją dla jednej osoby, więc nie ma powodu jej maskować na ekranie; typ pola decyduje wyłącznie o tym, czy wartość trafia do backupu Git. Tam samo `MCP → Szczegóły → JSON` daje pełną konfigurację jednego serwera jako tekst do ręcznej edycji i zastępuje wtedy sekcję `Zmienne i nagłówki`, zamiast pokazywać ją obok. Zapis z JSON-a klasyfikuje każde pole od nowa tą samą heurystyką co import.
+Po imporcie klasyfikacją nadal można zarządzać w `Biblioteka → MCP → Szczegóły`. Sekcja `Zmienne i nagłówki` pokazuje każdą wartość wprost, łącznie z sekretami — Agentbox jest lokalną aplikacją dla jednej osoby, więc nie ma powodu jej maskować na ekranie; typ pola decyduje wyłącznie o tym, czy wartość trafia do backupu Git. Tam samo `Biblioteka → MCP → Szczegóły → JSON` daje pełną konfigurację jednego serwera jako tekst do ręcznej edycji i zastępuje wtedy sekcję `Zmienne i nagłówki`, zamiast pokazywać ją obok. Zapis z JSON-a klasyfikuje każde pole od nowa tą samą heurystyką co import.
 
 `Edytuj wszystko jako JSON` na liście serwerów otwiera osobny, prosty widok dla całej konfiguracji naraz: popraw i `Zapisz`, bez kroku analizy i zaznaczania — to edycja własnej konfiguracji, nie import czegoś nowego. Checkboxy przy serwerach pozwalają zaznaczyć kilka naraz i dodać im tagi jedną operacją, tak jak w Bibliotece.
 
@@ -54,7 +67,7 @@ Skill liczy się jako nieaktualny, gdy jego wersja w bibliotece jest nowsza niż
 
 ### Pisanie własnego skilla
 
-`Skille → Napisz własny` tworzy skill bez zakładania katalogu na dysku i bez repozytorium. Podaj nazwę (identyfikator podpowiada się sam), opcjonalny opis i tagi, a treść wpisz albo wklej w polu poniżej. Agentbox dopisze nagłówek YAML z nazwą i opisem. Jeśli wklejona treść zaczyna się od bloku `---`, jest traktowana jak gotowy `SKILL.md` i zapisywana bez zmian — pola nazwy i opisu są wtedy nieaktywne.
+`Biblioteka → Skille → Napisz własny` tworzy skill bez zakładania katalogu na dysku i bez repozytorium. Podaj nazwę (identyfikator podpowiada się sam), opcjonalny opis i tagi, a treść wpisz albo wklej w polu poniżej. Agentbox dopisze nagłówek YAML z nazwą i opisem. Jeśli wklejona treść zaczyna się od bloku `---`, jest traktowana jak gotowy `SKILL.md` i zapisywana bez zmian — pola nazwy i opisu są wtedy nieaktywne.
 
 Tak utworzony skill jest lokalny, więc później można go poprawiać w aplikacji jak każdy skill dodany z dysku.
 
@@ -82,11 +95,11 @@ Serwery MCP wybiera się tak samo jak skille: pojedynczo albo dynamicznie wedłu
 
 Tagi dodaje się w szczegółach serwera MCP. Menu `Używane tagi` pokazuje istniejące wartości, co pomaga zachować jednolite nazwy. To samo menu jest dostępne podczas tagowania pojedynczych i wielu skilli. Wielkość liter nie ma znaczenia — tagi są zapisywane małymi literami, a `SEO` i `seo` to ten sam tag. Biblioteka ze starymi przypisaniami presetów (usuniętych jako funkcja w 0.3.1) migruje je automatycznie do bezpośredniego wyboru serwerów przy pierwszym otwarciu — bez utraty przypisań i bez żadnej akcji ze strony użytkownika.
 
-### MCP globalne
+### Serwery klientów
 
-Codex CLI, jego wtyczka IDE i aplikacja ChatGPT Desktop dzielą jeden plik `~/.codex/config.toml` — serwer dodany w którymkolwiek z nich ładuje się automatycznie w każdym projekcie Codexa. Claude Code ma analogiczny mechanizm: serwer dodany w zasięgu `user` (`~/.claude.json`) też trafia wszędzie. Zakładka `MCP globalne` w pasku bocznym pokazuje te serwery od strony narzędzia — po jednym wierszu na serwer, rozwijalnym do listy folderów i projektów, które go widzą.
+Codex CLI, jego wtyczka IDE i aplikacja ChatGPT Desktop dzielą jeden plik `~/.codex/config.toml` — serwer dodany w którymkolwiek z nich ładuje się automatycznie w każdym projekcie Codexa. Claude Code ma analogiczny mechanizm: serwer dodany w zasięgu `user` (`~/.claude.json`) też trafia wszędzie. `Projekty → Serwery klientów…` pokazuje te serwery od strony narzędzia — po jednym wierszu na serwer, rozwijalnym do listy folderów i projektów, które go widzą. To widok diagnostyczny („gdzie ten serwer jest aktywny”), a nie biblioteka ani miejsce, dlatego otwiera się jako arkusz z `Projekty`, a nie jako osobna pozycja w pasku bocznym.
 
-Agentbox nie zarządza tymi plikami i niczego w nich nie nadpisuje — tylko je czyta. Odznaczenie folderu albo projektu przy serwerze zapisuje w bibliotece lokalny override: dla Codexa to samo `enabled = false` w `.codex/config.toml`, bez powtarzania `command`/`args`; dla Claude Code — nazwa w `disabledMcpServers` w `.claude/settings.local.json`, obok pozostałych ustawień w tym pliku. Sam przełącznik zapisuje tylko wybór; `Synchronizuj` przy każdym wierszu zapisuje zmianę na dysku dla tego jednego folderu/projektu, a `Synchronizuj wszystkie projekty` na górze zakładki robi to dla całej listy naraz, z tym samym podglądem i transakcją co w `Projekty`.
+Agentbox nie zarządza tymi plikami i niczego w nich nie nadpisuje — tylko je czyta. Odznaczenie folderu albo projektu przy serwerze zapisuje w bibliotece lokalny override: dla Codexa to samo `enabled = false` w `.codex/config.toml`, bez powtarzania `command`/`args`; dla Claude Code — nazwa w `disabledMcpServers` w `.claude/settings.local.json`, obok pozostałych ustawień w tym pliku. Sam przełącznik zapisuje tylko wybór; na dysk zmiana trafia po `Synchronizuj wszystkie` w `Projekty`, z tym samym podglądem i transakcją co reszta synchronizacji.
 
 Po rozwinięciu serwera folder ze wspólnymi ustawieniami (ikona ⚙️ na liście `Projekty`) pokazuje **każdy** należący do niego projekt osobno, z własnym checkboxem — nie jeden zbiorczy wiersz. Projekt, który dziś dziedziczy ustawienia folderu, ma plakietkę `dziedziczy z folderu`, a jego checkbox pokazuje aktualny, wspólny stan. Odznaczenie takiego projektu pyta o potwierdzenie: to nie jest osobny przełącznik tylko dla tego serwera, tylko ten sam mechanizm co `Własne ustawienia` w edytorze projektu — projekt zaczyna od dokładnie tego, co ma dziś (skille, serwery MCP, dokument, i to co folder akurat wyłączał globalnie), ale przestaje automatycznie dostawać przyszłe zmiany folderu. Projekty, które tylko leżą w jednym katalogu bez wspólnych ustawień, są pogrupowane pod nazwą tego katalogu wyłącznie wizualnie — każdy zawsze miał własny, niezależny przełącznik.
 
@@ -116,13 +129,13 @@ W edytorze projektu można włączyć `Dopisuj wygenerowane pliki MCP do .gitign
 
 ### Skille globalne
 
-Sekcja `Globalne` synchronizuje wybrane skille do katalogu użytkownika, a nie do projektu. Są wtedy widoczne we wszystkich sesjach danego klienta:
+Pierwszy wiersz listy w `Projekty` to `Wszystkie sesje`. Przycisk `Ustawienia globalne…` otwiera ten sam edytor co projekt i synchronizuje wybrane skille do katalogu użytkownika, a nie do projektu. Są wtedy widoczne we wszystkich sesjach danego klienta:
 
 - Claude Code — `~/.claude/skills`,
 - Codex — `~/.codex/skills`,
 - OpenCode — `~/.config/opencode/skills`.
 
-Zaznacz narzędzia, a następnie pojedyncze skille lub tagi dynamiczne. `Zapisz wybór` zapamiętuje ustawienie w `projects.local.json`, `Odśwież podgląd` pokazuje planowane dodania, aktualizacje i usunięcia, a `Synchronizuj globalnie` zapisuje zmiany. Odznaczenie skilla usuwa go z katalogu użytkownika przy kolejnej synchronizacji — również tutaj usuwane są wyłącznie katalogi z manifestu Agentbox.
+Zaznacz narzędzia, a następnie pojedyncze skille lub tagi dynamiczne. `Zapisz wybór` zapamiętuje ustawienie w `selections.json` pod kluczem `global`, `Odśwież podgląd` pokazuje planowane dodania, aktualizacje i usunięcia, a `Synchronizuj globalnie` zapisuje zmiany. Odznaczenie skilla usuwa go z katalogu użytkownika przy kolejnej synchronizacji — również tutaj usuwane są wyłącznie katalogi z manifestu Agentbox.
 
 ### Dodawanie wielu projektów
 
@@ -196,7 +209,7 @@ Przed zmianą plików danych Agentbox zachowuje rotacyjne snapshoty w:
 <biblioteka>/.agentbox-snapshots/
 ```
 
-Snapshot zawiera bieżące wersje `catalog.json`, `projects.local.json` i `mcp.json`. Zachowywanych jest 10 ostatnich snapshotów. Sekrety nie są do nich kopiowane. Folder snapshotów jest wyłączony z backupu Git.
+Snapshot zawiera bieżące wersje `catalog.json`, `selections.json`, `projects.local.json`, `mcp.json` i `docs.json`. Zachowywanych jest 10 ostatnich snapshotów. Sekrety nie są do nich kopiowane. Folder snapshotów jest wyłączony z backupu Git.
 
 W sekcji `Backup → Snapshoty biblioteki` można wybrać kopię na podstawie daty i przywrócić zapisane w niej pliki. Katalog `skills/` i `mcp-secrets.json` nie są zmieniane. Przed przywróceniem Agentbox tworzy snapshot aktualnego stanu.
 
@@ -214,11 +227,11 @@ Projekt, w którym nic się nie zmieniło, jest pomijany — nic nie jest zapisy
 
 Ta część sekcji `Backup` dotyczy wyłącznie biblioteki: snapshotów metadanych i pełnego backupu lokalnego.
 
-Backup Git obejmuje `catalog.json`, `mcp.json` i `skills/`. Nie obejmuje lokalnych ścieżek projektów ani sekretów. Git zapewnia długoterminową historię biblioteki, natomiast snapshoty chronią ostatni stan przed przypadkowym lub uszkodzonym zapisem.
+Backup Git obejmuje `catalog.json`, `selections.json`, `mcp.json`, `docs.json` i `skills/` — czyli definicje skilli, serwerów i dokumentów oraz to, co jest do czego przypisane. Nie obejmuje lokalnych ścieżek projektów (`projects.local.json`) ani sekretów (`mcp-secrets.json`). Git zapewnia długoterminową historię biblioteki, natomiast snapshoty chronią ostatni stan przed przypadkowym lub uszkodzonym zapisem.
 
 ### Pełny backup lokalny
 
-To jedyny mechanizm chroniący projekty i sekrety — ani backup Git, ani snapshoty ich nie obejmują. Powstaje automatycznie raz dziennie, dopóki włączona jest automatyzacja w `Backup → Automatyzacja` (ten sam przełącznik co dla commitów Git); `Backup → Utwórz teraz` robi to samo na żądanie. Tworzy czytelną kopię w `<biblioteka>/backups/full/<data>/`. Zawiera `catalog.json`, `projects.local.json`, `mcp.json`, `mcp-secrets.json`, metadane `backup.json` oraz cały katalog `skills/`. Obejmuje więc adresy Git skilli, lokalne ścieżki projektów, wszystkie MCP i sekrety.
+To jedyny mechanizm chroniący projekty i sekrety — ani backup Git, ani snapshoty ich nie obejmują. Powstaje automatycznie raz dziennie, dopóki włączona jest automatyzacja w `Backup → Automatyzacja` (ten sam przełącznik co dla commitów Git); `Backup → Utwórz teraz` robi to samo na żądanie. Tworzy czytelną kopię w `<biblioteka>/backups/full/<data>/`. Zawiera `catalog.json`, `selections.json`, `projects.local.json`, `mcp.json`, `docs.json`, `mcp-secrets.json`, metadane `backup.json` oraz cały katalog `skills/`. Obejmuje więc adresy Git skilli, lokalne ścieżki projektów, wszystkie MCP i sekrety.
 
 Folder `backups/` jest wyłączony z Git. Pełny backup nie jest szyfrowany — nie umieszczaj go w chmurze ani repozytorium bez dodatkowego szyfrowania. Zachowywanych jest 14 ostatnich kopii; starsze są usuwane automatycznie, więc miejsce na dysku nie rośnie bez końca. Przed przywróceniem Agentbox waliduje wszystkie pliki JSON i katalog skilli, następnie zapisuje aktualny stan w `backups/restore-rollbacks/`. Nieudana operacja automatycznie odtwarza poprzednie dane. Z interfejsu można również usunąć wybraną pełną kopię po potwierdzeniu.
 
@@ -226,7 +239,7 @@ Folder `backups/` jest wyłączony z Git. Pełny backup nie jest szyfrowany — 
 
 `Backup → Odtworzenie biblioteki ze zdalnego repozytorium` pobiera bibliotekę z repozytorium backupu. Służy przede wszystkim do konfiguracji nowego Maca albo odtworzenia biblioteki po awarii dysku.
 
-Zastępowane są `catalog.json`, `mcp.json`, katalog `skills/` oraz `.gitignore`. **Nie** są zmieniane `projects.local.json` ani `mcp-secrets.json` — projekty, lokalne ścieżki i sekrety należą do tego Maca i nie trafiają do repozytorium. Przed zapisem Agentbox tworzy pełny backup lokalny, waliduje pliki JSON z repozytorium i przy błędzie odtwarza poprzedni stan. Klon zachowuje swoje `.git`, więc kolejne backupy wypychają do tego samego repozytorium.
+Zastępowane są `catalog.json`, `selections.json`, `mcp.json`, `docs.json`, katalog `skills/` oraz `.gitignore`. **Nie** są zmieniane `projects.local.json` ani `mcp-secrets.json` — projekty, lokalne ścieżki i sekrety należą do tego Maca i nie trafiają do repozytorium. Przed zapisem Agentbox tworzy pełny backup lokalny, waliduje pliki JSON z repozytorium i przy błędzie odtwarza poprzedni stan. Klon zachowuje swoje `.git`, więc kolejne backupy wypychają do tego samego repozytorium.
 
 Serwery MCP wymagające sekretów nie zadziałają od razu na nowym Maku — sekrety trzeba dostarczyć osobno, poza Gitem. Najszybciej: skopiuj `mcp-secrets.json` z ostatniego pełnego backupu starego Maca (`<biblioteka>/backups/full/<data>/mcp-secrets.json`) do folderu nowej biblioteki przez AirDrop albo inny bezpieczny kanał — jednorazowo, przy każdym nowym Maku.
 

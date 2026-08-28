@@ -96,8 +96,9 @@ extension SkillboxService {
             try await store.deleteSecrets(accounts: Array((server.secretEnvironment ?? [:]).values) + Array((server.secretHeaders ?? [:]).values))
         }
         config.servers.removeAll { $0.id == id }
-        if var assignments = config.projectServerIDs { for key in assignments.keys { assignments[key]?.removeAll { $0 == id } }; config.projectServerIDs = assignments }
-        try await store.save(config)
+        var local = try await store.configuration()
+        for key in local.selections.keys { local.selections[key]?.serverIDs.removeAll { $0 == id } }
+        try await store.save(local, config)
     }
 
     public func setMCPServers(projectID: UUID, serverIDs: [UUID], tags: [String]) async throws {
@@ -105,13 +106,11 @@ extension SkillboxService {
         if let project = local.projects.first(where: { $0.id == projectID }), local.inheritsRoot(project) {
             throw SkillboxError.invalidSkill("projekt \(project.name) korzysta z ustawień folderu nadrzędnego — przypisz serwery do folderu albo nadaj projektowi własne ustawienia")
         }
-        var config = try await store.mcpConfiguration()
-        var assignments = config.projectServerIDs ?? [:]
-        assignments[projectID.uuidString] = SkillboxService.prunedServerIDs(Array(Set(serverIDs)), tags: tags, servers: config.servers)
-        config.projectServerIDs = assignments
-        var tagAssignments = config.projectServerTags ?? [:]
-        tagAssignments[projectID.uuidString] = SkillboxService.normalizedTags(tags)
-        config.projectServerTags = tagAssignments
+        var config = local
+        var selection = config.storedSelection(for: .project(projectID))
+        selection.serverIDs = SkillboxService.prunedServerIDs(Array(Set(serverIDs)), tags: tags, servers: try await store.mcpConfiguration().servers)
+        selection.serverTags = SkillboxService.normalizedTags(tags)
+        config.selections[projectID.uuidString] = selection
         try await store.save(config)
     }
 
@@ -123,8 +122,8 @@ extension SkillboxService {
         let mcp = try await store.mcpConfiguration()
         // A project following a parent folder reads the folder's MCP selection, so adding a server
         // to the folder reaches every project in it.
-        let selectionID = local.mcpSelectionID(for: project).uuidString
-        var servers = Self.assignedServers(selectionID: selectionID, mcp: mcp)
+        let selectionID = local.selectionID(for: project).uuidString
+        var servers = Self.assignedServers(selection: local.storedSelection(for: .project(local.selectionID(for: project))), mcp: mcp)
         servers.sort { $0.name < $1.name }
         let disabledGlobal = mcp.projectDisabledGlobalServers?[selectionID] ?? [:]
         let secrets = try await store.secrets()
@@ -153,10 +152,10 @@ extension SkillboxService {
     /// anything disabled at the library level. Shared by `previewMCP` and `globalMCPServers`, which
     /// both need to know what is already fully managed for the project before working out what else
     /// applies to it.
-    private static func assignedServers(selectionID: String, mcp: MCPConfiguration) -> [MCPServer] {
-        let serverIDs = Set(mcp.projectServerIDs?[selectionID] ?? [])
+    private static func assignedServers(selection: AttachmentSelection, mcp: MCPConfiguration) -> [MCPServer] {
+        let serverIDs = Set(selection.serverIDs)
         // Lowercased on both sides, so tags saved before normalization keep matching.
-        let tags = Set((mcp.projectServerTags?[selectionID] ?? []).map { $0.lowercased() })
+        let tags = Set(selection.serverTags.map { $0.lowercased() })
         return mcp.servers.filter { serverIDs.contains($0.id) || !tags.isDisjoint(with: ($0.tags ?? []).map { $0.lowercased() }) }.filter(\.enabled)
     }
 
@@ -167,7 +166,8 @@ extension SkillboxService {
     /// declares, so there is nothing to opt out of.
     public func globalMCPServers(selectionID: UUID, tools: [Tool], home: URL = FileManager.default.homeDirectoryForCurrentUser) async throws -> [GlobalMCPServerRef] {
         let mcp = try await store.mcpConfiguration()
-        let assignedNames = Set(Self.assignedServers(selectionID: selectionID.uuidString, mcp: mcp).map(\.name))
+        let local = try await store.configuration()
+        let assignedNames = Set(Self.assignedServers(selection: local.storedSelection(for: .project(selectionID)), mcp: mcp).map(\.name))
         var refs: [GlobalMCPServerRef] = []
         if tools.contains(.codex) {
             refs += GlobalMCPDiscovery.codexGlobalServerNames(home: home).filter { !assignedNames.contains($0) }.map { GlobalMCPServerRef(tool: .codex, name: $0) }
@@ -183,7 +183,7 @@ extension SkillboxService {
     public func globalMCPServers(projectID: UUID, home: URL = FileManager.default.homeDirectoryForCurrentUser) async throws -> [GlobalMCPServerRef] {
         let local = try await store.configuration()
         guard let project = local.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
-        return try await globalMCPServers(selectionID: local.mcpSelectionID(for: project), tools: project.tools, home: home)
+        return try await globalMCPServers(selectionID: local.selectionID(for: project), tools: project.tools, home: home)
     }
 
     /// One selection's current opt-outs, keyed by tool — what `setDisabledGlobalServers` last saved.
@@ -196,7 +196,7 @@ extension SkillboxService {
     public func disabledGlobalServers(projectID: UUID) async throws -> [Tool: [String]] {
         let local = try await store.configuration()
         guard let project = local.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
-        return try await disabledGlobalServers(selectionID: local.mcpSelectionID(for: project))
+        return try await disabledGlobalServers(selectionID: local.selectionID(for: project))
     }
 
     /// Replaces, for one tool, the set of globally-declared server names one selection opts out of.
@@ -250,7 +250,7 @@ extension SkillboxService {
             throw SkillboxError.invalidSkill("projekt \(project.name) dziedziczy ustawienia z folderu \(folder) — użyj `agentbox mcp global <disable|enable> \(folder) … --folder`, żeby zmienić je dla całego folderu, albo nadaj projektowi własne ustawienia w aplikacji")
         }
         guard let project = local.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
-        try await setDisabledGlobalServers(selectionID: local.mcpSelectionID(for: project), tool: tool, names: names)
+        try await setDisabledGlobalServers(selectionID: local.selectionID(for: project), tool: tool, names: names)
     }
 }
 
