@@ -918,6 +918,71 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertTrue(reenabled.contains("\"permissions\""), reenabled)
     }
 
+    /// `.claude/settings.local.json` belongs to the user and to Claude Code, which writes its own
+    /// permission decisions there. Agentbox only ever adds names to `disabledMcpServers`; a project
+    /// with no global opt-out at all must leave the file untouched instead of re-serializing it.
+    func testClaudeSettingsLocalIsUntouchedWhenNoGlobalServerIsDisabled() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: projectURL.appending(path: ".claude"), withIntermediateDirectories: true)
+        let settings = projectURL.appending(path: ".claude/settings.local.json")
+        // Written the way Claude Code writes it: insertion order, not alphabetical.
+        let original = "{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(ls:*)\"\n    ],\n    \"deny\": []\n  },\n  \"alwaysThinkingEnabled\": true\n}"
+        try original.write(to: settings, atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let project = try await service.addProject(name: "app", path: projectURL.path, tools: [.claude])
+        try await service.saveMCPServer(MCPServer(name: "ctx", transport: .stdio, command: "npx"))
+        let servers = try await service.mcpConfiguration().servers.map(\.id)
+        try await service.setMCPServers(projectID: project.id, serverIDs: servers, tags: [])
+        _ = try await service.syncMCP(projectID: project.id)
+        XCTAssertEqual(try String(contentsOf: settings, encoding: .utf8), original)
+    }
+
+    /// The same rule for a file holding nothing but `{}`: Agentbox manages no entry in it, so it is
+    /// not its empty scaffold to delete.
+    func testEmptyClaudeSettingsLocalIsNotDeletedWhenNothingIsManaged() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: projectURL.appending(path: ".claude"), withIntermediateDirectories: true)
+        let settings = projectURL.appending(path: ".claude/settings.local.json")
+        try "{}\n".write(to: settings, atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let project = try await service.addProject(name: "app", path: projectURL.path, tools: [.claude])
+        try await service.saveMCPServer(MCPServer(name: "ctx", transport: .stdio, command: "npx"))
+        let servers = try await service.mcpConfiguration().servers.map(\.id)
+        try await service.setMCPServers(projectID: project.id, serverIDs: servers, tags: [])
+        _ = try await service.syncMCP(projectID: project.id)
+        XCTAssertEqual(try String(contentsOf: settings, encoding: .utf8), "{}\n")
+    }
+
+    /// Unticking a tool cleans up everything it owned in the project — the global opt-out included,
+    /// which the editor can no longer even show once the tool is gone.
+    func testUntickingToolAlsoCleansUpItsGlobalServerOptOut() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        let home = root.appending(path: "home")
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: home.appending(path: ".codex"), withIntermediateDirectories: true)
+        try "[mcp_servers.apple-mail]\ncommand = \"npx\"\n".write(to: home.appending(path: ".codex/config.toml"), atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(at: home.appending(path: ".claude"), withIntermediateDirectories: true)
+        try "{\"mcpServers\":{\"hubspot\":{\"type\":\"http\",\"url\":\"https://x.test\"}}}".write(to: home.appending(path: ".claude.json"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        var project = try await service.addProject(name: "app", path: projectURL.path, tools: [.codex, .claude])
+        try await service.setDisabledGlobalServers(projectID: project.id, tool: .codex, names: ["apple-mail"])
+        try await service.setDisabledGlobalServers(projectID: project.id, tool: .claude, names: ["hubspot"])
+        _ = try await service.syncMCP(projectID: project.id)
+        let codexFile = projectURL.appending(path: ".codex/config.toml")
+        let claudeSettings = projectURL.appending(path: ".claude/settings.local.json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: codexFile.path))
+        XCTAssertTrue(try String(contentsOf: claudeSettings, encoding: .utf8).contains("hubspot"))
+
+        project.tools = []
+        try await service.updateProject(project, serverIDs: [], serverTags: [])
+        _ = try await service.syncMCP(projectID: project.id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: codexFile.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: claudeSettings.path))
+    }
+
     func testSwitchingToJsoncStripsEntriesLeftBehindInOpencodeJson() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let projectURL = root.appending(path: "project")

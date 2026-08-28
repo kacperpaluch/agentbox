@@ -42,14 +42,14 @@ struct GlobalMCPView: View {
     @ViewBuilder
     private func toolSection(_ tool: Tool, title: String, source: String) -> some View {
         let names = model.globalMCPServerNames(tool: tool)
-        let selections = model.mcpSelections.filter { $0.tools.contains(tool) }
+        let groups = model.globalMCPGroups(tool: tool)
         Section {
             if names.isEmpty {
                 Text("Nie znaleziono żadnych globalnych serwerów.").font(.caption).foregroundStyle(.secondary)
-            } else if selections.isEmpty {
-                Text("Znaleziono \(names.count), ale żaden projekt ani folder nie ma zaznaczonego \(title) — nie ma tu więc czego wyłączać.").font(.caption).foregroundStyle(.secondary)
+            } else if groups.isEmpty {
+                Text("Znaleziono \(names.count), ale żaden projekt nie ma zaznaczonego \(title) — nie ma tu więc czego wyłączać.").font(.caption).foregroundStyle(.secondary)
             } else {
-                ForEach(names, id: \.self) { name in GlobalServerRow(model: model, tool: tool, name: name, selections: selections) }
+                ForEach(names, id: \.self) { name in GlobalServerRow(model: model, tool: tool, name: name, groups: groups) }
             }
         } header: {
             VStack(alignment: .leading, spacing: 2) {
@@ -60,137 +60,90 @@ struct GlobalMCPView: View {
     }
 }
 
-/// One global server, expandable into the folders/projects it reaches — each with its own opt-out
-/// toggle. Collapsed by default so a long project list does not turn this into a wall of checkboxes.
+/// One global server, expandable into every project that can see it — each with its own opt-out
+/// toggle, grouped by folder the way Projekty groups them. Collapsed by default so a long project
+/// list does not turn this into a wall of checkboxes.
 private struct GlobalServerRow: View {
     @ObservedObject var model: AppModel
     let tool: Tool
     let name: String
-    let selections: [AppModel.MCPSelection]
+    let groups: [AppModel.GlobalMCPGroup]
     @State private var expanded = false
-
-    /// Same grouping Projekty shows — one bucket per physical folder, root and standalone siblings
-    /// together, since a root's `groupKey` is its own folder path. A project that opted out of the
-    /// folder's shared settings (Projekty's "Własne ustawienia") lands in the same group as the
-    /// folder's single row instead of a separately-named one that only looks unrelated.
-    private var groups: [(key: String, name: String, items: [AppModel.MCPSelection])] {
-        var order: [String] = []
-        var buckets: [String: [AppModel.MCPSelection]] = [:]
-        for selection in selections {
-            if buckets[selection.groupKey] == nil { order.append(selection.groupKey) }
-            buckets[selection.groupKey, default: []].append(selection)
-        }
-        return order.map { key in (key, buckets[key]?.first?.groupName ?? key, buckets[key] ?? []) }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-    private var disabledCount: Int { selections.filter { model.isGlobalServerDisabled(selectionID: $0.id, tool: tool, name: name) }.count }
     /// Set when a checkbox for a project that still follows its folder was clicked — confirmed before
     /// actually splitting it off, since that also detaches its skills, MCP and doc from the folder,
     /// not only this one server.
-    @State private var pendingPromotion: (project: Project, disabled: Bool)?
+    @State private var pendingPromotion: (row: AppModel.GlobalMCPRow, folderName: String, disabled: Bool)?
+
+    private var rows: [AppModel.GlobalMCPRow] { groups.flatMap(\.rows) }
+    /// Counted in projects, not in selections: one folder stands for several projects, and a badge
+    /// whose denominator disagreed with the number of visible checkboxes only read as a bug.
+    private var disabledCount: Int { rows.filter { model.isGlobalServerDisabled(selectionID: $0.selectionID, tool: tool, name: name) }.count }
+    /// Where the opt-outs actually live. Setting a folder once covers every project following it,
+    /// so "wszędzie" never splits projects off one by one.
+    private var selectionIDs: [UUID] { Array(Set(rows.map(\.selectionID))) }
 
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
-            ForEach(groups, id: \.key) { group in
-                if let rootItem = group.items.first(where: \.isRoot) {
-                    // Every actual project in the folder, individually — not the folder's one
-                    // collapsed default — so any single one of them can be picked out.
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label(group.name, systemImage: "folder").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        ForEach(model.projects(inRoot: rootItem.id)) { member in
-                            memberRow(member, rootID: rootItem.id).padding(.leading, Space.row + 12)
-                        }
-                    }.padding(.leading, Space.row).padding(.top, 2)
-                } else {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label(group.name, systemImage: "folder").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        ForEach(group.items) { selection in
-                            row(for: selection, label: Text(selection.name))
-                                .padding(.leading, Space.row + 12)
-                        }
-                    }.padding(.leading, Space.row).padding(.top, 2)
-                }
+            ForEach(groups) { group in
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(group.name, systemImage: "folder").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    ForEach(group.rows) { row in
+                        projectRow(row, folderName: group.name).padding(.leading, Space.row + 12)
+                    }
+                }.padding(.leading, Space.row).padding(.top, 2)
             }
         } label: {
             HStack(spacing: Space.tight + 2) {
                 Text(name).fontWeight(.medium)
-                if disabledCount > 0 { MetaBadge(text: "wyłączony w \(disabledCount)/\(selections.count)", tint: .orange) }
+                if disabledCount > 0 { MetaBadge(text: "wyłączony w \(disabledCount)/\(rows.count)", tint: .orange) }
                 Spacer()
-                // Whichever direction still does something: hidden once every selection already
+                // Whichever direction still does something: hidden once every project already
                 // agrees, so this never offers a no-op click.
-                if disabledCount < selections.count {
-                    Button("Wyłącz wszędzie") { Task { await model.setGlobalServerDisabledEverywhere(tool: tool, name: name, disabled: true, selections: selections) } }
+                if disabledCount < rows.count {
+                    Button("Wyłącz wszędzie") { Task { await model.setGlobalServerDisabledEverywhere(tool: tool, name: name, disabled: true, selectionIDs: selectionIDs) } }
                         .buttonStyle(.link).controlSize(.small).disabled(model.isWorking)
                 }
                 if disabledCount > 0 {
-                    Button("Włącz wszędzie") { Task { await model.setGlobalServerDisabledEverywhere(tool: tool, name: name, disabled: false, selections: selections) } }
+                    Button("Włącz wszędzie") { Task { await model.setGlobalServerDisabledEverywhere(tool: tool, name: name, disabled: false, selectionIDs: selectionIDs) } }
                         .buttonStyle(.link).controlSize(.small).disabled(model.isWorking)
                 }
             }
         }
         .confirmationDialog(
-            pendingPromotion.map { "Dać „\($0.project.name)” własne ustawienia?" } ?? "",
+            pendingPromotion.map { "Dać „\($0.row.project.name)” własne ustawienia?" } ?? "",
             isPresented: Binding(get: { pendingPromotion != nil }, set: { if !$0 { pendingPromotion = nil } })
         ) {
             Button("Tak, przełącz \(name) tylko dla tego projektu") {
-                if let pending = pendingPromotion { Task { await model.setGlobalServerDisabled(project: pending.project, tool: tool, name: name, disabled: pending.disabled) } }
+                if let pending = pendingPromotion { Task { await model.setGlobalServerDisabled(row: pending.row, tool: tool, name: name, disabled: pending.disabled) } }
                 pendingPromotion = nil
             }
             Button("Anuluj", role: .cancel) { pendingPromotion = nil }
         } message: {
-            Text("Ten projekt dziś dziedziczy skille, serwery MCP i dokument z folderu „\(pendingPromotion?.project.name ?? "")”. Zacznie od dokładnie tego, co ma teraz, ale przestanie automatycznie dostawać przyszłe zmiany folderu — to samo co przełącznik „Własne ustawienia” w edytorze projektu.")
+            Text("Ten projekt dziś dziedziczy skille, serwery MCP i dokument z folderu „\(pendingPromotion?.folderName ?? "")”. Zacznie od dokładnie tego, co ma teraz, ale przestanie automatycznie dostawać przyszłe zmiany folderu — to samo co przełącznik „Własne ustawienia” w edytorze projektu.")
         }
     }
 
-    /// `true` means inherited (the default — Codex/Claude keep using their global definition);
-    /// `false` records this selection's opt-out. Same "dziedziczony"/"wyłączony" wording as the CLI.
-    private func binding(for selection: AppModel.MCPSelection) -> Binding<Bool> {
-        Binding(
-            get: { !model.isGlobalServerDisabled(selectionID: selection.id, tool: tool, name: name) },
-            set: { inherited in Task { await model.setGlobalServerDisabled(selectionID: selection.id, tool: tool, name: name, disabled: !inherited) } }
-        )
-    }
-
-    /// One toggle plus an inline "Synchronizuj" so a single opt-out can be pushed to
-    /// `.codex/config.toml` / `.claude/settings.local.json` right here, without a trip to Projekty.
+    /// A single project. One still following its folder shows a badge and a checkbox reflecting the
+    /// folder's shared decision; changing it asks to split the project off first (see
+    /// `pendingPromotion`) instead of silently forking the folder's other settings for it.
     @ViewBuilder
-    private func row(for selection: AppModel.MCPSelection, label: some View) -> some View {
-        HStack {
-            Toggle(isOn: binding(for: selection)) { label }.toggleStyle(.checkbox)
-            Spacer()
-            Button("Synchronizuj") { sync(selection) }.controlSize(.mini).disabled(model.isWorking)
-        }
-    }
-
-    /// A single project inside a shared folder. One still following the folder shows a badge and a
-    /// checkbox bound to the folder's current state; unchecking it asks to split it off first (see
-    /// `pendingPromotion`) instead of silently forking the whole folder's other settings for it.
-    @ViewBuilder
-    private func memberRow(_ member: AppModel.FolderProject, rootID: UUID) -> some View {
-        let effectiveID = member.inherits ? rootID : member.project.id
+    private func projectRow(_ row: AppModel.GlobalMCPRow, folderName: String) -> some View {
         HStack {
             Toggle(isOn: Binding(
-                get: { !model.isGlobalServerDisabled(selectionID: effectiveID, tool: tool, name: name) },
+                get: { !model.isGlobalServerDisabled(selectionID: row.selectionID, tool: tool, name: name) },
                 set: { inherited in
-                    if member.inherits { pendingPromotion = (member.project, !inherited) }
-                    else { Task { await model.setGlobalServerDisabled(selectionID: member.project.id, tool: tool, name: name, disabled: !inherited) } }
+                    if row.inherits { pendingPromotion = (row, folderName, !inherited) }
+                    else { Task { await model.setGlobalServerDisabled(selectionID: row.selectionID, tool: tool, name: name, disabled: !inherited) } }
                 }
             )) {
                 HStack(spacing: Space.tight) {
-                    Text(member.project.name)
-                    if member.inherits { MetaBadge(text: "dziedziczy z folderu") }
+                    Text(row.project.name)
+                    if row.inherits { MetaBadge(text: "dziedziczy z folderu") }
                 }
             }.toggleStyle(.checkbox)
-            .help(member.inherits ? "Dziś dzieli ustawienia z resztą folderu. Zmiana tego przełącznika da mu własne ustawienia." : "")
+            .help(row.inherits ? "Dziś dzieli ustawienia z resztą folderu. Zmiana tego przełącznika da mu własne ustawienia." : "")
             Spacer()
-            Button("Synchronizuj") { Task { await model.syncEverything(member.project) } }.controlSize(.mini).disabled(model.isWorking)
-        }
-    }
-
-    private func sync(_ selection: AppModel.MCPSelection) {
-        Task {
-            if selection.isRoot, let root = model.projectRoots.first(where: { $0.id == selection.id }) { await model.syncRoot(root) }
-            else if let project = model.projects.first(where: { $0.id == selection.id }) { await model.syncEverything(project) }
+            Button("Synchronizuj") { Task { await model.syncEverything(row.project) } }.controlSize(.mini).disabled(model.isWorking)
         }
     }
 }

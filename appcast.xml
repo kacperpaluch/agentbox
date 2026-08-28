@@ -6,6 +6,27 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.15.1</title>
+      <pubDate>Fri, 28 Aug 2026 07:24:55 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.15.1</link>
+      <sparkle:version>33</sparkle:version>
+      <sparkle:shortVersionString>0.15.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.15.1</h2>
+        <ul>
+          <li>Synchronizacja nie przepisuje już <code>.claude/settings.local.json</code>, gdy Agentbox nie zarządza w nim żadnym wpisem — plik użytkownika zostaje bajt w bajt.</li>
+          <li>Odznaczenie narzędzia w projekcie sprząta też jego wyłączenia globalnych serwerów MCP.</li>
+          <li>„MCP globalne”: lista pokazuje każdy projekt dokładnie raz, filtruje wiersze po narzędziu i poprawnie liczy plakietkę.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.15.1/Agentbox-0.15.1.dmg"
+        length="5675649"
+        type="application/octet-stream"
+        sparkle:edSignature="HdYo6wF6qz300BcYYd2GnGPjeZgiInoEJRuc1iYt1kH3cx4IozHLdhyFXsp1zs4n3OxJ9PDCO9kaxGoo8midAw==" />
+    </item>
+    <item>
       <title>Agentbox 0.15.0</title>
       <pubDate>Fri, 28 Aug 2026 07:11:47 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.15.0</link>

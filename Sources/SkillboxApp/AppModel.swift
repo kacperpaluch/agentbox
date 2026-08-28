@@ -235,22 +235,6 @@ import SkillboxCore
     func addDocTags(_ ids: Set<String>, text: String) async { await perform(autoBackup: true) { try await self.service?.addDocTags(docIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) dokumentów" } }
     func deleteDoc(_ id: String) async { await perform(autoBackup: true) { try await self.service?.deleteDoc(id: id); self.message = "Usunięto dokument \(id)" } }
     func previewMCP(_ project: Project) async throws -> [MCPPreview] { try await service?.previewMCP(projectID: project.id) ?? [] }
-    /// MCP servers Codex (`~/.codex/config.toml`, shared with the ChatGPT desktop app) or Claude
-    /// Code's user scope already declare globally for the given tools — read-only. `selectionID` is
-    /// a project's own id, or its parent folder's when the project follows the folder's settings —
-    /// the same id `selectedMCPServerIDs(selectionID:)` already uses for regular MCP assignment.
-    func globalMCPServers(selectionID: UUID, tools: [Tool]) async -> [GlobalMCPServerRef] { (try? await service?.globalMCPServers(selectionID: selectionID, tools: tools)) ?? [] }
-    /// That selection's current opt-outs from those global servers, by tool.
-    func disabledGlobalServers(selectionID: UUID) async -> [Tool: [String]] { (try? await service?.disabledGlobalServers(selectionID: selectionID)) ?? [:] }
-    /// Saves the full opt-out selection for every tool at once. Actually writing it into
-    /// `.codex/config.toml` / `.claude/settings.local.json` still needs a regular project sync,
-    /// exactly like assigning a server does — this only updates the library's own record of the choice.
-    func setDisabledGlobalServers(selectionID: UUID, name: String, disabled: [Tool: [String]]) async {
-        await perform {
-            for tool in Tool.allCases { try await self.service?.setDisabledGlobalServers(selectionID: selectionID, tool: tool, names: disabled[tool] ?? []) }
-            self.message = "Zapisano wybór globalnych serwerów MCP dla \(name)"
-        }
-    }
     /// Server names Codex/Claude Code declare globally, straight from disk — the same source
     /// `GlobalMCPServersView` reads, but unfiltered by any one project's assignments, for the
     /// "MCP globalne" tab's server-by-server overview.
@@ -261,45 +245,54 @@ import SkillboxCore
         case .opencode: []
         }
     }
-    /// Every independent MCP selection that exists: a folder with shared settings, or a project that
-    /// does not follow one. The same identity `projectDisabledGlobalServers` keys are stored under —
-    /// the "MCP globalne" tab lists these per server, instead of making the user hunt through
-    /// Projekty to find where a given global server can be turned off.
-    ///
-    /// `groupKey`/`groupName`/`isRoot` carry the same grouping Projekty shows (a folder with shared
-    /// settings, or projects sharing a parent path), so the two tabs read as one consistent picture
-    /// instead of Projekty's structure being invisible here.
-    struct MCPSelection: Identifiable, Hashable { let id: UUID; let name: String; let tools: [Tool]; let groupKey: String; let groupName: String; let isRoot: Bool }
-    var mcpSelections: [MCPSelection] {
-        // A root's groupKey is its own folder path, standardized the same way a standalone project's
-        // parent directory is below — so a root and a sibling project that opted out of it (own
-        // settings, same physical folder) land in the very same group instead of two that merely
-        // happen to share a display name.
-        let fromRoots = projectRoots.map { root in
-            MCPSelection(id: root.id, name: root.name, tools: root.tools, groupKey: URL(fileURLWithPath: root.path).standardizedFileURL.path, groupName: root.name, isRoot: true)
-        }
-        let standalone = projects.filter { !inheritsRoot($0) }.map { project -> MCPSelection in
-            let path = URL(fileURLWithPath: project.path).deletingLastPathComponent().standardizedFileURL.path
-            return MCPSelection(id: project.id, name: project.name, tools: project.tools, groupKey: path, groupName: URL(fileURLWithPath: path).lastPathComponent, isRoot: false)
-        }
-        return (fromRoots + standalone).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-    /// One actual project inside a shared folder, for "MCP globalne"'s expanded per-server view —
-    /// every project gets its own checkbox there, not just the folder's one collapsed default.
-    struct FolderProject: Identifiable, Hashable {
+    /// One row in the "MCP globalne" tab: a single real project that can see the tool's global
+    /// servers, together with the selection whose opt-out actually governs it — its own id, or its
+    /// parent folder's while it still follows the folder. Rows are built from projects rather than
+    /// from selections so no project can be missing from the list, and none can show up under a tool
+    /// it does not use.
+    struct GlobalMCPRow: Identifiable, Hashable {
         let project: Project
-        /// Still following the folder's shared setting (`Project.overridesRoot != true`) — as
-        /// opposed to already having "Własne ustawienia", the same flag Projekty shows a badge for.
+        /// Where the opt-out is stored: `project.id`, or the folder's id while `inherits` is true.
+        let selectionID: UUID
+        /// Still sharing the folder's settings, so its checkbox reflects a decision made for the
+        /// whole folder until the project is given settings of its own.
         let inherits: Bool
         var id: UUID { project.id }
     }
-    /// Every actual project belonging to one shared folder, resolved (so an inheriting one already
-    /// carries the folder's effective tools/skills/MCP/doc) and ordered the same way Projekty lists them.
-    func projects(inRoot rootID: UUID) -> [FolderProject] {
-        storedProjects.filter { $0.rootID == rootID }
-            .compactMap { stored in projects.first { $0.id == stored.id }.map { FolderProject(project: $0, inherits: stored.overridesRoot != true) } }
-            .sorted { $0.project.name.localizedCaseInsensitiveCompare($1.project.name) == .orderedAscending }
+    struct GlobalMCPGroup: Identifiable, Hashable {
+        let key: String
+        let name: String
+        let rows: [GlobalMCPRow]
+        var id: String { key }
     }
+
+    /// Every project that uses `tool`, grouped the way Projekty groups them: by parent folder, with
+    /// a folder that has shared settings named after the folder. Projects inheriting one folder all
+    /// point at the same `selectionID`, so their checkboxes stay in sync until one is split off.
+    func globalMCPGroups(tool: Tool) -> [GlobalMCPGroup] {
+        var order: [String] = []
+        var buckets: [String: (name: String, rows: [GlobalMCPRow])] = [:]
+        for project in projects.sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) {
+            guard project.tools.contains(tool) else { continue }
+            let folder = root(for: project)
+            let inherits = inheritsRoot(project)
+            let key: String
+            let name: String
+            if let folder {
+                key = URL(fileURLWithPath: folder.path).standardizedFileURL.path
+                name = folder.name
+            } else {
+                let parent = URL(fileURLWithPath: project.path).deletingLastPathComponent().standardizedFileURL
+                key = parent.path
+                name = parent.lastPathComponent
+            }
+            if buckets[key] == nil { order.append(key); buckets[key] = (name, []) }
+            buckets[key]?.rows.append(GlobalMCPRow(project: project, selectionID: inherits ? (folder?.id ?? project.id) : project.id, inherits: inherits))
+        }
+        return order.compactMap { key in buckets[key].map { GlobalMCPGroup(key: key, name: $0.name, rows: $0.rows) } }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
     /// Splits a shared folder off for one project, the same "Własne ustawienia" switch the project
     /// editor offers — done here so a single global-MCP checkbox can use it without a trip there. The
     /// project keeps exactly what it has today (tools, skills, tags, MCP assignment, doc, and any
@@ -307,7 +300,7 @@ import SkillboxCore
     /// changes to the folder.
     @discardableResult
     func promoteToOwnSettings(_ project: Project) async -> Bool {
-        guard let root = root(for: project) else { return true }
+        guard let folder = root(for: project) else { return true }
         isWorking = true; defer { isWorking = false }
         do {
             var updated = project
@@ -315,21 +308,21 @@ import SkillboxCore
             try await service?.updateProject(updated, serverIDs: selectedMCPServerIDs(for: project), serverTags: selectedMCPServerTags(for: project), docIDs: selectedDocIDs(for: project), docTags: selectedDocTags(for: project))
             // Carry over whatever the folder currently opts out of, so the split does not silently
             // re-enable something the folder had turned off.
-            for (toolRaw, names) in mcp.projectDisabledGlobalServers?[root.id.uuidString] ?? [:] {
+            for (toolRaw, names) in mcp.projectDisabledGlobalServers?[folder.id.uuidString] ?? [:] {
                 if let tool = Tool(rawValue: toolRaw) { try await service?.setDisabledGlobalServers(selectionID: project.id, tool: tool, names: names) }
             }
             await reload()
-            message = "\(project.name) ma teraz własne ustawienia (zaczyna od tego, co miał w folderze \(root.name))"
+            message = "\(project.name) ma teraz własne ustawienia (zaczyna od tego, co miał w folderze \(folder.name))"
             record(.success, message)
             return true
         } catch { reportError(error); await reload(); return false }
     }
-    /// The project-aware counterpart of `setGlobalServerDisabled(selectionID:...)`: a project still
+    /// The row-aware counterpart of `setGlobalServerDisabled(selectionID:...)`: a project still
     /// following its folder gets promoted to its own settings first, so the toggle lands on it alone
-    /// instead of on the whole folder.
-    func setGlobalServerDisabled(project: Project, tool: Tool, name: String, disabled: Bool) async {
-        if inheritsRoot(project) { guard await promoteToOwnSettings(project) else { return } }
-        await setGlobalServerDisabled(selectionID: project.id, tool: tool, name: name, disabled: disabled)
+    /// instead of on every project in the folder.
+    func setGlobalServerDisabled(row: GlobalMCPRow, tool: Tool, name: String, disabled: Bool) async {
+        if row.inherits { guard await promoteToOwnSettings(row.project) else { return } }
+        await setGlobalServerDisabled(selectionID: row.inherits ? row.project.id : row.selectionID, tool: tool, name: name, disabled: disabled)
     }
     /// Whether one selection currently opts a named global server out, straight from the already
     /// loaded configuration — so every toggle in the "MCP globalne" table can bind to this directly
@@ -352,30 +345,20 @@ import SkillboxCore
     /// The "Wyłącz wszędzie" / "Włącz wszędzie" action next to each server: applies the same choice
     /// to every selection at once instead of clicking through each checkbox in turn. One refresh at
     /// the end, not one per selection.
-    func setGlobalServerDisabledEverywhere(tool: Tool, name: String, disabled: Bool, selections: [MCPSelection]) async {
+    func setGlobalServerDisabledEverywhere(tool: Tool, name: String, disabled: Bool, selectionIDs: [UUID]) async {
         isWorking = true; defer { isWorking = false }
         do {
-            for selection in selections {
-                var names = Set(mcp.projectDisabledGlobalServers?[selection.id.uuidString]?[tool.rawValue] ?? [])
+            for selectionID in Set(selectionIDs) {
+                var names = Set(mcp.projectDisabledGlobalServers?[selectionID.uuidString]?[tool.rawValue] ?? [])
                 if disabled { names.insert(name) } else { names.remove(name) }
-                try await service?.setDisabledGlobalServers(selectionID: selection.id, tool: tool, names: Array(names))
+                try await service?.setDisabledGlobalServers(selectionID: selectionID, tool: tool, names: Array(names))
             }
             mcp = try await service?.mcpConfiguration() ?? mcp
-            message = disabled ? "Wyłączono \(name) wszędzie (\(selections.count))" : "Włączono z powrotem \(name) wszędzie (\(selections.count))"
+            message = disabled ? "Wyłączono \(name) wszędzie" : "Włączono z powrotem \(name) wszędzie"
         } catch { reportError(error) }
     }
     func previewProjectSync(_ project: Project) async throws -> ProjectSyncPreview { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewProjectSync(projectID: project.id) }
     func syncEverything(_ project: Project) async { await perform { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille, MCP i dokumenty dla \(project.name)" } }
-    /// Syncs every project belonging to one shared folder — for the "MCP globalne" tab, where a
-    /// toggle is scoped to the whole folder (one selection, one `.codex`/`.claude` override choice)
-    /// but only the individual projects inside it have files on disk to actually write.
-    func syncRoot(_ root: ProjectRoot) async {
-        let affected = projects.filter { self.root(for: $0)?.id == root.id }
-        await perform {
-            for project in affected { _ = try await self.service?.syncProjectTransaction(projectID: project.id) }
-            self.message = "Zsynchronizowano \(affected.count) projektów folderu \(root.name)"
-        }
-    }
     func previewAllProjectsSync() async throws -> [ProjectSyncPlan] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewAllProjectsSync() }
     func syncAllProjects() async -> [ProjectSyncOutcome] {
         isWorking = true

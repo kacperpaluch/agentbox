@@ -6,6 +6,17 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-08-28
+
+### Naprawiono
+
+- Synchronizacja projektu z zaznaczonym Claude Code przepisywała `.claude/settings.local.json` nawet wtedy, gdy Agentbox nie zarządzał w nim żadnym wpisem — klucze lądowały posortowane alfabetycznie, ze zmienionym formatowaniem. To plik użytkownika, w którym Claude Code zapisuje własne decyzje o uprawnieniach, więc jest teraz zwracany bajt w bajt, dopóki Agentbox faktycznie czegoś w nim nie zarządza — dokładnie ta sama zasada, którą stosuje `.mcp.json`. Plik zawierający tylko `{}` nie jest już z tego powodu usuwany.
+- Odznaczenie narzędzia w projekcie nie sprzątało jego wyłączeń globalnych serwerów: `enabled = false` zostawało w `.codex/config.toml`, a nazwa w `disabledMcpServers`, mimo że edytor projektu nie miał już jak ich pokazać. Teraz znikają razem z resztą plików narzędzia.
+- `MCP globalne`: rozwinięty serwer pokazywał projekty folderu wyłącznie z listy tego folderu, więc projekt leżący fizycznie w tym samym katalogu, ale dodany osobno, w ogóle nie pojawiał się na liście — mimo że liczył się do plakietki. Lista jest teraz budowana z projektów, nie z folderów, więc pokazuje każdy projekt dokładnie raz.
+- `MCP globalne`: projekt z własnymi ustawieniami, który nie ma zaznaczonego danego narzędzia, dostawał dla niego checkbox (np. Codex w projekcie bez Codexa). Wiersze są teraz filtrowane po narzędziu.
+- `MCP globalne`: plakietka `wyłączony w N/M` liczyła folder jako jedną pozycję, więc mianownik nie zgadzał się z liczbą widocznych checkboxów. Teraz liczy projekty.
+- `MCP globalne`: pytanie o nadanie projektowi własnych ustawień podstawiało jego nazwę w miejsce nazwy folderu, z którego dziedziczy.
+
 ## [0.15.0] - 2026-08-28
 
 ### Dodano

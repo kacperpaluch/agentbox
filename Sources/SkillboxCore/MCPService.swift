@@ -132,9 +132,11 @@ extension SkillboxService {
         var previews = try project.tools.map { tool in
             try MCPRenderer.preview(tool: tool, project: projectURL, servers: servers, secrets: secrets, disabledGlobalNames: disabledGlobal[tool.rawValue] ?? [])
         }
-        // Tools unticked in the project still have managed entries until this cleanup lands.
+        // Tools unticked in the project still have managed entries until this cleanup lands. They get
+        // no servers and no opt-out either: a tool the project no longer uses must end up with its
+        // files gone, not with a leftover `enabled = false` nobody can see in the editor any more.
         previews += try SkillboxService.abandonedTools(project: project).map { tool in
-            try MCPRenderer.preview(tool: tool, project: projectURL, servers: [], secrets: secrets, disabledGlobalNames: disabledGlobal[tool.rawValue] ?? [])
+            try MCPRenderer.preview(tool: tool, project: projectURL, servers: [], secrets: secrets, disabledGlobalNames: [])
         }
         return previews
     }
@@ -512,13 +514,18 @@ enum MCPRenderer {
     /// not itself own, is left untouched: the same "don't overwrite what you don't manage" rule as
     /// everywhere else in this file.
     private static func renderedClaudeDisabledGlobal(file: URL, names: [String], previouslyManaged: Set<String>) throws -> String {
+        // Nothing managed now or before: the file belongs to the user (and to Claude Code, which
+        // writes its own permission decisions there), so it is returned byte for byte instead of
+        // being re-serialized. Exactly the guard `renderedJSON` uses for the same reason — without
+        // it every sync reordered and reformatted a file Agentbox has no entry in.
+        if names.isEmpty, previouslyManaged.isEmpty {
+            guard FileManager.default.fileExists(atPath: file.path) else { return "" }
+            return try String(contentsOf: file, encoding: .utf8)
+        }
         var root: [String: Any] = [:]
         if FileManager.default.fileExists(atPath: file.path) {
             let raw = try String(contentsOf: file, encoding: .utf8)
             guard let data = raw.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                // Nothing to manage and the file is not parseable JSON: leave it exactly as found,
-                // the same way an unparseable opencode.jsonc is left alone in `renderedJSON`.
-                guard !names.isEmpty || !previouslyManaged.isEmpty else { return raw }
                 throw SkillboxError.mcpConflict("\(file.lastPathComponent) nie jest poprawnym JSON")
             }
             root = object
