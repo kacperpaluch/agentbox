@@ -26,6 +26,11 @@ import SkillboxCore
     /// freeze a copy into the project and break the inheritance the user asked for.
     @Published var storedProjects: [Project] = []
     @Published var projectRoots: [ProjectRoot] = []
+    /// Every place's attachments, exactly as `selections.json` holds them. One map for projects,
+    /// parent folders and this Mac alike — the Mac under the key `"global"`.
+    @Published var selections: [String: AttachmentSelection] = [:]
+    /// What this Mac itself gets. A view onto `selections`, so `Projekty` can list it as a row.
+    var global: AttachmentSelection { selections[SelectionTarget.global.storageKey] ?? AttachmentSelection() }
     @Published var detectedFolders: [DetectedProjectFolder] = []
     /// Set when the library folder cannot be opened at all (missing disk, no permissions).
     /// The UI then explains the situation instead of showing an empty library that looks like
@@ -48,7 +53,7 @@ import SkillboxCore
     // tags), so it recomputes them here too. That is the only place callers need to remember to
     // call — a skill tag edit or a new tagged MCP server no longer leaves the Projects tab showing
     // a stale "synced" badge until someone happens to touch a project directly.
-    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); docs = try await service?.docsConfiguration() ?? DocsConfiguration(); if selection == nil { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses() }
+    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); docs = try await service?.docsConfiguration() ?? DocsConfiguration(); selections = try await service?.allSelections() ?? [:]; if selection == nil { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses() }
 
     // MARK: Parent folders
 
@@ -93,18 +98,18 @@ import SkillboxCore
     func addBatch(_ request: BatchProjectRequest) async {
         await perform {
             if let root = request.root {
-                _ = try await self.service?.addProjectRoot(root, folders: request.folders, serverIDs: request.serverIDs, serverTags: request.serverTags, docIDs: request.docIDs, docTags: request.docTags, treatingExistingAsKnown: request.treatingExistingAsKnown)
+                _ = try await self.service?.addProjectRoot(root, folders: request.folders, selection: request.selection, treatingExistingAsKnown: request.treatingExistingAsKnown)
                 self.message = "Dodano folder \(root.name) i \(request.folders.count) projektów"
             } else {
-                for project in request.projects { _ = try await self.service?.addProject(project, serverIDs: request.serverIDs, serverTags: request.serverTags, docIDs: request.docIDs, docTags: request.docTags) }
+                for project in request.projects { _ = try await self.service?.addProject(project, selection: request.selection) }
                 self.message = "Dodano \(request.projects.count) projektów"
             }
         }
     }
-    func adoptGroupIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], serverIDs: [UUID], serverTags: [String], docIDs: [String], docTags: [String], treatingExistingAsKnown: Bool) {
-        Task { await perform { _ = try await self.service?.adoptProjectsIntoRoot(root, following: following, keepingOwnSettings: keepingOwnSettings, serverIDs: serverIDs, serverTags: serverTags, docIDs: docIDs, docTags: docTags, treatingExistingAsKnown: treatingExistingAsKnown); self.message = "Utworzono folder \(root.name); wspólnych ustawień używa \(following.count) projektów" } }
+    func adoptGroupIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], selection: AttachmentSelection, treatingExistingAsKnown: Bool) {
+        Task { await perform { _ = try await self.service?.adoptProjectsIntoRoot(root, following: following, keepingOwnSettings: keepingOwnSettings, selection: selection, treatingExistingAsKnown: treatingExistingAsKnown); self.message = "Utworzono folder \(root.name); wspólnych ustawień używa \(following.count) projektów" } }
     }
-    func saveRoot(_ root: ProjectRoot, serverIDs: [UUID], serverTags: [String], docIDs: [String], docTags: [String]) async { await perform { try await self.service?.updateProjectRoot(root, serverIDs: serverIDs, serverTags: serverTags, docIDs: docIDs, docTags: docTags); self.message = "Zapisano ustawienia folderu \(root.name)" } }
+    func saveRoot(_ root: ProjectRoot, selection: AttachmentSelection) async { await perform { try await self.service?.updateProjectRoot(root, selection: selection); self.message = "Zapisano ustawienia folderu \(root.name)" } }
     func deleteRoot(_ root: ProjectRoot) async { await perform { try await self.service?.deleteProjectRoot(id: root.id); self.message = "Usunięto ustawienia folderu \(root.name); projekty zachowały to, co dziedziczyły" } }
     func clearIgnoredFolders(_ root: ProjectRoot) async { await perform { try await self.service?.clearIgnoredFolders(rootID: root.id); self.message = "Wyczyszczono pominięte podfoldery w \(root.name)" } }
     func ignoreDetected(_ folders: [DetectedProjectFolder]) async { await perform { try await self.service?.ignoreDetectedFolders(folders); self.message = "Pominięto \(folders.count) podfolderów" } }
@@ -153,14 +158,30 @@ import SkillboxCore
     func saveTags(_ id: String, text: String) async { await perform(autoBackup: true) { try await self.service?.setTags(skillID: id, tags: Self.csv(text)); self.message = "Zapisano tagi" } }
     func addTags(_ ids: Set<String>, text: String) async { await perform(autoBackup: true) { try await self.service?.addTags(skillIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) skilli" } }
     func deleteSkill(_ id: String) async { await perform(autoBackup: true) { try await self.service?.deleteSkill(skillID: id); if self.selection == id { self.selection = nil; self.markdown = "" }; self.updateAvailable.remove(id); self.message = "Usunięto skill \(id)" } }
-    func addProject(_ project: Project, serverIDs: [UUID], serverTags: [String], docIDs: [String], docTags: [String]) async { await perform { _ = try await self.service?.addProject(project, serverIDs: serverIDs, serverTags: serverTags, docIDs: docIDs, docTags: docTags); self.message = "Dodano projekt" } }
-    func updateProject(_ project: Project, serverIDs: [UUID], serverTags: [String], docIDs: [String], docTags: [String]) async { await perform { try await self.service?.updateProject(project, serverIDs: serverIDs, serverTags: serverTags, docIDs: docIDs, docTags: docTags); self.message = "Zapisano projekt" } }
-    func selectedMCPServerIDs(for project: Project) -> [UUID] { selectedMCPServerIDs(selectionID: (inheritsRoot(project) ? project.rootID : nil) ?? project.id) }
-    func selectedMCPServerIDs(selectionID: UUID) -> [UUID] { mcp.projectServerIDs?[selectionID.uuidString] ?? [] }
-    func selectedMCPServerTags(for project: Project) -> [String] { mcp.projectServerTags?[((inheritsRoot(project) ? project.rootID : nil) ?? project.id).uuidString] ?? [] }
-    func selectedDocIDs(for project: Project) -> [String] { selectedDocIDs(selectionID: (inheritsRoot(project) ? project.rootID : nil) ?? project.id) }
-    func selectedDocIDs(selectionID: UUID) -> [String] { docs.projectDocIDs?[selectionID.uuidString] ?? [] }
-    func selectedDocTags(for project: Project) -> [String] { docs.projectDocTags?[((inheritsRoot(project) ? project.rootID : nil) ?? project.id).uuidString] ?? [] }
+    func addProject(_ project: Project, selection: AttachmentSelection) async { await perform { _ = try await self.service?.addProject(project, selection: selection); self.message = "Dodano projekt" } }
+    func updateProject(_ project: Project, selection: AttachmentSelection) async { await perform { try await self.service?.updateProject(project, selection: selection); self.message = "Zapisano projekt" } }
+    /// The state already loaded here, in the shape the core expects. Rebuilding it costs nothing and
+    /// lets the whole app answer "what is attached to this place" through the very same code a sync
+    /// runs, instead of six accessors that each reimplemented the inheritance rule.
+    private var localConfiguration: LocalConfiguration {
+        var config = LocalConfiguration()
+        config.projects = storedProjects
+        config.projectRoots = projectRoots
+        config.selections = selections
+        return config
+    }
+
+    /// What is attached to a place. `resolvingInheritance` picks between the two questions the UI
+    /// actually asks: what a project *uses* (the folder's settings, when it follows one) and what is
+    /// *written down* for it (its own record, which an editor must show so saving cannot silently
+    /// freeze a copy of the folder onto the project).
+    func selection(for target: SelectionTarget, resolvingInheritance: Bool = false) -> AttachmentSelection {
+        SkillboxService.selection(for: target, config: localConfiguration, resolvingInheritance: resolvingInheritance)
+    }
+
+    func saveSelection(_ selection: AttachmentSelection, for target: SelectionTarget, named name: String) async {
+        await perform { try await self.service?.setSelection(selection, for: target); self.message = "Zapisano ustawienia: \(name)" }
+    }
     func deleteProject(_ project: Project, removingFiles: Bool) async {
         await perform {
             if removingFiles {
@@ -305,7 +326,8 @@ import SkillboxCore
         do {
             var updated = project
             updated.overridesRoot = true
-            try await service?.updateProject(updated, serverIDs: selectedMCPServerIDs(for: project), serverTags: selectedMCPServerTags(for: project), docIDs: selectedDocIDs(for: project), docTags: selectedDocTags(for: project))
+            let inherited = selection(for: .project(project.id), resolvingInheritance: true)
+            try await service?.updateProject(updated, selection: inherited)
             // Carry over whatever the folder currently opts out of, so the split does not silently
             // re-enable something the folder had turned off.
             for (toolRaw, names) in mcp.projectDisabledGlobalServers?[folder.id.uuidString] ?? [:] {
@@ -410,9 +432,10 @@ import SkillboxCore
             record(.success, message); return true
         } catch { message = error.localizedDescription; record(.error, message); return false }
     }
-    func globalSelection() async -> GlobalSkillSelection { (try? await service?.globalSelection()) ?? GlobalSkillSelection() }
+    // The global selection is read into `global` by `reload()` and written through `saveSelection`,
+    // like every other place — only the preview stays a call of its own, because it inspects the
+    // user's skill directories rather than the library.
     func previewGlobalSync() async throws -> [SkillSyncPreview] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewGlobalSync() }
-    func saveGlobalSelection(_ selection: GlobalSkillSelection) async { await perform { try await self.service?.setGlobalSelection(selection); self.message = "Zapisano wybór globalny" } }
     func restoreLibraryFromRemote(_ remote: String) async {
         await perform { self.message = try await self.service?.restoreLibraryFromRemote(remote, applicationVersion: AppVersion.short) ?? "Gotowe" }
         selection = nil

@@ -18,6 +18,8 @@ struct ProjectsView: View {
     @State private var deletingRoot: ProjectRoot?
     @State private var settingUpRoot: ProjectGroup?
     @State private var showDetected = false
+    @State private var showGlobal = false
+    @State private var showClientServers = false
 
     private struct ProjectGroup: Identifiable {
         let path: String
@@ -49,18 +51,32 @@ struct ProjectsView: View {
         VStack(spacing: 0) {
             actionBar
             if !model.detectedFolders.isEmpty { detectedBanner }
-            if model.projects.isEmpty && model.projectRoots.isEmpty {
-                ContentUnavailableView("Brak projektów", systemImage: "folder.badge.plus", description: Text("Dodaj folder i wybierz skille dla Claude, Codex lub OpenCode."))
-            } else {
-                projectList
-            }
+            projectList
         }
         .navigationTitle("Projekty")
         .sheet(isPresented: $showBatch) { BatchProjectView(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, existingProjects: model.projects, existingRoots: model.projectRoots) { request in Task { await model.addBatch(request) } } }
         .sheet(isPresented: $showDetected) { DetectedFoldersView(model: model) }
+        .sheet(isPresented: $showGlobal) { GlobalSelectionEditor(model: model) }
+        .sheet(isPresented: $showClientServers) { ClientServersView(model: model) }
         .sheet(item: $settingUpRoot) { group in GroupRootSetupView(model: model, folderPath: group.path, projects: group.projects) }
-        .sheet(item: $editingRoot) { root in ProjectRootEditor(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, root: root, followingProjects: model.storedProjects.filter { $0.rootID == root.id && $0.overridesRoot != true }.count, selectedServerIDs: model.selectedMCPServerIDs(selectionID: root.id), selectedServerTags: model.mcp.projectServerTags?[root.id.uuidString] ?? [], selectedDocIDs: model.selectedDocIDs(selectionID: root.id), selectedDocTags: model.docs.projectDocTags?[root.id.uuidString] ?? []) { updated, servers, tags, docIDs, docTags in Task { await model.saveRoot(updated, serverIDs: servers, serverTags: tags, docIDs: docIDs, docTags: docTags) } } }
-        .sheet(item: $editing) { project in ProjectEditor(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, project: model.storedProject(id: project.id) ?? project, root: model.root(for: project), inheritedFrom: model.inheritsRoot(project) ? model.projects.first { $0.id == project.id } : nil, selectedServerIDs: model.selectedMCPServerIDs(for: project), selectedServerTags: model.selectedMCPServerTags(for: project), selectedDocIDs: model.selectedDocIDs(for: project), selectedDocTags: model.selectedDocTags(for: project)) { updated, servers, tags, docIDs, docTags in Task { await model.updateProject(updated, serverIDs: servers, serverTags: tags, docIDs: docIDs, docTags: docTags) } } }
+        .sheet(item: $editingRoot) { root in
+            ProjectRootEditor(
+                skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, root: root,
+                followingProjects: model.storedProjects.filter { $0.rootID == root.id && $0.overridesRoot != true }.count,
+                initialSelection: model.selection(for: .root(root.id))
+            ) { updated, selection in Task { await model.saveRoot(updated, selection: selection) } }
+        }
+        .sheet(item: $editing) { project in
+            ProjectEditor(
+                skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs,
+                project: model.storedProject(id: project.id) ?? project,
+                root: model.root(for: project),
+                inheritedFrom: model.inheritsRoot(project) ? model.projects.first { $0.id == project.id } : nil,
+                // Resolved on purpose: a project following its folder opens showing what it actually
+                // gets, so switching to own settings starts from today's state, not an empty form.
+                initialSelection: model.selection(for: .project(project.id), resolvingInheritance: true)
+            ) { updated, selection in Task { await model.updateProject(updated, selection: selection) } }
+        }
         .sheet(item: $previewProject) { project in MCPPreviewView(model: model, project: project) }
         .sheet(isPresented: $showAllSync) { AllProjectsSyncPreviewView(model: model) }
         .confirmationDialog("Usunąć projekt \(deleting?.name ?? "") z Agentbox?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
@@ -94,6 +110,11 @@ struct ProjectsView: View {
 
     private var projectList: some View {
         List {
+            globalRow
+            if model.projects.isEmpty && model.projectRoots.isEmpty {
+                ContentUnavailableView("Brak projektów", systemImage: "folder.badge.plus", description: Text("Dodaj folder i wybierz skille dla Claude, Codex lub OpenCode."))
+                    .listRowSeparator(.hidden)
+            }
             ForEach(groups) { group in
                 DisclosureGroup(isExpanded: groupExpansion(group.path)) {
                     if group.projects.isEmpty { Text("Folder bez projektów. Dodaj podfoldery przez `Dodaj wiele` albo poczekaj, aż Agentbox je wykryje.").font(.caption).foregroundStyle(.secondary).padding(.vertical, 6) }
@@ -147,6 +168,11 @@ struct ProjectsView: View {
                 .help("Sprawdza, czy projekty odpowiadają bibliotece, i szuka nowych podfolderów w obserwowanych folderach")
             Button { showProject = true } label: { Label("Dodaj projekt", systemImage: "plus") }.buttonStyle(.bordered)
             Button { showBatch = true } label: { Label("Dodaj wiele", systemImage: "folder.badge.plus") }.buttonStyle(.bordered)
+            // Not a library and not a place — a diagnostic view answering "where is this server
+            // active", so it opens from here instead of holding a sidebar row of its own.
+            Button { showClientServers = true } label: { Label("Serwery klientów…", systemImage: "server.rack") }
+                .buttonStyle(.bordered)
+                .help("Serwery MCP spoza Agentbox, które Codex i Claude Code ładują w każdym projekcie")
             Menu {
                 Button("Rozwiń wszystko") { collapsedGroups.removeAll() }
                 Button("Zwiń wszystko") { collapsedGroups = Set(groups.map(\.path)) }
@@ -156,6 +182,31 @@ struct ProjectsView: View {
             Spacer()
             if model.isCheckingStatuses { ProgressView().controlSize(.small) }
         }
+    }
+
+    /// The Mac itself, pinned above the folders. Globalne skille are not a different kind of screen —
+    /// they are attachments landing in a place, exactly like every row below — so they belong on this
+    /// list rather than in a sidebar section whose name collided with `Serwery klientów`.
+    private var globalRow: some View {
+        HStack(spacing: Space.tight + 4) {
+            Image(systemName: "person.crop.circle").foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Wszystkie sesje").sectionLabel()
+                Text(globalSummary).rowMetadata().lineLimit(1)
+            }
+            Spacer()
+            Button("Ustawienia globalne…") { showGlobal = true }.buttonStyle(.bordered).controlSize(.small)
+        }
+        .padding(.vertical, 2)
+        .listRowSeparator(.hidden)
+    }
+
+    private var globalSummary: String {
+        let global = model.global
+        guard !global.tools.isEmpty else { return "Nieskonfigurowane — żaden klient nie dostaje skilli globalnie" }
+        let clients = global.tools.map { $0.rawValue.capitalized }.joined(separator: ", ")
+        let count = global.skillIDs.count + global.skillTags.count
+        return count == 0 ? "\(clients) · nic nie wybrano" : "\(clients) · \(global.skillIDs.count) skilli, \(global.skillTags.count) tagów"
     }
 
     private func groupExpansion(_ path: String) -> Binding<Bool> {

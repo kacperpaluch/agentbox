@@ -6,21 +6,29 @@ import SkillboxCore
 /// The library of shared `AGENTS.md` texts. Each one, once assigned to a project, also produces that
 /// project's `CLAUDE.md` automatically as a generated `@AGENTS.md` import — there is nothing to write
 /// or edit for `CLAUDE.md` separately.
-struct DocsView: View {
+struct DocsPane: View {
     @ObservedObject var model: AppModel
+    let search: String
+    let selectedTag: String
     @State private var editingDoc: AgentDoc?
     @State private var creatingDoc = false
     @State private var docToDelete: AgentDoc?
     @State private var checked = Set<String>()
     @State private var showBatchTags = false
     private var existingTags: [String] { Array(Set(model.docs.docs.flatMap(\.tags))).sorted() }
-    private var sortedDocs: [AgentDoc] { model.docs.docs.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
+    private var sortedDocs: [AgentDoc] {
+        model.docs.docs
+            .filter { libraryMatches(name: $0.name, id: $0.id, tags: $0.tags, search: search, selectedTag: selectedTag) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             actionBar
             if model.docs.docs.isEmpty {
                 ContentUnavailableView("Brak dokumentów", systemImage: "doc.text", description: Text("Dodaj tekst, który ma trafić jako AGENTS.md do wybranych projektów. CLAUDE.md w tych projektach powstanie automatycznie."))
+            } else if sortedDocs.isEmpty {
+                ContentUnavailableView("Nic nie pasuje", systemImage: "magnifyingglass", description: Text("Zmień wyszukiwanie albo wybrany tag."))
             } else {
                 List {
                     Section("Dokumenty") {
@@ -36,7 +44,6 @@ struct DocsView: View {
                 }
             }
         }
-        .navigationTitle("Dokumenty")
         .sheet(isPresented: $creatingDoc) { NewDocView(existingTags: existingTags, existingIDs: Set(model.docs.docs.map(\.id))) { draft in Task { _ = await model.createDoc(id: draft.id, name: draft.name, tags: draft.tags, content: draft.content) } } }
         .sheet(item: $editingDoc) { doc in DocEditorView(model: model, doc: doc, existingTags: existingTags) }
         .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: "dokumentów") { text in Task { await model.addDocTags(checked, text: text); checked.removeAll() } } }
@@ -56,7 +63,7 @@ struct DocsView: View {
                 Button("Anuluj") { checked.removeAll() }.buttonStyle(.bordered)
             }
             Spacer()
-            Text("\(model.docs.docs.count) dokumentów").rowMetadata()
+            Text(sortedDocs.count == model.docs.docs.count ? "\(model.docs.docs.count) dokumentów" : "\(sortedDocs.count) z \(model.docs.docs.count)").rowMetadata()
         }
     }
 

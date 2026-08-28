@@ -56,8 +56,9 @@ extension SkillboxService {
         var config = try await store.docsConfiguration()
         guard config.docs.contains(where: { $0.id == id }) else { throw SkillboxError.docNotFound(id) }
         config.docs.removeAll { $0.id == id }
-        if var assignments = config.projectDocIDs { for key in assignments.keys { assignments[key]?.removeAll { $0 == id } }; config.projectDocIDs = assignments }
-        try await store.save(config)
+        var local = try await store.configuration()
+        for key in local.selections.keys { local.selections[key]?.docIDs.removeAll { $0 == id } }
+        try await store.save(local, config)
     }
 
     public func setDocs(projectID: UUID, docIDs: [String], tags: [String]) async throws {
@@ -65,18 +66,12 @@ extension SkillboxService {
         if let project = local.projects.first(where: { $0.id == projectID }), local.inheritsRoot(project) {
             throw SkillboxError.invalidSkill("projekt \(project.name) korzysta z ustawień folderu nadrzędnego — przypisz dokumenty do folderu albo nadaj projektowi własne ustawienia")
         }
-        var config = try await store.docsConfiguration()
-        Self.assignDocs(&config, id: projectID, docIDs: docIDs, tags: tags)
+        var config = local
+        var selection = config.storedSelection(for: .project(projectID))
+        selection.docIDs = Self.prunedDocIDs(Array(Set(docIDs)), tags: tags, docs: try await store.docsConfiguration().docs)
+        selection.docTags = Self.normalizedTags(tags)
+        config.selections[projectID.uuidString] = selection
         try await store.save(config)
-    }
-
-    static func assignDocs(_ config: inout DocsConfiguration, id: UUID, docIDs: [String], tags: [String]) {
-        var assignments = config.projectDocIDs ?? [:]
-        assignments[id.uuidString] = prunedDocIDs(Array(Set(docIDs)), tags: tags, docs: config.docs)
-        config.projectDocIDs = assignments
-        var tagAssignments = config.projectDocTags ?? [:]
-        tagAssignments[id.uuidString] = normalizedTags(tags)
-        config.projectDocTags = tagAssignments
     }
 
     static func prunedDocIDs(_ docIDs: [String], tags: [String], docs: [AgentDoc]) -> [String] {
@@ -93,9 +88,9 @@ extension SkillboxService {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
         let docsConfig = try await store.docsConfiguration()
-        let selectionID = local.docSelectionID(for: project).uuidString
-        let ids = Set(docsConfig.projectDocIDs?[selectionID] ?? [])
-        let tags = Set((docsConfig.projectDocTags?[selectionID] ?? []).map { $0.lowercased() })
+        let selection = local.storedSelection(for: .project(local.selectionID(for: project)))
+        let ids = Set(selection.docIDs)
+        let tags = Set(selection.docTags.map { $0.lowercased() })
         let matches = docsConfig.docs.filter { ids.contains($0.id) || !tags.isDisjoint(with: $0.tags.map { $0.lowercased() }) }
         guard matches.count <= 1 else {
             throw SkillboxError.docConflict("do projektu \(project.name) pasuje więcej niż jeden dokument: \(matches.map(\.id).sorted().joined(separator: ", ")) — AGENTS.md może mieć tylko jedną treść naraz")

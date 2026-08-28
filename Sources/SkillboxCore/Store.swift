@@ -7,6 +7,7 @@ public actor SkillboxStore {
     private var localURL: URL { root.appending(path: "projects.local.json") }
     nonisolated private var mcpURL: URL { root.appending(path: "mcp.json") }
     nonisolated private var docsURL: URL { root.appending(path: "docs.json") }
+    nonisolated private var selectionsURL: URL { root.appending(path: "selections.json") }
     nonisolated private var secretsURL: URL { root.appending(path: "mcp-secrets.json") }
     private var snapshotsDirectory: URL { root.appending(path: ".agentbox-snapshots") }
     private let fm = FileManager.default
@@ -20,7 +21,6 @@ public actor SkillboxStore {
         encoder.dateEncodingStrategy = .iso8601; decoder.dateDecodingStrategy = .iso8601
         try fm.createDirectory(at: self.root, withIntermediateDirectories: true)
         try fm.createDirectory(at: self.root.appending(path: "skills"), withIntermediateDirectories: true)
-        migrateLegacyMCPPresetsIfNeeded()
         removeOrphanedAIKeysIfNeeded()
     }
 
@@ -38,44 +38,28 @@ public actor SkillboxStore {
         _ = rename(temp.path, secretsURL.path)
     }
 
-    /// One-time cleanup for libraries written before presets were replaced by direct/tag MCP
-    /// assignment (removed as a feature in 0.3.1, but `mcp.json` kept carrying the old fields
-    /// forever as dead migration weight). Runs on raw JSON, independent of `MCPConfiguration`'s
-    /// current shape, so any project still resolving servers only through a legacy preset keeps
-    /// working after those fields are gone from the type.
-    nonisolated private func migrateLegacyMCPPresetsIfNeeded() {
-        guard let data = try? Data(contentsOf: mcpURL),
-              let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-        guard let presets = raw["presets"] as? [[String: Any]],
-              let projectPresetIDs = raw["projectPresetIDs"] as? [String: [String]],
-              !presets.isEmpty, !projectPresetIDs.isEmpty else { return }
-        var serverIDsByPreset: [String: [String]] = [:]
-        for preset in presets {
-            guard let id = preset["id"] as? String else { continue }
-            serverIDsByPreset[id] = preset["serverIDs"] as? [String] ?? []
-        }
-        var projectServerIDs = raw["projectServerIDs"] as? [String: [String]] ?? [:]
-        for (projectID, presetIDs) in projectPresetIDs {
-            let resolved = presetIDs.flatMap { serverIDsByPreset[$0] ?? [] }
-            guard !resolved.isEmpty else { continue }
-            projectServerIDs[projectID] = Array(Set(projectServerIDs[projectID] ?? []).union(resolved)).sorted()
-        }
-        var updated = raw
-        updated["projectServerIDs"] = projectServerIDs
-        updated.removeValue(forKey: "presets")
-        updated.removeValue(forKey: "projectPresetIDs")
-        updated.removeValue(forKey: "projectProfileSelections")
-        guard let newData = try? JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys]) else { return }
-        try? newData.write(to: mcpURL, options: .atomic)
-    }
-
     public func catalog() throws -> Catalog { try read(catalogURL, fallback: Catalog()) }
-    public func configuration() throws -> LocalConfiguration { try read(localURL, fallback: LocalConfiguration()) }
+    /// `projects.local.json` and `selections.json` are read as one value. They are separate files
+    /// because only the first is local to this Mac — the second is part of the Git backup — but
+    /// nothing above this line has any reason to know that.
+    public func configuration() throws -> LocalConfiguration {
+        var config: LocalConfiguration = try read(localURL, fallback: LocalConfiguration())
+        config.selections = try read(selectionsURL, fallback: SelectionsConfiguration()).selections
+        return config
+    }
     public func mcpConfiguration() throws -> MCPConfiguration { try read(mcpURL, fallback: MCPConfiguration()) }
     public func docsConfiguration() throws -> DocsConfiguration { try read(docsURL, fallback: DocsConfiguration()) }
 
     public func save(_ catalog: Catalog) throws { try snapshotLibrary(); try atomicWrite(catalog, to: catalogURL) }
-    public func save(_ config: LocalConfiguration) throws { try snapshotLibrary(); try atomicWrite(config, to: localURL) }
+    public func save(_ config: LocalConfiguration) throws { try snapshotLibrary(); try writeTogether(localWrites(config)) }
+
+    /// The two halves of a `LocalConfiguration`, encoded. Split out so every overload below writes
+    /// both files and no caller can accidentally persist the projects without their attachments.
+    private func localWrites(_ config: LocalConfiguration) throws -> [(data: Data, url: URL)] {
+        var selections = SelectionsConfiguration()
+        selections.selections = config.selections
+        return [(try encoder.encode(config), localURL), (try encoder.encode(selections), selectionsURL)]
+    }
     public func save(_ config: MCPConfiguration) throws { try snapshotLibrary(); try atomicWrite(config, to: mcpURL) }
     public func save(_ config: DocsConfiguration) throws { try snapshotLibrary(); try atomicWrite(config, to: docsURL) }
 
@@ -84,24 +68,24 @@ public actor SkillboxStore {
     /// catalog and the project list disagreeing when the second write failed.
     public func save(_ catalog: Catalog, _ config: LocalConfiguration) throws {
         try snapshotLibrary()
-        try writeTogether([(try encoder.encode(catalog), catalogURL), (try encoder.encode(config), localURL)])
+        try writeTogether([(try encoder.encode(catalog), catalogURL)] + (try localWrites(config)))
     }
 
     public func save(_ config: LocalConfiguration, _ mcp: MCPConfiguration) throws {
         try snapshotLibrary()
-        try writeTogether([(try encoder.encode(config), localURL), (try encoder.encode(mcp), mcpURL)])
+        try writeTogether((try localWrites(config)) + [(try encoder.encode(mcp), mcpURL)])
     }
 
     public func save(_ config: LocalConfiguration, _ docs: DocsConfiguration) throws {
         try snapshotLibrary()
-        try writeTogether([(try encoder.encode(config), localURL), (try encoder.encode(docs), docsURL)])
+        try writeTogether((try localWrites(config)) + [(try encoder.encode(docs), docsURL)])
     }
 
     /// Used where one user action touches a project's own record plus both side-table assignments
     /// (MCP servers and docs) — same one-snapshot reasoning as the two-file overloads above.
     public func save(_ config: LocalConfiguration, _ mcp: MCPConfiguration, _ docs: DocsConfiguration) throws {
         try snapshotLibrary()
-        try writeTogether([(try encoder.encode(config), localURL), (try encoder.encode(mcp), mcpURL), (try encoder.encode(docs), docsURL)])
+        try writeTogether((try localWrites(config)) + [(try encoder.encode(mcp), mcpURL), (try encoder.encode(docs), docsURL)])
     }
 
     private func writeTogether(_ writes: [(data: Data, url: URL)]) throws {
@@ -162,7 +146,7 @@ public actor SkillboxStore {
                 var isDirectory: ObjCBool = false
                 guard fm.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
                 let files = ((try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [])
-                    .map(\.lastPathComponent).filter { ["catalog.json", "projects.local.json", "mcp.json", "docs.json"].contains($0) }.sorted()
+                    .map(\.lastPathComponent).filter { ["catalog.json", "projects.local.json", "selections.json", "mcp.json", "docs.json"].contains($0) }.sorted()
                 guard !files.isEmpty else { return nil }
                 let date = (try? directory.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 return LibrarySnapshot(name: directory.lastPathComponent, date: date, files: files)
@@ -175,7 +159,7 @@ public actor SkillboxStore {
         guard name == URL(fileURLWithPath: name).lastPathComponent, !name.contains("..") else { throw SkillboxError.unsafePath(name) }
         let directory = snapshotsDirectory.appending(path: name).standardizedFileURL
         guard directory.deletingLastPathComponent() == snapshotsDirectory.standardizedFileURL else { throw SkillboxError.unsafePath(directory.path) }
-        let targets = ["catalog.json": catalogURL, "projects.local.json": localURL, "mcp.json": mcpURL, "docs.json": docsURL]
+        let targets = ["catalog.json": catalogURL, "projects.local.json": localURL, "selections.json": selectionsURL, "mcp.json": mcpURL, "docs.json": docsURL]
         var replacements: [URL: Data] = [:]
         for (filename, target) in targets {
             let source = directory.appending(path: filename)
@@ -184,6 +168,7 @@ public actor SkillboxStore {
             switch filename {
             case "catalog.json": _ = try decoder.decode(Catalog.self, from: data)
             case "projects.local.json": _ = try decoder.decode(LocalConfiguration.self, from: data)
+            case "selections.json": _ = try decoder.decode(SelectionsConfiguration.self, from: data)
             case "mcp.json": _ = try decoder.decode(MCPConfiguration.self, from: data)
             case "docs.json": _ = try decoder.decode(DocsConfiguration.self, from: data)
             default: break
@@ -224,6 +209,7 @@ public actor SkillboxStore {
         try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: stage.path)
         try atomicWrite(try catalog(), to: stage.appending(path: "catalog.json"))
         try atomicWrite(try configuration(), to: stage.appending(path: "projects.local.json"))
+        try atomicWrite(try read(selectionsURL, fallback: SelectionsConfiguration()) as SelectionsConfiguration, to: stage.appending(path: "selections.json"))
         try atomicWrite(try mcpConfiguration(), to: stage.appending(path: "mcp.json"))
         try atomicWrite(try docsConfiguration(), to: stage.appending(path: "docs.json"))
         try atomicWrite(try secrets(), to: stage.appending(path: "mcp-secrets.json"))
@@ -248,22 +234,27 @@ public actor SkillboxStore {
         _ = try decoder.decode(LocalConfiguration.self, from: Data(contentsOf: package.appending(path: "projects.local.json")))
         _ = try decoder.decode(MCPConfiguration.self, from: Data(contentsOf: package.appending(path: "mcp.json")))
         _ = try decoder.decode([String: String].self, from: Data(contentsOf: package.appending(path: "mcp-secrets.json")))
-        // Backups made before documents existed have no docs.json — that is not corruption, just an
-        // older backup, so it is validated only when present instead of failing the whole restore.
+        // Backups made before documents, or before selections moved into their own file, lack those
+        // names — that is not corruption, just an older backup, so each is validated only when
+        // present instead of failing the whole restore.
         if fm.fileExists(atPath: package.appending(path: "docs.json").path) {
             _ = try decoder.decode(DocsConfiguration.self, from: Data(contentsOf: package.appending(path: "docs.json")))
+        }
+        if fm.fileExists(atPath: package.appending(path: "selections.json").path) {
+            _ = try decoder.decode(SelectionsConfiguration.self, from: Data(contentsOf: package.appending(path: "selections.json")))
         }
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: package.appending(path: "skills").path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.invalidSkill("backup nie zawiera katalogu skills") }
         let rollbackRoot = root.appending(path: "backups/restore-rollbacks")
         let rollback = rollbackRoot.appending(path: UUID().uuidString)
         try fm.createDirectory(at: rollback, withIntermediateDirectories: true)
-        let names = ["catalog.json", "projects.local.json", "mcp.json", "mcp-secrets.json", "docs.json", "skills"]
+        let names = ["catalog.json", "projects.local.json", "selections.json", "mcp.json", "mcp-secrets.json", "docs.json", "skills"]
         for name in names { let current = root.appending(path: name); if fm.fileExists(atPath: current.path) { try fm.copyItem(at: current, to: rollback.appending(path: name)) } }
         do {
             for name in names {
                 let target = root.appending(path: name); let backupItem = package.appending(path: name)
-                // "docs.json" is the only name that can legitimately be missing from an older backup.
+                // "docs.json" and "selections.json" are the names that can legitimately be missing
+                // from an older backup.
                 guard fm.fileExists(atPath: backupItem.path) else { continue }
                 if fm.fileExists(atPath: target.path) { try fm.removeItem(at: target) }
                 try fm.copyItem(at: backupItem, to: target)
@@ -286,7 +277,7 @@ public actor SkillboxStore {
     /// this Mac, so a restore must not wipe the local project paths or secrets of the machine it
     /// runs on. The clone's `.git` is adopted so later backups push straight back to the remote.
     public func adoptLibrary(from clone: URL) throws {
-        let names = ["catalog.json", "mcp.json", "docs.json", "skills", ".gitignore", ".git"]
+        let names = ["catalog.json", "selections.json", "mcp.json", "docs.json", "skills", ".gitignore", ".git"]
         var isDirectory: ObjCBool = false
         let hasCatalog = fm.fileExists(atPath: clone.appending(path: "catalog.json").path)
         let hasSkills = fm.fileExists(atPath: clone.appending(path: "skills").path, isDirectory: &isDirectory) && isDirectory.boolValue

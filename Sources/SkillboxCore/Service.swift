@@ -8,7 +8,7 @@ public actor SkillboxService {
 
     public static func isExistingLibrary(at url: URL) -> Bool {
         let fm = FileManager.default
-        let names = ["catalog.json", "projects.local.json", "mcp.json", "mcp-secrets.json"]
+        let names = ["catalog.json", "projects.local.json", "selections.json", "mcp.json", "mcp-secrets.json"]
         if names.contains(where: { fm.fileExists(atPath: url.appending(path: $0).path) }) { return true }
         var isDirectory: ObjCBool = false
         return fm.fileExists(atPath: url.appending(path: "skills").path, isDirectory: &isDirectory) && isDirectory.boolValue
@@ -27,7 +27,21 @@ public actor SkillboxService {
     /// the folder's settings already applied. `storedProjects()` returns the raw records an editor
     /// must load, so saving a project never freezes inherited settings into it.
     public func listProjects() async throws -> [Project] { try await store.configuration().resolvedProjects.sorted { $0.name < $1.name } }
-    public func storedProjects() async throws -> [Project] { try await store.configuration().projects.sorted { $0.name < $1.name } }
+    /// Each project with *its own* attachments filled in — never the folder's. An editor loads this,
+    /// so saving a project that follows a folder cannot freeze the inherited settings into it, while
+    /// a project with its own settings round-trips through an edit unchanged.
+    public func storedProjects() async throws -> [Project] {
+        let config = try await store.configuration()
+        return config.projects.map { project in
+            var stored = project
+            let selection = config.storedSelection(for: .project(project.id))
+            stored.tools = selection.tools
+            stored.skillIDs = selection.skillIDs
+            stored.tags = selection.skillTags
+            stored.excludedSkillIDs = selection.excludedSkillIDs.isEmpty ? nil : selection.excludedSkillIDs
+            return stored
+        }.sorted { $0.name < $1.name }
+    }
 
     public func skillMarkdown(skillID: String) async throws -> String {
         guard try await store.catalog().skills.contains(where: { $0.id == skillID }) else { throw SkillboxError.skillNotFound(skillID) }
@@ -237,19 +251,13 @@ public actor SkillboxService {
         let directory = try await skillDirectory(skillID)
         if fm.fileExists(atPath: directory.path) { try fm.removeItem(at: directory) }
         catalog.skills.removeAll { $0.id == skillID }
+        // One pass over every place — projects, parent folders and this Mac alike. Before selections
+        // lived in one map this needed two loops that had to be kept in step.
         var projects = try await store.configuration()
-        for index in projects.projects.indices {
-            projects.projects[index].skillIDs.removeAll { $0 == skillID }
-            projects.projects[index].excludedSkillIDs?.removeAll { $0 == skillID }
+        for key in projects.selections.keys {
+            projects.selections[key]?.skillIDs.removeAll { $0 == skillID }
+            projects.selections[key]?.excludedSkillIDs.removeAll { $0 == skillID }
         }
-        // A parent folder holds the same selections for the projects that follow it, so leaving the
-        // deleted skill there would keep handing it to every one of them.
-        var roots = projects.roots
-        for index in roots.indices {
-            roots[index].skillIDs.removeAll { $0 == skillID }
-            roots[index].excludedSkillIDs?.removeAll { $0 == skillID }
-        }
-        if !roots.isEmpty { projects.projectRoots = roots }
         try await store.save(catalog, projects)
     }
 
@@ -284,62 +292,55 @@ public actor SkillboxService {
         guard fm.fileExists(atPath: url.path) else { throw SkillboxError.projectNotFound(path) }
         var config = try await store.configuration()
         guard !config.projects.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(name) już istnieje") }
-        let project = Project(name: name, path: url.path, tools: tools)
+        let project = Project(name: name, path: url.path)
         config.projects.append(project)
+        config.selections[project.id.uuidString] = AttachmentSelection(tools: tools)
         // The same starting point the full `addProject` gives, so a project added from the CLI is
         // not quietly the one that keeps letting a globally-disabled server back in.
         var mcp = try await store.mcpConfiguration()
         Self.applyDefaultDisabledGlobalServers(&mcp, selectionID: project.id)
-        try await store.save(config, mcp, try await store.docsConfiguration())
-        return project
+        try await store.save(config, mcp)
+        // Returned with its tools filled in, like `storedProjects()` does: the caller holds a usable
+        // record rather than one whose attachments look empty because they live elsewhere now.
+        var returned = project
+        returned.tools = tools
+        return returned
     }
 
     /// Creates a project and its skill, MCP and document assignments in one operation. The GUI used
     /// to call separate methods for each, which took a snapshot per call for a single user action.
     @discardableResult
-    public func addProject(_ project: Project, serverIDs: [UUID], serverTags: [String], docIDs: [String] = [], docTags: [String] = []) async throws -> Project {
+    public func addProject(_ project: Project, selection: AttachmentSelection) async throws -> Project {
         let url = URL(fileURLWithPath: project.path).standardizedFileURL
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
         var config = try await store.configuration()
         guard !config.projects.contains(where: { $0.name.caseInsensitiveCompare(project.name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(project.name) już istnieje") }
-        var stored = Self.pruned(project, in: try await store.catalog()); stored.path = url.path
+        var stored = project; stored.path = url.path
         config.projects.append(stored)
         var mcp = try await store.mcpConfiguration()
-        Self.assign(&mcp, projectID: stored.id, serverIDs: serverIDs, tags: serverTags)
-        // A standalone project owns its MCP selection, so it is where the global-server defaults land.
+        // A standalone project owns its selection, so it is where the global-server defaults land.
         Self.applyDefaultDisabledGlobalServers(&mcp, selectionID: stored.id)
-        var docs = try await store.docsConfiguration()
-        Self.assignDocs(&docs, id: stored.id, docIDs: docIDs, tags: docTags)
-        try await store.save(config, mcp, docs)
+        config.selections[stored.id.uuidString] = Self.pruned(selection, catalog: try await store.catalog(), mcp: mcp, docs: try await store.docsConfiguration())
+        try await store.save(config, mcp)
         return stored
     }
 
-    public func updateProject(_ project: Project, serverIDs: [UUID], serverTags: [String], docIDs: [String] = [], docTags: [String] = []) async throws {
+    public func updateProject(_ project: Project, selection: AttachmentSelection) async throws {
         var config = try await store.configuration()
         guard let index = config.projects.firstIndex(where: { $0.id == project.id }) else { throw SkillboxError.projectNotFound(project.name) }
         guard !config.projects.contains(where: { $0.id != project.id && $0.name.caseInsensitiveCompare(project.name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(project.name) już istnieje") }
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
-        config.projects[index] = Self.pruned(project, in: try await store.catalog())
-        var mcp = try await store.mcpConfiguration()
-        var docs = try await store.docsConfiguration()
-        // A project following its parent folder reads the folder's MCP and document selections, so
-        // writing one under its own id would only leave a record nothing ever uses.
-        if !config.inheritsRoot(config.projects[index]) {
-            Self.assign(&mcp, projectID: project.id, serverIDs: serverIDs, tags: serverTags)
-            Self.assignDocs(&docs, id: project.id, docIDs: docIDs, tags: docTags)
+        config.projects[index] = project
+        // A project following its parent folder reads the folder's selection, so writing one under
+        // its own id would only leave a record nothing ever uses.
+        if config.inheritsRoot(config.projects[index]) {
+            config.selections.removeValue(forKey: project.id.uuidString)
+        } else {
+            config.selections[project.id.uuidString] = Self.pruned(selection, catalog: try await store.catalog(), mcp: try await store.mcpConfiguration(), docs: try await store.docsConfiguration())
         }
-        try await store.save(config, mcp, docs)
-    }
-
-    static func assign(_ mcp: inout MCPConfiguration, projectID: UUID, serverIDs: [UUID], tags: [String]) {
-        var assignments = mcp.projectServerIDs ?? [:]
-        assignments[projectID.uuidString] = prunedServerIDs(Array(Set(serverIDs)), tags: tags, servers: mcp.servers)
-        mcp.projectServerIDs = assignments
-        var tagAssignments = mcp.projectServerTags ?? [:]
-        tagAssignments[projectID.uuidString] = normalizedTags(tags)
-        mcp.projectServerTags = tagAssignments
+        try await store.save(config)
     }
 
     static func prunedServerIDs(_ serverIDs: [UUID], tags: [String], servers: [MCPServer]) -> [UUID] {
@@ -351,8 +352,7 @@ public actor SkillboxService {
         var config = try await store.configuration()
         guard let index = config.projects.firstIndex(where: { $0.name == name }) else { throw SkillboxError.projectNotFound(name) }
         try Self.assertOwnSettings(config.projects[index], in: config)
-        config.projects[index].skillIDs = skillIDs; config.projects[index].tags = tags
-        config.projects[index] = Self.pruned(config.projects[index], in: try await store.catalog())
+        try await setSkillSelection(&config, id: config.projects[index].id, skillIDs: skillIDs, tags: tags)
         try await store.save(config)
     }
 
@@ -360,9 +360,17 @@ public actor SkillboxService {
         var config = try await store.configuration()
         guard let index = config.projects.firstIndex(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
         try Self.assertOwnSettings(config.projects[index], in: config)
-        config.projects[index].skillIDs = skillIDs; config.projects[index].tags = tags
-        config.projects[index] = Self.pruned(config.projects[index], in: try await store.catalog())
+        try await setSkillSelection(&config, id: id, skillIDs: skillIDs, tags: tags)
         try await store.save(config)
+    }
+
+    /// Replaces only the skill half of a place's selection, leaving its servers, document and tools
+    /// alone — what `agentbox project set --skills/--tags` means.
+    private func setSkillSelection(_ config: inout LocalConfiguration, id: UUID, skillIDs: [String], tags: [String]) async throws {
+        var selection = config.storedSelection(for: .project(id))
+        selection.skillIDs = skillIDs
+        selection.skillTags = tags
+        config.selections[id.uuidString] = Self.pruned(selection, catalog: try await store.catalog(), mcp: try await store.mcpConfiguration(), docs: try await store.docsConfiguration())
     }
 
     /// Configuring a project that follows its parent folder would write a selection synchronization
@@ -382,29 +390,22 @@ public actor SkillboxService {
 
     /// Normalizes a project before it is stored: lowercased tags, no skill id that a selected tag
     /// already covers, and no skill id that the project excludes anyway.
-    static func pruned(_ project: Project, in catalog: Catalog) -> Project {
-        var project = project
-        project.tags = normalizedTags(project.tags)
-        let excluded = Set(project.excludedSkillIDs ?? [])
-        let tagsByID = Dictionary(catalog.skills.map { ($0.id, $0.tags) }, uniquingKeysWith: { first, _ in first })
-        project.skillIDs = pruneRedundant(project.skillIDs, coveredBy: project.tags) { tagsByID[$0] ?? [] }
-            .filter { !excluded.contains($0) }
-        return project
-    }
-
-    /// Tags match case-insensitively everywhere, so they are stored lowercased everywhere.
     static func normalizedTags(_ tags: [String]) -> [String] {
         Array(Set(tags.map { $0.lowercased() }.filter { !$0.isEmpty })).sorted()
     }
 
+    /// Saves a project record along with the attachments still written on the value passed in —
+    /// what a caller holding a `Project` from `storedProjects()` means by "save this".
+    ///
+    /// It keeps the project's servers and document as they are: those are not carried on `Project`,
+    /// so a caller editing `tools` or `skillIDs` has no way to express them and must not clear them.
     public func updateProject(_ project: Project) async throws {
-        var config = try await store.configuration()
-        guard let index = config.projects.firstIndex(where: { $0.id == project.id }) else { throw SkillboxError.projectNotFound(project.name) }
-        guard !config.projects.contains(where: { $0.id != project.id && $0.name.caseInsensitiveCompare(project.name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(project.name) już istnieje") }
-        var isDirectory: ObjCBool = false
-        guard fm.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
-        config.projects[index] = project
-        try await store.save(config)
+        var selection = try await store.configuration().storedSelection(for: .project(project.id))
+        selection.tools = project.tools
+        selection.skillIDs = project.skillIDs
+        selection.skillTags = project.tags
+        selection.excludedSkillIDs = project.excludedSkillIDs ?? []
+        try await updateProject(project, selection: selection)
     }
 
     public func deleteProject(id: UUID) async throws {
@@ -418,13 +419,8 @@ public actor SkillboxService {
             roots[index].ignoredPaths = Self.standardized(roots[index].ignoredPaths + [removed.path]).sorted()
             config.projectRoots = roots
         }
-        var mcp = try await store.mcpConfiguration()
-        var servers = mcp.projectServerIDs ?? [:]; servers.removeValue(forKey: id.uuidString); mcp.projectServerIDs = servers
-        var tags = mcp.projectServerTags ?? [:]; tags.removeValue(forKey: id.uuidString); mcp.projectServerTags = tags
-        var docs = try await store.docsConfiguration()
-        var docIDs = docs.projectDocIDs ?? [:]; docIDs.removeValue(forKey: id.uuidString); docs.projectDocIDs = docIDs
-        var docTags = docs.projectDocTags ?? [:]; docTags.removeValue(forKey: id.uuidString); docs.projectDocTags = docTags
-        try await store.save(config, mcp, docs)
+        config.selections.removeValue(forKey: id.uuidString)
+        try await store.save(config)
     }
 
     /// Skill directories sitting in a project that Agentbox does not manage and that the library
@@ -646,7 +642,7 @@ public actor SkillboxService {
         let hasRemote = (try? ProcessRunner.run("/usr/bin/git", ["remote", "get-url", "origin"], cwd: root)) != nil
         if requireRemote, !hasRemote { throw SkillboxError.commandFailed("brak zdalnego repozytorium Git; skonfiguruj origin lub podaj --remote") }
         var tracked = [".gitignore", "skills"]
-        for name in ["catalog.json", "mcp.json", "docs.json"] where fm.fileExists(atPath: root.appending(path: name).path) { tracked.append(name) }
+        for name in ["catalog.json", "selections.json", "mcp.json", "docs.json"] where fm.fileExists(atPath: root.appending(path: name).path) { tracked.append(name) }
         _ = try ProcessRunner.run("/usr/bin/git", ["add"] + tracked, cwd: root)
         let staged = try ProcessRunner.run("/usr/bin/git", ["diff", "--cached", "--name-only"], cwd: root)
         if !staged.isEmpty { _ = try ProcessRunner.run("/usr/bin/git", ["commit", "-m", message], cwd: root) }

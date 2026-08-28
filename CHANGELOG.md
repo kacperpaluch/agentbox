@@ -6,6 +6,32 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-08-28
+
+### Zmieniono
+
+- Pasek boczny ma cztery pozycje zamiast ośmiu: `Biblioteka`, `Projekty`, `Backup`, `Ustawienia`. Żadna funkcja nie została usunięta — zmieniła się oś podziału. Aplikacja była pocięta według *typu rzeczy*, a używa się jej według *miejsca, w które ta rzecz ma trafić*.
+- `Skille`, `MCP` i `Dokumenty` to teraz jedna `Biblioteka` z przełącznikiem typu. Wyszukiwanie i filtr tagów są wspólne i nie resetują się przy zmianie typu — serwery MCP i dokumenty zyskały przy okazji wyszukiwanie i filtrowanie po tagu, których wcześniej miały tylko skille. Panele szczegółów zostały osobne dla każdego typu, bo podgląd `SKILL.md`, formularz serwera i edytor dokumentu to realnie różne rzeczy.
+- `Globalne` przestało być osobną zakładką. Ten Mac jest teraz pierwszym wierszem listy w `Projekty` (`Wszystkie sesje`) i otwiera ten sam edytor co projekt — bo globalne skille to miejsce, w które coś trafia, a nie inny rodzaj ekranu.
+- `MCP globalne` nazywa się `Serwery klientów` i otwiera się jako arkusz z `Projekty`. Stara nazwa zderzała się z `Globalne`, a znaczyła coś przeciwnego: `Globalne` wypycha twoje skille do `~/.claude/skills`, a ta lista tylko wyłącza serwery zadeklarowane przez kogoś innego. Sama macierz serwer × projekt działa bez zmian.
+- Przycisk `Synchronizuj wszystkie projekty` zniknął z `Serwerów klientów` — ta sama akcja była już w `Projekty` i tam jest jej miejsce.
+
+### Format biblioteki
+
+- **Nowy plik `selections.json`.** Wszystko, co jest do czegoś przypięte — narzędzia, skille, tagi skilli, wykluczenia, serwery MCP, tagi MCP, dokument i tagi dokumentów — leży teraz w jednym pliku, pod jednym kluczem na miejsce: id projektu, id folderu nadrzędnego albo `global`. Wcześniej było to rozrzucone po trzech plikach w trzech różnych kształtach.
+- `projects.local.json` trzyma już tylko tożsamość projektu: `id`, `name`, `path`, `manageGitignore`, `rootID`, `overridesRoot`. Zniknęły z niego `tools`, `skillIDs`, `tags`, `excludedSkillIDs` oraz `globalTools`/`globalSkillIDs`/`globalTags`.
+- `mcp.json` stracił `projectServerIDs` i `projectServerTags`, `docs.json` — `projectDocIDs` i `projectDocTags`. Oba trzymają już wyłącznie definicje: serwery i dokumenty.
+- **`selections.json` jest częścią backupu Git**, w odróżnieniu od `projects.local.json`. Klucze to same UUID-y, a wartości nazywają skille, serwery i dokumenty, które i tak leżą w bibliotece — nie ma tam ścieżek ani nazw projektów. Efekt uboczny na plus: `restore` odtwarza teraz także przypisania skilli, czego stary układ potrafił tylko dla serwerów i dokumentów.
+- Usunięta martwa migracja presetów MCP z 0.3.1 — zapisywała pole, którego nic już nie czyta.
+
+### Wewnętrznie
+
+- Jeden typ `AttachmentSelection` opisuje wszystko, co trafia w jedno miejsce, a `SelectionTarget` mówi, o które miejsce chodzi: projekt, folder nadrzędny albo ten Mac. Jedno `selection(for:)` odpowiada na pytanie „co tu jest przypięte", zamiast sześciu akcesorów, z których każdy sam odtwarzał regułę dziedziczenia.
+- `LocalConfiguration.resolved(_:)` jest jedynym szwem, w którym `selections.json` wraca do kształtu czytanego przez całą ścieżkę synchronizacji — dzięki temu przeniesienie danych do osobnego pliku nie dotknęło `ProjectSync`, `MCPService` ani `DocsService` poza odczytem przypisań.
+- Cztery edytory (projekt, folder nadrzędny, `Dodaj wiele`, zakładanie folderu z istniejących projektów) powtarzały ten sam zestaw ośmiu pól stanu. Wszystkie korzystają teraz ze wspólnego `AttachmentPicker`.
+- `mcpSelectionID(for:)` i `docSelectionID(for:)` były dwiema identycznymi funkcjami o różnych nazwach — zostało jedno `selectionID(for:)`.
+- Testy rozbite z jednego pliku na 2264 linie na dziewięć plików tematycznych.
+
 ## [0.16.1] - 2026-08-28
 
 ### Naprawiono

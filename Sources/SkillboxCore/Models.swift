@@ -51,11 +51,12 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
     public var id: UUID
     public var name: String
     public var path: String
-    public var tools: [Tool]
-    public var skillIDs: [String]
-    public var tags: [String]
+    // Filled in from `selections.json` by `resolved(_:)`; see `CodingKeys` below. Defaults let the
+    // synthesized decoder work without them being present in the file.
+    public var tools: [Tool] = []
+    public var skillIDs: [String] = []
+    public var tags: [String] = []
     /// Skills excluded from this project even when a selected tag matches them.
-    /// Optional so projects saved before exclusions keep decoding.
     public var excludedSkillIDs: [String]?
     /// Whether Agentbox may add generated MCP files to the project's tracked `.gitignore`.
     /// `nil` means no, so existing projects are never modified without an explicit choice.
@@ -67,12 +68,21 @@ public struct Project: Codable, Identifiable, Hashable, Sendable {
     /// `nil` means it follows the folder, which is what a project added in a batch does.
     public var overridesRoot: Bool?
 
-    public init(id: UUID = UUID(), name: String, path: String, tools: [Tool], skillIDs: [String] = [], tags: [String] = [], excludedSkillIDs: [String]? = nil, manageGitignore: Bool? = nil, rootID: UUID? = nil, overridesRoot: Bool? = nil) {
+    public init(id: UUID = UUID(), name: String, path: String, tools: [Tool] = [], skillIDs: [String] = [], tags: [String] = [], excludedSkillIDs: [String]? = nil, manageGitignore: Bool? = nil, rootID: UUID? = nil, overridesRoot: Bool? = nil) {
         self.id = id; self.name = name; self.path = path; self.tools = tools
         self.skillIDs = skillIDs; self.tags = tags
         self.excludedSkillIDs = excludedSkillIDs; self.manageGitignore = manageGitignore
         self.rootID = rootID; self.overridesRoot = overridesRoot
     }
+
+    /// What a project *is* — identity, where it lives, whether it follows a folder — is all that
+    /// `projects.local.json` holds. What is *attached* to it lives in `selections.json`, under one
+    /// key, together with every other place's attachments.
+    ///
+    /// `tools`, `skillIDs`, `tags` and `excludedSkillIDs` stay as properties because the whole sync
+    /// path reads them, but they are filled in by `LocalConfiguration.resolved(_:)` from the
+    /// selection — never decoded from or written to this file.
+    enum CodingKeys: String, CodingKey { case id, name, path, manageGitignore, rootID, overridesRoot }
 }
 
 /// A parent folder added with `Dodaj wiele`. It holds the settings its subprojects inherit, so one
@@ -82,9 +92,10 @@ public struct ProjectRoot: Codable, Identifiable, Hashable, Sendable {
     public var id: UUID
     public var name: String
     public var path: String
-    public var tools: [Tool]
-    public var skillIDs: [String]
-    public var tags: [String]
+    // As on `Project`: filled in from `selections.json`, never stored here.
+    public var tools: [Tool] = []
+    public var skillIDs: [String] = []
+    public var tags: [String] = []
     public var excludedSkillIDs: [String]?
     public var manageGitignore: Bool?
     /// Whether Agentbox looks for new subfolders here and offers to add them as projects.
@@ -92,12 +103,16 @@ public struct ProjectRoot: Codable, Identifiable, Hashable, Sendable {
     /// Subfolders the user dismissed. They are never offered again until the list is cleared.
     public var ignoredPaths: [String]
 
-    public init(id: UUID = UUID(), name: String, path: String, tools: [Tool], skillIDs: [String] = [], tags: [String] = [], excludedSkillIDs: [String]? = nil, manageGitignore: Bool? = nil, watchesNewFolders: Bool = true, ignoredPaths: [String] = []) {
+    public init(id: UUID = UUID(), name: String, path: String, tools: [Tool] = [], skillIDs: [String] = [], tags: [String] = [], excludedSkillIDs: [String]? = nil, manageGitignore: Bool? = nil, watchesNewFolders: Bool = true, ignoredPaths: [String] = []) {
         self.id = id; self.name = name; self.path = path; self.tools = tools
         self.skillIDs = skillIDs; self.tags = tags
         self.excludedSkillIDs = excludedSkillIDs; self.manageGitignore = manageGitignore
         self.watchesNewFolders = watchesNewFolders; self.ignoredPaths = ignoredPaths
     }
+
+    /// Like `Project`: the folder's identity and watch settings live here, its attachments in
+    /// `selections.json` under the folder's own id.
+    enum CodingKeys: String, CodingKey { case id, name, path, manageGitignore, watchesNewFolders, ignoredPaths }
 }
 
 /// A subfolder of a watched parent folder that is not a project yet and was not dismissed.
@@ -132,8 +147,6 @@ public struct AgentDoc: Codable, Identifiable, Hashable, Sendable {
 public struct DocsConfiguration: Codable, Sendable {
     public var version = 1
     public var docs: [AgentDoc] = []
-    public var projectDocIDs: [String: [String]]?
-    public var projectDocTags: [String: [String]]?
     public init() {}
 }
 
@@ -145,15 +158,28 @@ public struct Catalog: Codable, Sendable {
 
 public struct LocalConfiguration: Codable, Sendable {
     public var projects: [Project] = []
-    /// Parent folders added in a batch, with the settings their projects inherit.
-    /// Optional so libraries created before parent folders keep decoding.
+    /// Parent folders added in a batch. What their projects inherit lives in `selections`.
     public var projectRoots: [ProjectRoot]?
     public var backupRemote: String?
-    /// Global (per-user) skill selection written to `~/.claude/skills` and its equivalents.
-    /// Optional so libraries created before global sync keep decoding.
-    public var globalTools: [Tool]?
-    public var globalSkillIDs: [String]?
-    public var globalTags: [String]?
+    /// Every place's attachments, keyed by project id, folder id or `"global"`. Read from and
+    /// written to `selections.json` by the store — never part of `projects.local.json`, which is
+    /// this Mac's local record and stays out of the Git backup.
+    public var selections: [String: AttachmentSelection] = [:]
+    public init() {}
+
+    enum CodingKeys: String, CodingKey { case projects, projectRoots, backupRemote }
+}
+
+/// `selections.json`. One file answering "what is attached where", for projects, parent folders and
+/// this Mac alike.
+///
+/// It is tracked in the Git backup, unlike `projects.local.json`. That is deliberate: the keys are
+/// bare UUIDs and the values name skills, servers and documents that all live in the library
+/// anyway — no paths, no project names, nothing local. It also means a restore now brings back
+/// which skills a project used, which the old layout could only do for servers and documents.
+public struct SelectionsConfiguration: Codable, Sendable {
+    public var version = 1
+    public var selections: [String: AttachmentSelection] = [:]
     public init() {}
 }
 
@@ -211,8 +237,6 @@ public struct MCPServer: Codable, Identifiable, Hashable, Sendable {
 public struct MCPConfiguration: Codable, Sendable {
     public var version = 1
     public var servers: [MCPServer] = []
-    public var projectServerIDs: [String: [UUID]]?
-    public var projectServerTags: [String: [String]]?
     /// Per-project opt-out of a tool's own global/user-scope MCP servers — the ones defined outside
     /// Agentbox (`~/.codex/config.toml`, Claude Code's user scope) that load in every project
     /// automatically. Keyed by selection ID (project or parent folder, like `projectServerIDs`),
