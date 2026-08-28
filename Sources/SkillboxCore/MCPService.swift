@@ -124,16 +124,18 @@ extension SkillboxService {
         // A project following a parent folder reads the folder's MCP selection, so adding a server
         // to the folder reaches every project in it.
         let selectionID = local.mcpSelectionID(for: project).uuidString
-        let serverIDs = Set(mcp.projectServerIDs?[selectionID] ?? [])
-        // Lowercased on both sides, so tags saved before normalization keep matching.
-        let tags = Set((mcp.projectServerTags?[selectionID] ?? []).map { $0.lowercased() })
-        var servers = mcp.servers.filter { serverIDs.contains($0.id) || !tags.isDisjoint(with: ($0.tags ?? []).map { $0.lowercased() }) }.filter(\.enabled)
+        var servers = Self.assignedServers(selectionID: selectionID, mcp: mcp)
         servers.sort { $0.name < $1.name }
+        let disabledGlobal = mcp.projectDisabledGlobalServers?[selectionID] ?? [:]
         let secrets = try await store.secrets()
         let projectURL = URL(fileURLWithPath: project.path)
-        var previews = try project.tools.map { try MCPRenderer.preview(tool: $0, project: projectURL, servers: servers, secrets: secrets) }
+        var previews = try project.tools.map { tool in
+            try MCPRenderer.preview(tool: tool, project: projectURL, servers: servers, secrets: secrets, disabledGlobalNames: disabledGlobal[tool.rawValue] ?? [])
+        }
         // Tools unticked in the project still have managed entries until this cleanup lands.
-        previews += try SkillboxService.abandonedTools(project: project).map { try MCPRenderer.preview(tool: $0, project: projectURL, servers: [], secrets: secrets) }
+        previews += try SkillboxService.abandonedTools(project: project).map { tool in
+            try MCPRenderer.preview(tool: tool, project: projectURL, servers: [], secrets: secrets, disabledGlobalNames: disabledGlobal[tool.rawValue] ?? [])
+        }
         return previews
     }
 
@@ -144,33 +146,123 @@ extension SkillboxService {
         try MCPRenderer.apply(previews: previews, project: URL(fileURLWithPath: project.path))
         return previews
     }
+
+    /// Servers a project's MCP selection resolves to: direct assignments plus tag matches, minus
+    /// anything disabled at the library level. Shared by `previewMCP` and `globalMCPServers`, which
+    /// both need to know what is already fully managed for the project before working out what else
+    /// applies to it.
+    private static func assignedServers(selectionID: String, mcp: MCPConfiguration) -> [MCPServer] {
+        let serverIDs = Set(mcp.projectServerIDs?[selectionID] ?? [])
+        // Lowercased on both sides, so tags saved before normalization keep matching.
+        let tags = Set((mcp.projectServerTags?[selectionID] ?? []).map { $0.lowercased() })
+        return mcp.servers.filter { serverIDs.contains($0.id) || !tags.isDisjoint(with: ($0.tags ?? []).map { $0.lowercased() }) }.filter(\.enabled)
+    }
+
+    /// MCP servers found declared globally (outside Agentbox) for the tools of one selection — a
+    /// project's own, or the parent folder its projects inherit settings from — read-only, straight
+    /// from `~/.codex/config.toml` and Claude Code's user scope. A name already assigned directly is
+    /// left out: its full Agentbox definition already takes precedence over whatever the global file
+    /// declares, so there is nothing to opt out of.
+    public func globalMCPServers(selectionID: UUID, tools: [Tool], home: URL = FileManager.default.homeDirectoryForCurrentUser) async throws -> [GlobalMCPServerRef] {
+        let mcp = try await store.mcpConfiguration()
+        let assignedNames = Set(Self.assignedServers(selectionID: selectionID.uuidString, mcp: mcp).map(\.name))
+        var refs: [GlobalMCPServerRef] = []
+        if tools.contains(.codex) {
+            refs += GlobalMCPDiscovery.codexGlobalServerNames(home: home).filter { !assignedNames.contains($0) }.map { GlobalMCPServerRef(tool: .codex, name: $0) }
+        }
+        if tools.contains(.claude) {
+            refs += GlobalMCPDiscovery.claudeGlobalServerNames(home: home).filter { !assignedNames.contains($0) }.map { GlobalMCPServerRef(tool: .claude, name: $0) }
+        }
+        return refs.sorted { $0.tool.rawValue == $1.tool.rawValue ? $0.name < $1.name : $0.tool.rawValue < $1.tool.rawValue }
+    }
+
+    /// The project convenience: resolves which selection actually governs it (its own settings, or
+    /// its parent folder's when it inherits them) and its effective tools automatically.
+    public func globalMCPServers(projectID: UUID, home: URL = FileManager.default.homeDirectoryForCurrentUser) async throws -> [GlobalMCPServerRef] {
+        let local = try await store.configuration()
+        guard let project = local.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
+        return try await globalMCPServers(selectionID: local.mcpSelectionID(for: project), tools: project.tools, home: home)
+    }
+
+    /// One selection's current opt-outs, keyed by tool — what `setDisabledGlobalServers` last saved.
+    public func disabledGlobalServers(selectionID: UUID) async throws -> [Tool: [String]] {
+        let mcp = try await store.mcpConfiguration()
+        let stored = mcp.projectDisabledGlobalServers?[selectionID.uuidString] ?? [:]
+        return Dictionary(uniqueKeysWithValues: stored.compactMap { key, names in Tool(rawValue: key).map { ($0, names) } })
+    }
+
+    public func disabledGlobalServers(projectID: UUID) async throws -> [Tool: [String]] {
+        let local = try await store.configuration()
+        guard let project = local.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
+        return try await disabledGlobalServers(selectionID: local.mcpSelectionID(for: project))
+    }
+
+    /// Replaces, for one tool, the set of globally-declared server names one selection opts out of.
+    /// Pass an empty list to re-enable everything (inherit the global definitions again).
+    public func setDisabledGlobalServers(selectionID: UUID, tool: Tool, names: [String]) async throws {
+        var config = try await store.mcpConfiguration()
+        let key = selectionID.uuidString
+        var perSelection = config.projectDisabledGlobalServers ?? [:]
+        var perTool = perSelection[key] ?? [:]
+        let cleaned = Array(Set(names)).sorted()
+        if cleaned.isEmpty { perTool.removeValue(forKey: tool.rawValue) } else { perTool[tool.rawValue] = cleaned }
+        if perTool.isEmpty { perSelection.removeValue(forKey: key) } else { perSelection[key] = perTool }
+        config.projectDisabledGlobalServers = perSelection.isEmpty ? nil : perSelection
+        try await store.save(config)
+    }
+
+    /// The project convenience: like `setMCPServers`, refuses to edit a project that follows its
+    /// parent folder's settings — change them on the folder itself, or give the project its own
+    /// settings first.
+    public func setDisabledGlobalServers(projectID: UUID, tool: Tool, names: [String]) async throws {
+        let local = try await store.configuration()
+        if let project = local.projects.first(where: { $0.id == projectID }), local.inheritsRoot(project) {
+            throw SkillboxError.invalidSkill("projekt \(project.name) korzysta z ustawień folderu nadrzędnego — zmień je na folderze albo nadaj projektowi własne ustawienia")
+        }
+        guard let project = local.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
+        try await setDisabledGlobalServers(selectionID: local.mcpSelectionID(for: project), tool: tool, names: names)
+    }
 }
 
 enum MCPRenderer {
     private static let start = "# >>> skillbox managed MCP >>>"
     private static let end = "# <<< skillbox managed MCP <<<"
 
-    /// Every tool the project-local MCP manifest still has entries for.
+    /// Every tool the project-local MCP manifest still has entries for — including a tool whose only
+    /// remaining entry is a `-disabled-global` opt-out (see `renderedClaudeDisabledGlobal`), so that
+    /// stale opt-out alone still counts as "this tool has something to clean up".
     static func managedTools(_ project: URL) -> Set<Tool> {
-        Set(((try? manifest(project)) ?? [:]).filter { !$0.value.isEmpty }.keys.compactMap(Tool.init(rawValue:)))
+        let raw = ((try? manifest(project)) ?? [:]).filter { !$0.value.isEmpty }
+        return Set(raw.keys.compactMap { key in
+            Tool.init(rawValue: key) ?? Tool.init(rawValue: key.replacingOccurrences(of: "-disabled-global", with: ""))
+        })
     }
 
     /// In the returned preview, empty `content` means the file should not exist: it is never
     /// created, and an existing one is removed. That covers a project with no MCP selection —
     /// which used to get an empty scaffold in every repository — and cleans such scaffolds up.
-    static func preview(tool: Tool, project: URL, servers: [MCPServer], secrets: [String: String] = [:]) throws -> MCPPreview {
-        let names = servers.map(\.name)
+    static func preview(tool: Tool, project: URL, servers: [MCPServer], secrets: [String: String] = [:], disabledGlobalNames: [String] = []) throws -> MCPPreview {
+        // Codex's opt-out lives inside the very same `.codex/config.toml` block as everything else,
+        // so it is tracked under the tool's regular manifest key, right alongside real servers.
+        let names = servers.map(\.name) + (tool == .codex ? disabledGlobalNames : [])
         let previous = try manifest(project)[tool.rawValue] ?? []
         let file: URL
         let content: String
         var stale: (path: String, content: String)?
+        var disabledGlobal: (file: URL, content: String, added: [String], removed: [String])?
         switch tool {
         case .claude:
             file = project.appending(path: ".mcp.json")
             content = try renderedJSON(file: file, path: ["mcpServers"], servers: servers, tool: tool, previouslyManaged: Set(previous), secrets: secrets)
+            // Claude Code's opt-out lives in a different file (`.claude/settings.local.json`), so it
+            // gets its own manifest key and its own added/removed pair.
+            let disabledFile = project.appending(path: ".claude/settings.local.json")
+            let previousDisabled = try manifest(project)["claude-disabled-global"] ?? []
+            let disabledContent = try renderedClaudeDisabledGlobal(file: disabledFile, names: disabledGlobalNames, previouslyManaged: Set(previousDisabled))
+            disabledGlobal = (disabledFile, disabledContent, Array(Set(disabledGlobalNames).subtracting(previousDisabled)).sorted(), Array(Set(previousDisabled).subtracting(disabledGlobalNames)).sorted())
         case .codex:
             file = project.appending(path: ".codex/config.toml")
-            content = try renderedTOML(file: file, servers: servers, previouslyManaged: Set(previous), secrets: secrets)
+            content = try renderedTOML(file: file, servers: servers, disabledGlobalNames: disabledGlobalNames, previouslyManaged: Set(previous), secrets: secrets)
         case .opencode:
             let jsonc = project.appending(path: "opencode.jsonc")
             let json = project.appending(path: "opencode.json")
@@ -183,7 +275,7 @@ enum MCPRenderer {
                 if cleaned != (try? String(contentsOf: json, encoding: .utf8)) { stale = (json.path, cleaned) }
             }
         }
-        return MCPPreview(tool: tool, file: file.path, content: content, added: Array(Set(names).subtracting(previous)).sorted(), removed: Array(Set(previous).subtracting(names)).sorted(), staleFile: stale?.path, staleContent: stale?.content)
+        return MCPPreview(tool: tool, file: file.path, content: content, added: Array(Set(names).subtracting(previous)).sorted(), removed: Array(Set(previous).subtracting(names)).sorted(), staleFile: stale?.path, staleContent: stale?.content, disabledGlobalFile: disabledGlobal?.file.path, disabledGlobalContent: disabledGlobal?.content, disabledGlobalAdded: disabledGlobal?.added ?? [], disabledGlobalRemoved: disabledGlobal?.removed ?? [])
     }
 
     /// The full new content of one managed JSON file, or "" when it should not exist.
@@ -206,15 +298,15 @@ enum MCPRenderer {
 
     /// The Codex counterpart of `renderedJSON`. A stray managed block that the manifest no longer
     /// knows about is still ours by its markers, so it is stripped rather than kept forever.
-    private static func renderedTOML(file: URL, servers: [MCPServer], previouslyManaged: Set<String>, secrets: [String: String]) throws -> String {
-        if servers.isEmpty, previouslyManaged.isEmpty {
+    private static func renderedTOML(file: URL, servers: [MCPServer], disabledGlobalNames: [String], previouslyManaged: Set<String>, secrets: [String: String]) throws -> String {
+        if servers.isEmpty, disabledGlobalNames.isEmpty, previouslyManaged.isEmpty {
             guard FileManager.default.fileExists(atPath: file.path) else { return "" }
             let raw = try String(contentsOf: file, encoding: .utf8)
             let stripped = strippedManagedBlock(raw)
             if stripped.isEmpty { return "" }
             return stripped == raw ? raw : stripped + "\n"
         }
-        return try codexMerged(file: file, servers: servers, previouslyManaged: previouslyManaged, secrets: secrets)
+        return try codexMerged(file: file, servers: servers, disabledGlobalNames: disabledGlobalNames, previouslyManaged: previouslyManaged, secrets: secrets)
     }
 
     static func apply(previews: [MCPPreview], project: URL) throws {
@@ -233,6 +325,12 @@ enum MCPRenderer {
                 }
                 let names = Set(state[preview.tool.rawValue] ?? []).subtracting(preview.removed).union(preview.added)
                 state[preview.tool.rawValue] = Array(names).sorted()
+                if let disabledPath = preview.disabledGlobalFile, let disabledContent = preview.disabledGlobalContent {
+                    try writeManaged(disabledContent, to: URL(fileURLWithPath: disabledPath), backupPrefix: preview.tool.rawValue + "-disabled-global-", backup: backup, originals: &originals)
+                    let key = "\(preview.tool.rawValue)-disabled-global"
+                    let disabledNames = Set(state[key] ?? []).subtracting(preview.disabledGlobalRemoved).union(preview.disabledGlobalAdded)
+                    state[key] = Array(disabledNames).sorted()
+                }
             }
             // A manifest with nothing managed anywhere is clutter, exactly like the files above;
             // it disappears together with an emptied .skillbox directory.
@@ -360,13 +458,14 @@ enum MCPRenderer {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func codexMerged(file: URL, servers: [MCPServer], previouslyManaged: Set<String>, secrets: [String: String]) throws -> String {
+    private static func codexMerged(file: URL, servers: [MCPServer], disabledGlobalNames: [String], previouslyManaged: Set<String>, secrets: [String: String]) throws -> String {
         var existing = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
         existing = strippedManagedBlock(existing)
-        for server in servers where !previouslyManaged.contains(server.name) && declaresCodexServer(existing, name: server.name) { throw SkillboxError.mcpConflict("\(server.name) istnieje w config.toml poza blokiem Skillbox") }
+        let ownedNames = Set(servers.map(\.name)).union(disabledGlobalNames)
+        for name in ownedNames where !previouslyManaged.contains(name) && declaresCodexServer(existing, name: name) { throw SkillboxError.mcpConflict("\(name) istnieje w config.toml poza blokiem Skillbox") }
         // With nothing left to manage the block disappears entirely; a file that held only the
         // block is reported as "" and removed by the caller.
-        guard !servers.isEmpty else { return existing.isEmpty ? "" : existing + "\n" }
+        guard !servers.isEmpty || !disabledGlobalNames.isEmpty else { return existing.isEmpty ? "" : existing + "\n" }
         var block = [start]
         for server in servers {
             block.append("[mcp_servers.\(tomlKey(server.name))]")
@@ -392,8 +491,45 @@ enum MCPRenderer {
             }
             block.append("")
         }
+        // A name already fully defined above needs no separate opt-out — kept here only as a
+        // defensive fallback, since `globalMCPServers` already excludes assigned names upstream.
+        let assignedNames = Set(servers.map(\.name))
+        for name in disabledGlobalNames.sorted() where !assignedNames.contains(name) {
+            // Overrides just `enabled` for this project, without redeclaring command/args — Codex's
+            // documented way to opt a project out of a user-scope server (one shared, via
+            // ~/.codex/config.toml, with the ChatGPT desktop app and the Codex IDE extension).
+            block.append("[mcp_servers.\(tomlKey(name))]")
+            block.append("enabled = false")
+            block.append("")
+        }
         block.append(end)
         return ([existing, block.joined(separator: "\n")].filter { !$0.isEmpty }.joined(separator: "\n\n")) + "\n"
+    }
+
+    /// Claude Code's per-project opt-out of a user-scope (global) MCP server: appends the server's
+    /// name to `disabledMcpServers` in `.claude/settings.local.json` — the file Claude Code already
+    /// treats as local, unshared settings. Everything else in the file, and any name Agentbox does
+    /// not itself own, is left untouched: the same "don't overwrite what you don't manage" rule as
+    /// everywhere else in this file.
+    private static func renderedClaudeDisabledGlobal(file: URL, names: [String], previouslyManaged: Set<String>) throws -> String {
+        var root: [String: Any] = [:]
+        if FileManager.default.fileExists(atPath: file.path) {
+            let raw = try String(contentsOf: file, encoding: .utf8)
+            guard let data = raw.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                // Nothing to manage and the file is not parseable JSON: leave it exactly as found,
+                // the same way an unparseable opencode.jsonc is left alone in `renderedJSON`.
+                guard !names.isEmpty || !previouslyManaged.isEmpty else { return raw }
+                throw SkillboxError.mcpConflict("\(file.lastPathComponent) nie jest poprawnym JSON")
+            }
+            root = object
+        } else if names.isEmpty { return "" }
+        var current = Set((root["disabledMcpServers"] as? [String]) ?? [])
+        for old in previouslyManaged.subtracting(names) { current.remove(old) }
+        current.formUnion(names)
+        if current.isEmpty { root.removeValue(forKey: "disabledMcpServers") } else { root["disabledMcpServers"] = current.sorted() }
+        guard !root.isEmpty else { return "" }
+        let data = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        return String(decoding: data, as: UTF8.self) + "\n"
     }
 
     /// Matches `[mcp_servers.name]` and `[mcp_servers."name"]`, with or without surrounding spaces.
@@ -423,7 +559,7 @@ enum MCPRenderer {
         let url = info.appending(path: "exclude")
         var text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
         let marker = "# Skillbox MCP configs (mogą zawierać lokalne sekrety)"
-        let entries = [".mcp.json", ".codex/config.toml", "opencode.json", "opencode.jsonc", ".skillbox/"]
+        let entries = [".mcp.json", ".codex/config.toml", "opencode.json", "opencode.jsonc", ".skillbox/", ".claude/settings.local.json"]
         let present = Set(text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) })
         let missing = entries.filter { !present.contains($0) }
         guard !missing.isEmpty else { return }

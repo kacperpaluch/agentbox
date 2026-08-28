@@ -40,9 +40,9 @@ enum AppVersion {
 // three touched constantly first, then Projekty (its own dedicated setup time), then the two rare
 // ones — Backup+Odzyskiwanie merged into one "protect my data" concept instead of two — settings last.
 enum SectionKind: String, CaseIterable, Identifiable {
-    case library = "Skille", mcp = "MCP", docs = "Dokumenty", global = "Globalne", projects = "Projekty", backup = "Backup", settings = "Ustawienia"
+    case library = "Skille", mcp = "MCP", globalMCP = "MCP globalne", docs = "Dokumenty", global = "Globalne", projects = "Projekty", backup = "Backup", settings = "Ustawienia"
     var id: String { rawValue }
-    var icon: String { switch self { case .library: "square.grid.2x2"; case .projects: "folder"; case .global: "person.crop.circle"; case .mcp: "network"; case .docs: "doc.text"; case .backup: "externaldrive.badge.timemachine"; case .settings: "gearshape" } }
+    var icon: String { switch self { case .library: "square.grid.2x2"; case .projects: "folder"; case .global: "person.crop.circle"; case .mcp: "network"; case .globalMCP: "server.rack"; case .docs: "doc.text"; case .backup: "externaldrive.badge.timemachine"; case .settings: "gearshape" } }
 }
 struct OperationLogEntry: Identifiable {
     enum Kind { case success, error }
@@ -90,6 +90,7 @@ struct ContentView: View {
                     case .projects: ProjectsView(model: model, showProject: $showProject)
                     case .global: GlobalSyncView(model: model)
                     case .mcp: MCPView(model: model)
+                    case .globalMCP: GlobalMCPView(model: model)
                     case .docs: DocsView(model: model)
                     case .backup: BackupView(model: model)
                     case .settings: SettingsView(model: model, updater: updater)

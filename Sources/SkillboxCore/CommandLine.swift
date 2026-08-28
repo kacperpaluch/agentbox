@@ -330,11 +330,52 @@ public enum AgentboxCommand {
             let project = try await resolve(rest[1], service: service)
             _ = try await service.syncMCP(projectID: project.id)
             return ["Zsynchronizowano MCP"]
+        case "global" where rest.count >= 2:
+            return try await mcpGlobal(Array(rest.dropFirst()), service: service)
         default: return [mcpUsage]
         }
     }
 
-    private static let mcpUsage = "Użycie: agentbox mcp list | server add <name> --url URL|--command CMD [--args a,b] [--tags x,y] | server remove <name> | assign <project> --servers a,b [--tags x,y] | preview <project> | sync <project>"
+    private static let mcpUsage = "Użycie: agentbox mcp list | server add <name> --url URL|--command CMD [--args a,b] [--tags x,y] | server remove <name> | assign <project> --servers a,b [--tags x,y] | preview <project> | sync <project> | global list <project> | global disable <project> <tool> <name> | global enable <project> <tool> <name>"
+
+    /// `agentbox mcp global ...` — the per-project opt-out for MCP servers a tool already considers
+    /// global (Codex's `~/.codex/config.toml`, shared with the ChatGPT desktop app; Claude Code's
+    /// user scope). Agentbox only reads those files; disabling one writes a small override into the
+    /// project instead of touching the global file itself.
+    private static func mcpGlobal(_ rest: [String], service: SkillboxService) async throws -> [String] {
+        guard let action = rest.first, rest.count >= 2 else { return [mcpUsage] }
+        let project = try await resolve(rest[1], service: service)
+        switch action {
+        case "list":
+            let refs = try await service.globalMCPServers(projectID: project.id)
+            let disabled = try await service.disabledGlobalServers(projectID: project.id)
+            guard !refs.isEmpty else { return ["Brak globalnych serwerów MCP dla narzędzi tego projektu"] }
+            return refs.map { ref in
+                let isOff = disabled[ref.tool]?.contains(ref.name) == true
+                return "global\t\(ref.tool.rawValue)\t\(ref.name)\t\(isOff ? "wyłączony w projekcie" : "dziedziczony")"
+            }
+        case "disable" where rest.count >= 4:
+            let parsedTool = try tool(rest[2])
+            let name = rest[3]
+            var names = Set((try await service.disabledGlobalServers(projectID: project.id))[parsedTool] ?? [])
+            names.insert(name)
+            try await service.setDisabledGlobalServers(projectID: project.id, tool: parsedTool, names: Array(names))
+            return ["Wyłączono \(name) (\(parsedTool.rawValue)) w projekcie \(project.name) — uruchom `agentbox sync project \(project.name)`, żeby zapisać zmianę"]
+        case "enable" where rest.count >= 4:
+            let parsedTool = try tool(rest[2])
+            let name = rest[3]
+            var names = Set((try await service.disabledGlobalServers(projectID: project.id))[parsedTool] ?? [])
+            names.remove(name)
+            try await service.setDisabledGlobalServers(projectID: project.id, tool: parsedTool, names: Array(names))
+            return ["Włączono z powrotem \(name) (\(parsedTool.rawValue)) w projekcie \(project.name) — uruchom `agentbox sync project \(project.name)`, żeby zapisać zmianę"]
+        default: return [mcpUsage]
+        }
+    }
+
+    private static func tool(_ raw: String) throws -> Tool {
+        guard let tool = Tool(rawValue: raw) else { throw SkillboxError.invalidSkill("nieznane narzędzie \(raw) — użyj claude, codex albo opencode") }
+        return tool
+    }
 
     private static func docs(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
         guard let action = rest.first else { return [docsUsage] }

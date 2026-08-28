@@ -151,6 +151,19 @@ agentbox mcp server remove docsearch
 
 `mcp server remove` usuwa serwer z biblioteki, jego bezpośrednie przypisania do projektów i jego wartości z lokalnego pliku sekretów — tak samo jak `Usuń` przy serwerze w aplikacji.
 
+### Globalne serwery Codex i Claude Code
+
+Codex CLI, jego wtyczka IDE i aplikacja ChatGPT Desktop dzielą jeden plik `~/.codex/config.toml` — serwer MCP dodany w dowolnym z nich ładuje się automatycznie w każdym projekcie. Claude Code ma podobny mechanizm: serwer dodany w zasięgu `user` (`~/.claude.json`) też trafia do każdego projektu. Agentbox nie zarządza tymi plikami — tylko je odczytuje i pozwala wyłączyć wybrany serwer dla jednego projektu, bez ruszania globalnej definicji.
+
+```bash
+agentbox mcp global list sklep
+agentbox mcp global disable sklep codex apple-mail
+agentbox mcp global enable sklep codex apple-mail
+agentbox sync project sklep
+```
+
+`global disable`/`global enable` tylko zapisują wybór — trzeba potem zsynchronizować projekt, żeby trafił do plików. Dla Codexa Agentbox dopisuje do `.codex/config.toml` samo `enabled = false` (bez powtarzania `command`/`args` — to udokumentowany sposób Codexa na nadpisanie jednego pola z warstwy globalnej). Dla Claude Code nazwa trafia do `disabledMcpServers` w `.claude/settings.local.json`, obok pozostałych, niezwiązanych z Agentboksem ustawień w tym pliku, które zostają nietknięte.
+
 ## Dokumenty
 
 ```bash

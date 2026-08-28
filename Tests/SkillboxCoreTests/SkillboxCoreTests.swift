@@ -819,6 +819,105 @@ final class SkillboxCoreTests: XCTestCase {
         XCTAssertTrue(content.contains(#""SAME""#), content)
     }
 
+    func testGlobalMCPDiscoveryParsesCodexAndClaudeGlobalServerNames() throws {
+        let home = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: home.appending(path: ".codex"), withIntermediateDirectories: true)
+        try #"""
+        model = "gpt"
+
+        [mcp_servers.apple-mail]
+        command = "npx"
+        args = ["apple-mail-mcp"]
+
+        [mcp_servers."quoted-name"]
+        command = "npx"
+        """#.write(to: home.appending(path: ".codex/config.toml"), atomically: true, encoding: .utf8)
+        try #"{"mcpServers":{"hubspot":{"type":"http","url":"https://mcp.hubspot.com"}},"projects":{"/some/path":{"mcpServers":{"local-only":{"command":"x"}}}}}"#
+            .write(to: home.appending(path: ".claude.json"), atomically: true, encoding: .utf8)
+
+        XCTAssertEqual(Set(GlobalMCPDiscovery.codexGlobalServerNames(home: home)), ["apple-mail", "quoted-name"])
+        XCTAssertEqual(GlobalMCPDiscovery.claudeGlobalServerNames(home: home), ["hubspot"])
+
+        let empty = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        XCTAssertEqual(GlobalMCPDiscovery.codexGlobalServerNames(home: empty), [])
+        XCTAssertEqual(GlobalMCPDiscovery.claudeGlobalServerNames(home: empty), [])
+    }
+
+    func testGlobalMCPServersExcludesAlreadyAssignedNamesAndUnrelatedTools() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        let home = root.appending(path: "home")
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: home.appending(path: ".codex"), withIntermediateDirectories: true)
+        try "[mcp_servers.apple-mail]\ncommand = \"npx\"\n\n[mcp_servers.assigned]\ncommand = \"npx\"\n".write(to: home.appending(path: ".codex/config.toml"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        // Codex only: a project without .claude among its tools should not see Claude's globals.
+        let project = try await service.addProject(name: "app", path: projectURL.path, tools: [.codex])
+        try await service.saveMCPServer(MCPServer(name: "assigned", transport: .stdio, command: "npx"))
+        let assignedID = try await service.mcpConfiguration().servers.map(\.id)
+        try await service.setMCPServers(projectID: project.id, serverIDs: assignedID, tags: [])
+
+        let refs = try await service.globalMCPServers(projectID: project.id, home: home)
+        XCTAssertEqual(refs, [GlobalMCPServerRef(tool: .codex, name: "apple-mail")])
+    }
+
+    func testDisablingGlobalCodexServerWritesOverrideAndReenablingRemovesIt() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        let home = root.appending(path: "home")
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: home.appending(path: ".codex"), withIntermediateDirectories: true)
+        try "[mcp_servers.apple-mail]\ncommand = \"npx\"\nargs = [\"apple-mail-mcp\"]\n".write(to: home.appending(path: ".codex/config.toml"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let project = try await service.addProject(name: "app", path: projectURL.path, tools: [.codex])
+
+        let refs = try await service.globalMCPServers(projectID: project.id, home: home)
+        XCTAssertEqual(refs, [GlobalMCPServerRef(tool: .codex, name: "apple-mail")])
+
+        try await service.setDisabledGlobalServers(projectID: project.id, tool: .codex, names: ["apple-mail"])
+        let stored = try await service.disabledGlobalServers(projectID: project.id)
+        XCTAssertEqual(stored, [.codex: ["apple-mail"]])
+        _ = try await service.syncMCP(projectID: project.id)
+        let disabled = try String(contentsOf: projectURL.appending(path: ".codex/config.toml"), encoding: .utf8)
+        XCTAssertTrue(disabled.contains("[mcp_servers.apple-mail]") && disabled.contains("enabled = false"), disabled)
+        // The override never redeclares command/args — Codex keeps inheriting those from the global
+        // definition and only the `enabled` flag is overridden for this project.
+        XCTAssertFalse(disabled.contains("apple-mail-mcp"), disabled)
+
+        try await service.setDisabledGlobalServers(projectID: project.id, tool: .codex, names: [])
+        _ = try await service.syncMCP(projectID: project.id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: projectURL.appending(path: ".codex/config.toml").path))
+    }
+
+    func testDisablingGlobalClaudeServerWritesDisabledMcpServersAndPreservesOtherSettings() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        let home = root.appending(path: "home")
+        try FileManager.default.createDirectory(at: projectURL.appending(path: ".claude"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try "{\"mcpServers\":{\"hubspot\":{\"type\":\"http\",\"url\":\"https://mcp.hubspot.com\"}}}".write(to: home.appending(path: ".claude.json"), atomically: true, encoding: .utf8)
+        try "{\"permissions\":{\"allow\":[\"Bash\"]}}".write(to: projectURL.appending(path: ".claude/settings.local.json"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let project = try await service.addProject(name: "app", path: projectURL.path, tools: [.claude])
+
+        let refs = try await service.globalMCPServers(projectID: project.id, home: home)
+        XCTAssertEqual(refs, [GlobalMCPServerRef(tool: .claude, name: "hubspot")])
+
+        try await service.setDisabledGlobalServers(projectID: project.id, tool: .claude, names: ["hubspot"])
+        _ = try await service.syncMCP(projectID: project.id)
+        let settings = try String(contentsOf: projectURL.appending(path: ".claude/settings.local.json"), encoding: .utf8)
+        XCTAssertTrue(settings.contains("\"disabledMcpServers\"") && settings.contains("hubspot"), settings)
+        XCTAssertTrue(settings.contains("\"permissions\""), settings)
+        // .mcp.json is untouched by a disable toggle — nothing was ever assigned in this project.
+        XCTAssertFalse(FileManager.default.fileExists(atPath: projectURL.appending(path: ".mcp.json").path))
+
+        try await service.setDisabledGlobalServers(projectID: project.id, tool: .claude, names: [])
+        _ = try await service.syncMCP(projectID: project.id)
+        let reenabled = try String(contentsOf: projectURL.appending(path: ".claude/settings.local.json"), encoding: .utf8)
+        XCTAssertFalse(reenabled.contains("disabledMcpServers"), reenabled)
+        XCTAssertTrue(reenabled.contains("\"permissions\""), reenabled)
+    }
+
     func testSwitchingToJsoncStripsEntriesLeftBehindInOpencodeJson() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let projectURL = root.appending(path: "project")

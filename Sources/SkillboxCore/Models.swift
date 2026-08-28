@@ -213,7 +213,22 @@ public struct MCPConfiguration: Codable, Sendable {
     public var servers: [MCPServer] = []
     public var projectServerIDs: [String: [UUID]]?
     public var projectServerTags: [String: [String]]?
+    /// Per-project opt-out of a tool's own global/user-scope MCP servers — the ones defined outside
+    /// Agentbox (`~/.codex/config.toml`, Claude Code's user scope) that load in every project
+    /// automatically. Keyed by selection ID (project or parent folder, like `projectServerIDs`),
+    /// then by `Tool.rawValue`, holding the names disabled for that selection.
+    public var projectDisabledGlobalServers: [String: [String: [String]]]?
     public init() {}
+}
+
+/// One MCP server Agentbox found declared globally for a tool — outside any project, so it loads
+/// everywhere unless a project opts out. Agentbox only reads these to list them; it never edits the
+/// files they live in.
+public struct GlobalMCPServerRef: Identifiable, Hashable, Sendable {
+    public var tool: Tool
+    public var name: String
+    public var id: String { "\(tool.rawValue):\(name)" }
+    public init(tool: Tool, name: String) { self.tool = tool; self.name = name }
 }
 
 public struct MCPImportSummary: Sendable {
@@ -281,9 +296,19 @@ public struct MCPPreview: Sendable {
     /// after `opencode.jsonc` appeared. Its managed entries are stripped in the same transaction.
     public var staleFile: String?
     public var staleContent: String?
-    public init(tool: Tool, file: String, content: String, added: [String], removed: [String], staleFile: String? = nil, staleContent: String? = nil) {
+    /// Claude Code's per-project opt-out of its global MCP servers lives in a different file than
+    /// `.mcp.json` (`.claude/settings.local.json`), so it is tracked as a second managed file here
+    /// instead of folded into `content`. Codex's equivalent override lives inside the same
+    /// `.codex/config.toml` block as everything else, so it needs none of this and stays nil.
+    public var disabledGlobalFile: String?
+    public var disabledGlobalContent: String?
+    public var disabledGlobalAdded: [String]
+    public var disabledGlobalRemoved: [String]
+    public init(tool: Tool, file: String, content: String, added: [String], removed: [String], staleFile: String? = nil, staleContent: String? = nil, disabledGlobalFile: String? = nil, disabledGlobalContent: String? = nil, disabledGlobalAdded: [String] = [], disabledGlobalRemoved: [String] = []) {
         self.tool = tool; self.file = file; self.content = content; self.added = added; self.removed = removed
         self.staleFile = staleFile; self.staleContent = staleContent
+        self.disabledGlobalFile = disabledGlobalFile; self.disabledGlobalContent = disabledGlobalContent
+        self.disabledGlobalAdded = disabledGlobalAdded; self.disabledGlobalRemoved = disabledGlobalRemoved
     }
 }
 

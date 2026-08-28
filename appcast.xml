@@ -6,6 +6,26 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.14.0</title>
+      <pubDate>Fri, 28 Aug 2026 06:54:26 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.14.0</link>
+      <sparkle:version>31</sparkle:version>
+      <sparkle:shortVersionString>0.14.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.14.0</h2>
+        <ul>
+          <li>Nowa zakładka „MCP globalne”: przegląd serwerów, które Codex (dzielony z ChatGPT Desktop) albo Claude Code ładują automatycznie w każdym projekcie, z możliwością wyłączenia wybranego serwera dla jednego folderu albo projektu bez ruszania globalnej definicji.</li>
+          <li>CLI: <code>agentbox mcp global list|disable|enable</code>.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/kacperpaluch/agentbox/releases/download/v0.14.0/Agentbox-0.14.0.dmg"
+        length="5686922"
+        type="application/octet-stream"
+        sparkle:edSignature="zY7HmMYy81uuV8J2AQd4+CZ/BWpedNIo+czPnfEwYlCImB/Ippiop/99n8RFScjt8GcB5ublX5hmUVQMTvEzAQ==" />
+    </item>
+    <item>
       <title>Agentbox 0.13.1</title>
       <pubDate>Thu, 27 Aug 2026 21:30:22 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.13.1</link>

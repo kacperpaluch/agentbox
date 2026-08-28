@@ -235,8 +235,79 @@ import SkillboxCore
     func addDocTags(_ ids: Set<String>, text: String) async { await perform(autoBackup: true) { try await self.service?.addDocTags(docIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) dokumentów" } }
     func deleteDoc(_ id: String) async { await perform(autoBackup: true) { try await self.service?.deleteDoc(id: id); self.message = "Usunięto dokument \(id)" } }
     func previewMCP(_ project: Project) async throws -> [MCPPreview] { try await service?.previewMCP(projectID: project.id) ?? [] }
+    /// MCP servers Codex (`~/.codex/config.toml`, shared with the ChatGPT desktop app) or Claude
+    /// Code's user scope already declare globally for the given tools — read-only. `selectionID` is
+    /// a project's own id, or its parent folder's when the project follows the folder's settings —
+    /// the same id `selectedMCPServerIDs(selectionID:)` already uses for regular MCP assignment.
+    func globalMCPServers(selectionID: UUID, tools: [Tool]) async -> [GlobalMCPServerRef] { (try? await service?.globalMCPServers(selectionID: selectionID, tools: tools)) ?? [] }
+    /// That selection's current opt-outs from those global servers, by tool.
+    func disabledGlobalServers(selectionID: UUID) async -> [Tool: [String]] { (try? await service?.disabledGlobalServers(selectionID: selectionID)) ?? [:] }
+    /// Saves the full opt-out selection for every tool at once. Actually writing it into
+    /// `.codex/config.toml` / `.claude/settings.local.json` still needs a regular project sync,
+    /// exactly like assigning a server does — this only updates the library's own record of the choice.
+    func setDisabledGlobalServers(selectionID: UUID, name: String, disabled: [Tool: [String]]) async {
+        await perform {
+            for tool in Tool.allCases { try await self.service?.setDisabledGlobalServers(selectionID: selectionID, tool: tool, names: disabled[tool] ?? []) }
+            self.message = "Zapisano wybór globalnych serwerów MCP dla \(name)"
+        }
+    }
+    /// Server names Codex/Claude Code declare globally, straight from disk — the same source
+    /// `GlobalMCPServersView` reads, but unfiltered by any one project's assignments, for the
+    /// "MCP globalne" tab's server-by-server overview.
+    func globalMCPServerNames(tool: Tool) -> [String] {
+        switch tool {
+        case .codex: GlobalMCPDiscovery.codexGlobalServerNames()
+        case .claude: GlobalMCPDiscovery.claudeGlobalServerNames()
+        case .opencode: []
+        }
+    }
+    /// Every independent MCP selection that exists: a folder with shared settings, or a project that
+    /// does not follow one. The same identity `projectDisabledGlobalServers` keys are stored under —
+    /// the "MCP globalne" tab lists these per server, instead of making the user hunt through
+    /// Projekty to find where a given global server can be turned off.
+    ///
+    /// `groupKey`/`groupName`/`isRoot` carry the same grouping Projekty shows (a folder with shared
+    /// settings, or projects sharing a parent path), so the two tabs read as one consistent picture
+    /// instead of Projekty's structure being invisible here.
+    struct MCPSelection: Identifiable, Hashable { let id: UUID; let name: String; let tools: [Tool]; let groupKey: String; let groupName: String; let isRoot: Bool }
+    var mcpSelections: [MCPSelection] {
+        let fromRoots = projectRoots.map { MCPSelection(id: $0.id, name: $0.name, tools: $0.tools, groupKey: $0.id.uuidString, groupName: $0.name, isRoot: true) }
+        let standalone = projects.filter { !inheritsRoot($0) }.map { project -> MCPSelection in
+            let path = URL(fileURLWithPath: project.path).deletingLastPathComponent().standardizedFileURL.path
+            return MCPSelection(id: project.id, name: project.name, tools: project.tools, groupKey: path, groupName: URL(fileURLWithPath: path).lastPathComponent, isRoot: false)
+        }
+        return (fromRoots + standalone).sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+    /// Whether one selection currently opts a named global server out, straight from the already
+    /// loaded configuration — so every toggle in the "MCP globalne" table can bind to this directly
+    /// without a per-row network round trip.
+    func isGlobalServerDisabled(selectionID: UUID, tool: Tool, name: String) -> Bool {
+        mcp.projectDisabledGlobalServers?[selectionID.uuidString]?[tool.rawValue]?.contains(name) == true
+    }
+    /// Flips one selection's opt-out for one global server. Lighter than `perform`: it only refreshes
+    /// `mcp` instead of the whole library, since that is all a checkbox in this table can affect, and
+    /// it does not surface a toast for every click — the table itself is the confirmation.
+    func setGlobalServerDisabled(selectionID: UUID, tool: Tool, name: String, disabled: Bool) async {
+        isWorking = true; defer { isWorking = false }
+        do {
+            var names = Set(mcp.projectDisabledGlobalServers?[selectionID.uuidString]?[tool.rawValue] ?? [])
+            if disabled { names.insert(name) } else { names.remove(name) }
+            try await service?.setDisabledGlobalServers(selectionID: selectionID, tool: tool, names: Array(names))
+            mcp = try await service?.mcpConfiguration() ?? mcp
+        } catch { reportError(error) }
+    }
     func previewProjectSync(_ project: Project) async throws -> ProjectSyncPreview { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewProjectSync(projectID: project.id) }
     func syncEverything(_ project: Project) async { await perform { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille, MCP i dokumenty dla \(project.name)" } }
+    /// Syncs every project belonging to one shared folder — for the "MCP globalne" tab, where a
+    /// toggle is scoped to the whole folder (one selection, one `.codex`/`.claude` override choice)
+    /// but only the individual projects inside it have files on disk to actually write.
+    func syncRoot(_ root: ProjectRoot) async {
+        let affected = projects.filter { self.root(for: $0)?.id == root.id }
+        await perform {
+            for project in affected { _ = try await self.service?.syncProjectTransaction(projectID: project.id) }
+            self.message = "Zsynchronizowano \(affected.count) projektów folderu \(root.name)"
+        }
+    }
     func previewAllProjectsSync() async throws -> [ProjectSyncPlan] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewAllProjectsSync() }
     func syncAllProjects() async -> [ProjectSyncOutcome] {
         isWorking = true

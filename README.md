@@ -198,6 +198,10 @@ Nie usuwa to pliku, który został już wcześniej dodany do Git. Zawsze warto s
 
 Serwery logujące się przez OAuth zapisuje się tylko jako URL. Logowanie przez przeglądarkę wykonuje Claude, Codex albo OpenCode. Token OAuth znajduje się w magazynie danego klienta, nie w Agentbox, i nie jest nadpisywany podczas synchronizacji. Każde narzędzie uwierzytelnia się osobno.
 
+### Globalne serwery Codex i Claude Code
+
+Codex CLI, jego wtyczka IDE i aplikacja ChatGPT Desktop dzielą jeden plik `~/.codex/config.toml` — serwer dodany w którymkolwiek z nich ładuje się automatycznie w każdym projekcie Codexa. Claude Code ma analogiczny mechanizm: serwer dodany w zasięgu `user` (`~/.claude.json`) też trafia wszędzie. Agentbox nie zarządza tymi plikami, tylko je odczytuje i pozwala wyłączyć wybrany serwer dla jednego projektu (`agentbox mcp global list/disable/enable <projekt>` — patrz [instrukcja CLI](docs/CLI.md#globalne-serwery-codex-i-claude-code)). Dla Codexa Agentbox dopisuje samo `enabled = false` bez powtarzania `command`/`args`; dla Claude Code nazwa trafia do `disabledMcpServers` w `.claude/settings.local.json`, obok pozostałych ustawień w tym pliku.
+
 ### CLI MCP
 
 ```bash

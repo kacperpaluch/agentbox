@@ -82,6 +82,14 @@ Serwery MCP wybiera się tak samo jak skille: pojedynczo albo dynamicznie wedłu
 
 Tagi dodaje się w szczegółach serwera MCP. Menu `Używane tagi` pokazuje istniejące wartości, co pomaga zachować jednolite nazwy. To samo menu jest dostępne podczas tagowania pojedynczych i wielu skilli. Wielkość liter nie ma znaczenia — tagi są zapisywane małymi literami, a `SEO` i `seo` to ten sam tag. Biblioteka ze starymi przypisaniami presetów (usuniętych jako funkcja w 0.3.1) migruje je automatycznie do bezpośredniego wyboru serwerów przy pierwszym otwarciu — bez utraty przypisań i bez żadnej akcji ze strony użytkownika.
 
+### MCP globalne
+
+Codex CLI, jego wtyczka IDE i aplikacja ChatGPT Desktop dzielą jeden plik `~/.codex/config.toml` — serwer dodany w którymkolwiek z nich ładuje się automatycznie w każdym projekcie Codexa. Claude Code ma analogiczny mechanizm: serwer dodany w zasięgu `user` (`~/.claude.json`) też trafia wszędzie. Zakładka `MCP globalne` w pasku bocznym pokazuje te serwery od strony narzędzia — po jednym wierszu na serwer, rozwijalnym do listy folderów i projektów, które go widzą.
+
+Agentbox nie zarządza tymi plikami i niczego w nich nie nadpisuje — tylko je czyta. Odznaczenie folderu albo projektu przy serwerze zapisuje w bibliotece lokalny override: dla Codexa to samo `enabled = false` w `.codex/config.toml`, bez powtarzania `command`/`args`; dla Claude Code — nazwa w `disabledMcpServers` w `.claude/settings.local.json`, obok pozostałych ustawień w tym pliku. Sam przełącznik zapisuje tylko wybór; `Synchronizuj` przy każdym wierszu zapisuje zmianę na dysku dla tego jednego folderu/projektu, a `Synchronizuj wszystkie projekty` na górze zakładki robi to dla całej listy naraz, z tym samym podglądem i transakcją co w `Projekty`.
+
+Folder ze wspólnymi ustawieniami (ikona ⚙️ na liście `Projekty`) pokazuje się tu jako jeden wiersz — jedna decyzja obejmuje od razu wszystkie projekty w nim. Projekty, które tylko leżą w jednym katalogu bez wspólnych ustawień, są pogrupowane pod nazwą tego katalogu wyłącznie wizualnie — każdy nadal ma własny, niezależny przełącznik.
+
 ### Wybór dokumentu w projekcie
 
 Dokument wybiera się jednym z dwóch sposobów: wprost z listy albo dynamicznie przez tag — nigdy oboma naraz w sposób, który dawałby więcej niż jedno dopasowanie. `AGENTS.md` ma tylko jedną treść, więc jeśli tagi wciągnęłyby dwa różne dokumenty do tego samego projektu, synchronizacja zatrzymuje się z komunikatem `Konflikt dokumentu` zamiast wybierać dowolny z nich — edytor projektu ostrzega o tym już przy zaznaczaniu tagów.

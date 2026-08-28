@@ -6,6 +6,13 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-28
+
+### Dodano
+
+- Nowa zakładka „MCP globalne”: przegląd serwerów, które Codex (`~/.codex/config.toml`, dzielony z aplikacją ChatGPT Desktop i wtyczką IDE) albo Claude Code (zasięg „user” w `~/.claude.json`) ładują automatycznie w każdym projekcie. Agentbox tylko je czyta — nigdy nie edytuje tych plików — i pozwala wyłączyć wybrany serwer dla jednego folderu albo projektu, bez ruszania globalnej definicji: dla Codexa dopisuje samo `enabled = false` bez powtarzania `command`/`args`, dla Claude Code nazwę w `disabledMcpServers` w `.claude/settings.local.json`, obok reszty ustawień w tym pliku. Lista grupuje projekty tak samo jak zakładka `Projekty` — folder ze wspólnymi ustawieniami to jedna decyzja dla wszystkich jego projektów, reszta jest pogrupowana wizualnie po katalogu z osobnym przełącznikiem każdy. Przyciski `Synchronizuj` przy każdym wierszu i zbiorczy na górze zakładki zapisują zmianę na dysku od razu, tym samym mechanizmem podglądu i transakcji co reszta synchronizacji.
+- CLI: `agentbox mcp global list|disable|enable <projekt>` — ten sam mechanizm z terminala.
+
 ## [0.13.1] - 2026-08-27
 
 ### Zmieniono
