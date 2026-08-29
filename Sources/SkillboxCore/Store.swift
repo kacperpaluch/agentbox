@@ -197,8 +197,14 @@ public actor SkillboxStore {
         try atomicWrite(try read(selectionsURL, fallback: SelectionsConfiguration()) as SelectionsConfiguration, to: stage.appending(path: "selections.json"))
         try atomicWrite(try mcpConfiguration(), to: stage.appending(path: "mcp.json"))
         try atomicWrite(try docsConfiguration(), to: stage.appending(path: "docs.json"))
-        try atomicWrite(try secrets(), to: stage.appending(path: "mcp-secrets.json"))
-        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stage.appending(path: "mcp-secrets.json").path)
+        // New MCP entries keep all local values directly in mcp.json. Preserve a legacy secrets
+        // file only when it actually still has values, so fresh backups do not create an empty,
+        // misleading mcp-secrets.json.
+        let legacySecrets = try secrets()
+        if !legacySecrets.isEmpty {
+            try atomicWrite(legacySecrets, to: stage.appending(path: "mcp-secrets.json"))
+            try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stage.appending(path: "mcp-secrets.json").path)
+        }
         try atomicWrite(FullBackupMetadata(applicationVersion: applicationVersion), to: stage.appending(path: "backup.json"))
         if fm.fileExists(atPath: skillsDirectory.path) { try fm.copyItem(at: skillsDirectory, to: stage.appending(path: "skills")) } else { try fm.createDirectory(at: stage.appending(path: "skills"), withIntermediateDirectories: true) }
         try fm.moveItem(at: stage, to: target)
@@ -218,7 +224,11 @@ public actor SkillboxStore {
         _ = try decoder.decode(Catalog.self, from: Data(contentsOf: package.appending(path: "catalog.json")))
         _ = try decoder.decode(LocalConfiguration.self, from: Data(contentsOf: package.appending(path: "projects.local.json")))
         _ = try decoder.decode(MCPConfiguration.self, from: Data(contentsOf: package.appending(path: "mcp.json")))
-        _ = try decoder.decode([String: String].self, from: Data(contentsOf: package.appending(path: "mcp-secrets.json")))
+        let legacySecretsURL = package.appending(path: "mcp-secrets.json")
+        let backupHasLegacySecrets = fm.fileExists(atPath: legacySecretsURL.path)
+        if backupHasLegacySecrets {
+            _ = try decoder.decode([String: String].self, from: Data(contentsOf: legacySecretsURL))
+        }
         // Backups made before documents, or before selections moved into their own file, lack those
         // names — that is not corruption, just an older backup, so each is validated only when
         // present instead of failing the whole restore.
@@ -244,7 +254,11 @@ public actor SkillboxStore {
                 if fm.fileExists(atPath: target.path) { try fm.removeItem(at: target) }
                 try fm.copyItem(at: backupItem, to: target)
             }
-            try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: secretsURL.path)
+            if backupHasLegacySecrets {
+                try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: secretsURL.path)
+            } else if fm.fileExists(atPath: secretsURL.path) {
+                try fm.removeItem(at: secretsURL)
+            }
         } catch {
             for name in names {
                 let target = root.appending(path: name); let saved = rollback.appending(path: name)

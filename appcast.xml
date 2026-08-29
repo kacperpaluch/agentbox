@@ -6,6 +6,27 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.18.2</title>
+      <pubDate>Sat, 29 Aug 2026 20:08:45 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.2</link>
+      <sparkle:version>41</sparkle:version>
+      <sparkle:shortVersionString>0.18.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.18.2</h2>
+        <ul>
+          <li>Nowe pełne backupy nie tworzą już pustego pliku <code>mcp-secrets.json</code>.</li>
+          <li>Wartości MCP są przechowywane lokalnie w <code>mcp.json</code>.</li>
+        </ul>
+      ]]></description>
+      <enclosure url="https://github.com/kacperpaluch/agentbox/releases/download/v0.18.2/Agentbox-0.18.2.dmg"
+                 sparkle:version="41"
+                 sparkle:shortVersionString="0.18.2"
+                 length="5753719"
+                 type="application/octet-stream"
+                 sparkle:edSignature="2ucYg3oABDTJsra0out0+eWZ9NwteZcy1dh7BBiJOBO+/OTjlXZATLWdXAP/IeJAOn9gUyFT0Imq3oHzha4RDA=="/>
+    </item>
+    <item>
       <title>Agentbox 0.18.1</title>
       <pubDate>Sat, 29 Aug 2026 20:01:30 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.1</link>

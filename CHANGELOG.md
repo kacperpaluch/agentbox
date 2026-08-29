@@ -6,6 +6,16 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.18.2] - 2026-08-29
+
+### Naprawiono
+
+- Nowe pełne backupy nie tworzą już pustego `mcp-secrets.json`. Wartości MCP są w `mcp.json`; kopie ze starszego formatu zachowują swój plik sekretów, aby nadal dało się je bezpiecznie odtworzyć.
+
+### Zmieniono
+
+- Instrukcja obsługi opisuje wyłącznie lokalny backup i obecny, prosty model wartości MCP.
+
 ## [0.18.1] - 2026-08-29
 
 ### Zmieniono

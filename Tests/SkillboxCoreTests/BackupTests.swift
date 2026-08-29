@@ -107,6 +107,8 @@ final class BackupTests: AgentboxTestCase {
         try await service.saveMCPServer(server)
         try await service.saveMCPServer(server, managedFields: [MCPManagedField(location: .header, key: "Authorization", value: "dummy-secret", classification: .literal)])
         let backup = try await service.createFullBackup(applicationVersion: "test")
+        let package = root.appending(path: "data/backups/full/\(backup.name)")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: package.appending(path: "mcp-secrets.json").path))
         try await service.deleteProject(id: (try await service.listProjects())[0].id)
         try await service.deleteMCPServer(id: server.id)
         try "changed".write(to: root.appending(path: "data/skills/demo/SKILL.md"), atomically: true, encoding: .utf8)
@@ -116,6 +118,27 @@ final class BackupTests: AgentboxTestCase {
         XCTAssertEqual(try String(contentsOf: root.appending(path: "data/skills/demo/SKILL.md"), encoding: .utf8), "original skill")
         let restoredMCP = try await service.mcpConfiguration()
         XCTAssertEqual(restoredMCP.servers.first?.literalHeaders?["Authorization"], "dummy-secret")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appending(path: "data/mcp-secrets.json").path))
+    }
+    func testFullBackupKeepsNonemptyLegacySecretsForOlderLibraries() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let server = MCPServer(name: "legacy", transport: .http, url: "https://example.test/mcp", secretHeaders: ["Authorization": "legacy:header:Authorization"])
+        var legacyConfiguration = MCPConfiguration()
+        legacyConfiguration.servers = [server]
+        try await service.store.save(legacyConfiguration)
+        try await service.store.replaceSecrets(["legacy:header:Authorization": "dummy-secret"])
+        let backup = try await service.createFullBackup(applicationVersion: "test")
+        let package = root.appending(path: "data/backups/full/\(backup.name)")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: package.appending(path: "mcp-secrets.json").path))
+
+        try await service.deleteMCPServer(id: server.id)
+        try await service.restoreFullBackup(named: backup.name)
+        let restoredMCP = try await service.mcpConfiguration()
+        let restoredServers = restoredMCP.servers.map(\.name)
+        let restoredSecrets = try await service.store.secrets()
+        XCTAssertEqual(restoredServers, ["legacy"])
+        XCTAssertEqual(restoredSecrets["legacy:header:Authorization"], "dummy-secret")
     }
     /// Full backups used to accumulate forever — the only cleanup was the user remembering to
     /// delete old ones by hand. Now that one is created automatically every day, it must cap itself

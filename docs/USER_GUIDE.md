@@ -47,14 +47,13 @@ Importer przyjmuje zarówno mapę `mcpServers`, jak i pojedynczą definicję, na
 W `Biblioteka → MCP → Importuj z JSON` wybierz `Przygotuj z AI`, wklej fragment instrukcji lub README i podaj klucz API OpenAI. Klucz jest wykorzystywany tylko przez bieżące żądanie i nie jest zapisywany. Agentbox wysyła do OpenAI wyłącznie tekst instrukcji, nigdy zawartość istniejących konfiguracji ani sekretów. Wynik nie jest automatycznie zapisywany: najpierw przechodzi przez analizę JSON, wybór serwerów i klasyfikację wartości. Sprawdź wynik przed importem — AI może przygotować format, ale nie zastępuje weryfikacji dokumentacji serwera.
 
 - `Zmienna systemowa` — Agentbox zapisuje nazwę zmiennej, a wartość ma dostarczyć środowisko procesu klienta AI.
-- `Tylko na tym Macu` — wartość trafia do lokalnego `mcp-secrets.json`, który jest wyłączony z backupu Git. Plik nie jest obecnie szyfrowany.
-- `Zwykła wartość` — wartość trafia do `mcp.json` i może znaleźć się w backupie Git.
+- Każda zwykła wartość, w tym hasło lub token, trafia jawnie do lokalnego `mcp.json` oraz pełnego backupu lokalnego.
 
 Automatyczne rozpoznawanie jest tylko sugestią. Agentbox uznaje za podejrzane nazwy lub wartości zawierające między innymi `token`, `password`, `api_key`, `cookie`, `secret`, `authorization` lub `bearer`. Nietypowo nazwany sekret może zostać błędnie uznany za zwykłą wartość, dlatego klasyfikację należy sprawdzić.
 
-Sekret przechowywany poza backupem biblioteki może zostać zapisany jawnie w wynikowym pliku MCP projektu, jeśli format klienta tego wymaga. Przed synchronizacją Agentbox pokazuje pełną treść wynikowych konfiguracji. Preferuj zmienne systemowe, jeśli klient je obsługuje.
+Wartość z `mcp.json` może zostać zapisana jawnie w wynikowym pliku MCP projektu, jeśli format klienta tego wymaga. Przed synchronizacją Agentbox pokazuje pełną treść wynikowych konfiguracji. Preferuj zmienne systemowe, jeśli klient je obsługuje.
 
-Po imporcie klasyfikacją nadal można zarządzać w `Biblioteka → MCP → Szczegóły`. Sekcja `Zmienne i nagłówki` pokazuje każdą wartość wprost, łącznie z sekretami — Agentbox jest lokalną aplikacją dla jednej osoby, więc nie ma powodu jej maskować na ekranie; typ pola decyduje wyłącznie o tym, czy wartość trafia do backupu Git. Tam samo `Biblioteka → MCP → Szczegóły → JSON` daje pełną konfigurację jednego serwera jako tekst do ręcznej edycji i zastępuje wtedy sekcję `Zmienne i nagłówki`, zamiast pokazywać ją obok. Zapis z JSON-a klasyfikuje każde pole od nowa tą samą heurystyką co import.
+Po imporcie `Biblioteka → MCP → Szczegóły → JSON` daje pełną konfigurację jednego serwera jako tekst do ręcznej edycji. Wartości są widoczne wprost, bo Agentbox jest lokalną aplikacją dla jednej osoby.
 
 `Edytuj wszystko jako JSON` na liście serwerów otwiera osobny, prosty widok dla całej konfiguracji naraz: popraw i `Zapisz`, bez kroku analizy i zaznaczania — to edycja własnej konfiguracji, nie import czegoś nowego. Checkboxy przy serwerach pozwalają zaznaczyć kilka naraz i dodać im tagi jedną operacją, tak jak w Bibliotece.
 
@@ -219,9 +218,9 @@ Przed zmianą plików danych Agentbox zachowuje rotacyjne snapshoty w:
 <biblioteka>/.agentbox-snapshots/
 ```
 
-Snapshot zawiera bieżące wersje `catalog.json`, `selections.json`, `projects.local.json`, `mcp.json` i `docs.json`. Zachowywanych jest 10 ostatnich snapshotów. Sekrety nie są do nich kopiowane. Folder snapshotów jest wyłączony z backupu Git.
+Snapshot zawiera bieżące wersje `catalog.json`, `selections.json`, `projects.local.json`, `mcp.json` i `docs.json`. Zachowywanych jest 10 ostatnich snapshotów.
 
-W sekcji `Backup → Snapshoty biblioteki` można wybrać kopię na podstawie daty i przywrócić zapisane w niej pliki. Katalog `skills/` i `mcp-secrets.json` nie są zmieniane. Przed przywróceniem Agentbox tworzy snapshot aktualnego stanu.
+W sekcji `Backup → Snapshoty biblioteki` można wybrać kopię na podstawie daty i przywrócić zapisane w niej pliki. Katalog `skills/` nie jest zmieniany. Przed przywróceniem Agentbox tworzy snapshot aktualnego stanu.
 
 ### Gdzie leżą kopie
 
@@ -237,25 +236,11 @@ Projekt, w którym nic się nie zmieniło, jest pomijany — nic nie jest zapisy
 
 Ta część sekcji `Backup` dotyczy wyłącznie biblioteki: snapshotów metadanych i pełnego backupu lokalnego.
 
-Backup Git obejmuje `catalog.json`, `selections.json`, `mcp.json`, `docs.json` i `skills/` — czyli definicje skilli, serwerów i dokumentów oraz to, co jest do czego przypisane. Nie obejmuje lokalnych ścieżek projektów (`projects.local.json`) ani sekretów (`mcp-secrets.json`). Git zapewnia długoterminową historię biblioteki, natomiast snapshoty chronią ostatni stan przed przypadkowym lub uszkodzonym zapisem.
-
 ### Pełny backup lokalny
 
-To jedyny mechanizm chroniący projekty i sekrety — ani backup Git, ani snapshoty ich nie obejmują. Powstaje automatycznie raz dziennie, dopóki włączona jest automatyzacja w `Backup → Automatyzacja` (ten sam przełącznik co dla commitów Git); `Backup → Utwórz teraz` robi to samo na żądanie. Tworzy czytelną kopię w `<biblioteka>/backups/full/<data>/`. Zawiera `catalog.json`, `selections.json`, `projects.local.json`, `mcp.json`, `docs.json`, `mcp-secrets.json`, metadane `backup.json` oraz cały katalog `skills/`. Obejmuje więc adresy Git skilli, lokalne ścieżki projektów, wszystkie MCP i sekrety.
+Pełny backup lokalny chroni projekty i wszystkie wartości MCP. Powstaje automatycznie raz dziennie, gdy automatyzacja w `Backup → Automatyzacja` jest włączona; `Backup → Utwórz teraz` robi to samo na żądanie. Tworzy czytelną kopię w `<biblioteka>/backups/full/<data>/`. Zawiera `catalog.json`, `selections.json`, `projects.local.json`, `mcp.json`, `docs.json`, metadane `backup.json` oraz cały katalog `skills/`. Hasła i tokeny są widoczne lokalnie w `mcp.json`.
 
-Folder `backups/` jest wyłączony z Git. Pełny backup nie jest szyfrowany — nie umieszczaj go w chmurze ani repozytorium bez dodatkowego szyfrowania. Zachowywanych jest 14 ostatnich kopii; starsze są usuwane automatycznie, więc miejsce na dysku nie rośnie bez końca. Przed przywróceniem Agentbox waliduje wszystkie pliki JSON i katalog skilli, następnie zapisuje aktualny stan w `backups/restore-rollbacks/`. Nieudana operacja automatycznie odtwarza poprzednie dane. Z interfejsu można również usunąć wybraną pełną kopię po potwierdzeniu.
-
-### Odtworzenie biblioteki ze zdalnego repozytorium
-
-`Backup → Odtworzenie biblioteki ze zdalnego repozytorium` pobiera bibliotekę z repozytorium backupu. Służy przede wszystkim do konfiguracji nowego Maca albo odtworzenia biblioteki po awarii dysku.
-
-Zastępowane są `catalog.json`, `selections.json`, `mcp.json`, `docs.json`, katalog `skills/` oraz `.gitignore`. **Nie** są zmieniane `projects.local.json` ani `mcp-secrets.json` — projekty, lokalne ścieżki i sekrety należą do tego Maca i nie trafiają do repozytorium. Przed zapisem Agentbox tworzy pełny backup lokalny, waliduje pliki JSON z repozytorium i przy błędzie odtwarza poprzedni stan. Klon zachowuje swoje `.git`, więc kolejne backupy wypychają do tego samego repozytorium.
-
-Serwery MCP wymagające sekretów nie zadziałają od razu na nowym Maku — sekrety trzeba dostarczyć osobno, poza Gitem. Najszybciej: skopiuj `mcp-secrets.json` z ostatniego pełnego backupu starego Maca (`<biblioteka>/backups/full/<data>/mcp-secrets.json`) do folderu nowej biblioteki przez AirDrop albo inny bezpieczny kanał — jednorazowo, przy każdym nowym Maku.
-
-Po odtworzeniu przypisz skille do projektów i uruchom synchronizację — pliki projektów nie są zmieniane automatycznie.
-
-Jeśli problem dotyczy katalogu skilli lub długoterminowej historii konfiguracji, można również przywrócić odpowiedni commit Git.
+Folder `backups/` jest lokalny i nie jest wysyłany przez Agentbox do Gita. Pełny backup nie jest szyfrowany — nie umieszczaj go w chmurze ani repozytorium bez dodatkowego szyfrowania. Zachowywanych jest 14 ostatnich kopii; starsze są usuwane automatycznie, więc miejsce na dysku nie rośnie bez końca. Przed przywróceniem Agentbox waliduje wszystkie pliki JSON i katalog skilli, następnie zapisuje aktualny stan w `backups/restore-rollbacks/`. Nieudana operacja automatycznie odtwarza poprzednie dane. Z interfejsu można również usunąć wybraną pełną kopię po potwierdzeniu.
 
 ## Pliki projektu i Git
 
