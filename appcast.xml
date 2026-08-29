@@ -6,6 +6,28 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.18.0</title>
+      <pubDate>Sat, 29 Aug 2026 19:48:28 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.0</link>
+      <sparkle:version>39</sparkle:version>
+      <sparkle:shortVersionString>0.18.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.18.0</h2>
+        <ul>
+          <li>Biblioteka pozwala jednym przyciskiem pobrać wszystkie wykryte aktualizacje skilli.</li>
+          <li><strong>Odśwież wszystko</strong> aktualizuje skille, tworzy pełny backup lokalny i synchronizuje projekty.</li>
+          <li>MCP ma prostsze przechowywanie lokalne: zwykłe wartości są w <code>mcp.json</code>, a <code>${NAZWA}</code> wskazuje zmienną systemową.</li>
+        </ul>
+      ]]></description>
+      <enclosure url="https://github.com/kacperpaluch/agentbox/releases/download/v0.18.0/Agentbox-0.18.0.dmg"
+                 sparkle:version="39"
+                 sparkle:shortVersionString="0.18.0"
+                 length="5759348"
+                 type="application/octet-stream"
+                 sparkle:edSignature="3HQ+ic/lAS6ddZuSviNt+3F9fvC2PRs5wW9gaRUfdLx0Lydn3KRgAFABLd/Q1EzAZw5WGmKHc9Vrv5wo5ZyEDA=="/>
+    </item>
+    <item>
       <title>Agentbox 0.17.1</title>
       <pubDate>Sat, 29 Aug 2026 14:09:22 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.17.1</link>
