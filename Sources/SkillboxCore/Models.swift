@@ -266,7 +266,9 @@ public struct MCPImportSummary: Sendable {
     public var stdioCount: Int
     public var httpCount: Int
     public var fields: [MCPImportField]
-    public init(servers: [MCPServer], secretCount: Int, stdioCount: Int, httpCount: Int, fields: [MCPImportField] = []) { self.servers = servers; self.secretCount = secretCount; self.stdioCount = stdioCount; self.httpCount = httpCount; self.fields = fields }
+    /// True when the pasted JSON is one server definition rather than a map of named servers.
+    public var isSingleServerInput: Bool
+    public init(servers: [MCPServer], secretCount: Int, stdioCount: Int, httpCount: Int, fields: [MCPImportField] = [], isSingleServerInput: Bool = false) { self.servers = servers; self.secretCount = secretCount; self.stdioCount = stdioCount; self.httpCount = httpCount; self.fields = fields; self.isSingleServerInput = isSingleServerInput }
 }
 
 public enum MCPValueClassification: String, Codable, CaseIterable, Sendable {

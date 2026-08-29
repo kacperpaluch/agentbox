@@ -1,16 +1,16 @@
 import Foundation
 
 extension SkillboxService {
-    public func analyzeMCPJSON(_ text: String) throws -> MCPImportSummary { try parseMCPJSON(text).summary }
+    public func analyzeMCPJSON(_ text: String, singleServerName: String? = nil) throws -> MCPImportSummary { try parseMCPJSON(text, singleServerName: singleServerName).summary }
 
-    public func importMCPJSON(_ text: String, serverNames: Set<String>? = nil, classifications: [String: MCPValueClassification] = [:]) async throws -> MCPImportSummary {
-        let parsed = try parseMCPJSON(text, classifications: classifications)
+    public func importMCPJSON(_ text: String, serverNames: Set<String>? = nil, classifications: [String: MCPValueClassification] = [:], singleServerName: String? = nil) async throws -> MCPImportSummary {
+        let parsed = try parseMCPJSON(text, classifications: classifications, singleServerName: singleServerName)
         let chosen = serverNames ?? Set(parsed.summary.servers.map(\.name))
         let servers = parsed.summary.servers.filter { chosen.contains($0.name) }
         guard !servers.isEmpty else { throw SkillboxError.invalidSkill("nie wybrano serwerów MCP") }
         if let invalid = servers.first(where: { $0.name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) == nil }) { throw SkillboxError.invalidSkill("nazwa MCP \(invalid.name) może zawierać litery, cyfry, _ i -") }
         guard Set(servers.map(\.name)).count == servers.count else { throw SkillboxError.mcpConflict("import zawiera powtórzone nazwy serwerów") }
-        let summary = MCPImportSummary(servers: servers, secretCount: servers.reduce(0) { $0 + ($1.secretEnvironment?.count ?? 0) + ($1.secretHeaders?.count ?? 0) }, stdioCount: servers.filter { $0.transport == .stdio }.count, httpCount: servers.filter { $0.transport == .http }.count, fields: parsed.summary.fields.filter { chosen.contains($0.serverName) })
+        let summary = MCPImportSummary(servers: servers, secretCount: servers.reduce(0) { $0 + ($1.secretEnvironment?.count ?? 0) + ($1.secretHeaders?.count ?? 0) }, stdioCount: servers.filter { $0.transport == .stdio }.count, httpCount: servers.filter { $0.transport == .http }.count, fields: parsed.summary.fields.filter { chosen.contains($0.serverName) }, isSingleServerInput: parsed.summary.isSingleServerInput)
         let prefixes = servers.map { "mcp/\($0.name)/" }
         var config = try await store.mcpConfiguration()
         var secrets = try await store.secrets()
@@ -103,9 +103,16 @@ extension SkillboxService {
         return value
     }
 
-    private func parseMCPJSON(_ text: String, classifications: [String: MCPValueClassification] = [:]) throws -> (summary: MCPImportSummary, secrets: [String: String]) {
+    private func parseMCPJSON(_ text: String, classifications: [String: MCPValueClassification] = [:], singleServerName: String? = nil) throws -> (summary: MCPImportSummary, secrets: [String: String]) {
         guard let data = text.data(using: .utf8), let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw SkillboxError.invalidSkill("konfiguracja MCP nie jest poprawnym JSON") }
-        let entries = raw["mcpServers"] as? [String: Any] ?? raw
+        let explicitEntries = raw["mcpServers"] as? [String: Any]
+        let isSingleServerInput = explicitEntries == nil && Self.isServerEntry(raw)
+        let entries: [String: Any]
+        if let explicitEntries { entries = explicitEntries }
+        else if isSingleServerInput {
+            let name = singleServerName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            entries = [name?.isEmpty == false ? name! : Self.suggestedServerName(raw): raw]
+        } else { entries = raw }
         var servers: [MCPServer] = []; var secrets: [String: String] = [:]; var fields: [MCPImportField] = []
         for name in entries.keys.sorted() {
             guard let value = entries[name] as? [String: Any] else { continue }
@@ -113,7 +120,17 @@ extension SkillboxService {
             servers.append(parsed.server); fields += parsed.fields; secrets.merge(parsed.secrets) { _, new in new }
         }
         let secretCount = fields.filter { $0.classification == .secret }.count
-        return (MCPImportSummary(servers: servers, secretCount: secretCount, stdioCount: servers.filter { $0.transport == .stdio }.count, httpCount: servers.filter { $0.transport == .http }.count, fields: fields), secrets)
+        return (MCPImportSummary(servers: servers, secretCount: secretCount, stdioCount: servers.filter { $0.transport == .stdio }.count, httpCount: servers.filter { $0.transport == .http }.count, fields: fields, isSingleServerInput: isSingleServerInput), secrets)
+    }
+
+    private static func isServerEntry(_ value: [String: Any]) -> Bool {
+        ["command", "args", "env", "url", "headers", "type"].contains { value[$0] != nil }
+    }
+
+    private static func suggestedServerName(_ value: [String: Any]) -> String {
+        let arguments = value["args"] as? [String] ?? []
+        if let candidate = arguments.reversed().first(where: { $0.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil && !$0.hasPrefix("-") }) { return candidate }
+        return "mcp-server"
     }
 
     /// Parses one `mcpServers` entry into a server plus the fields/secrets bookkeeping the import

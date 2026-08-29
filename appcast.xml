@@ -6,6 +6,27 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.17.1</title>
+      <pubDate>Sat, 29 Aug 2026 14:09:22 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.17.1</link>
+      <sparkle:version>38</sparkle:version>
+      <sparkle:shortVersionString>0.17.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.17.1</h2>
+        <ul>
+          <li>Import MCP poprawnie rozpoznaje pojedynczą konfigurację serwera, w tym <code>uvx</code> z argumentami i zmiennymi środowiskowymi.</li>
+          <li>Nowy kreator AI zamienia instrukcję instalacji lub fragment README na JSON MCP do sprawdzenia przed importem.</li>
+        </ul>
+      ]]></description>
+      <enclosure url="https://github.com/kacperpaluch/agentbox/releases/download/v0.17.1/Agentbox-0.17.1.dmg"
+                 sparkle:version="38"
+                 sparkle:shortVersionString="0.17.1"
+                 length="5816767"
+                 type="application/octet-stream"
+                 sparkle:edSignature="LQ+RlzlwuuH8R4OG+zeu3gZXA98vwTze4p2Pf1jfOnTnvZ1xlGGgQ3BUh0wMFD9AeNMefSjEAq3Nwjg3TTuaAA=="/>
+    </item>
+    <item>
       <title>Agentbox 0.17.0</title>
       <pubDate>Fri, 28 Aug 2026 10:30:00 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.17.0</link>

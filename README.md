@@ -155,7 +155,9 @@ Checkboxy przy serwerach pozwalają zaznaczyć kilka naraz i dodać im tagi jedn
 
 ### Import JSON
 
-`Importuj z JSON` obsługuje cały obiekt z `mcpServers`, samą mapę serwerów oraz plik JSON. Po analizie pokazuje typy i liczbę sekretów. Przycisk `Jaki format?` obok pola wklejania pokazuje przykład wszystkich trzech wariantów. Można zaznaczyć tylko wybrane serwery do importu, a po imporcie przypisać im tagi.
+`Importuj z JSON` obsługuje cały obiekt z `mcpServers`, samą mapę serwerów, a także pojedynczą definicję serwera (`command`/`args`/`env` albo `url`). Przy pojedynczym obiekcie Agentbox proponuje nazwę z argumentów; można ją wpisać samodzielnie przed analizą. Po analizie pokazuje typy i liczbę sekretów. Przycisk `Jaki format?` obok pola wklejania pokazuje przykłady obsługiwanych wariantów. Można zaznaczyć tylko wybrane serwery do importu, a po imporcie przypisać im tagi.
+
+Tryb `Przygotuj z AI` przyjmuje instrukcję instalacji lub fragment README i prosi OpenAI o sam JSON MCP. Klucz API jest używany tylko dla bieżącego żądania — nie zapisuje się w bibliotece. AI nie importuje ani nie synchronizuje niczego samodzielnie: wygenerowany JSON zawsze przechodzi przez ten sam podgląd, wybór serwerów i klasyfikację sekretów. Prompt zabrania wymyślania poleceń lub tokenów i wymaga zapisu sekretów jako `${NAZWA_ZMIENNEJ}`.
 
 Agentbox proponuje również klasyfikację każdej zmiennej i każdego nagłówka jako `Zmienna systemowa`, `Tylko na tym Macu` albo `Zwykła wartość`. Przed importem użytkownik może poprawić każdą propozycję. Automatyczne rozpoznawanie jest heurystyką i nie zastępuje sprawdzenia wartości.
 

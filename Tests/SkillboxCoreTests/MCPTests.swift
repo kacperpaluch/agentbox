@@ -2,6 +2,33 @@ import XCTest
 @testable import SkillboxCore
 
 final class MCPTests: AgentboxTestCase {
+    func testAIPromptRequiresMCPWrapperAndEnvironmentReferencesForSecrets() {
+        let prompt = SkillboxService.mcpAIPrompt("Use the token from the docs")
+        XCTAssertTrue(prompt.contains("{\"mcpServers\": {...}}"))
+        XCTAssertTrue(prompt.contains("${GITHUB_TOKEN}"))
+        XCTAssertTrue(prompt.contains("Nigdy nie wymyślaj"))
+        XCTAssertTrue(prompt.contains("Use the token from the docs"))
+    }
+
+    func testImportsSingleServerDefinitionWithoutMistakingEnvironmentForServer() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let service = try SkillboxService(root: root)
+        let json = #"{"args":["--from","mcp-portainer~=2.45.0","mcp-portainer"],"command":"uvx","env":{"PORTAINER_URL":"https://twoj-portainer.pl","PORTAINER_API_KEY":"ptr_dummy-secret"}}"#
+
+        let analyzed = try await service.analyzeMCPJSON(json)
+        XCTAssertTrue(analyzed.isSingleServerInput)
+        XCTAssertEqual(analyzed.servers.map(\.name), ["mcp-portainer"])
+        XCTAssertEqual(analyzed.servers.first?.command, "uvx")
+        XCTAssertEqual(analyzed.servers.first?.arguments, ["--from", "mcp-portainer~=2.45.0", "mcp-portainer"])
+        XCTAssertEqual(analyzed.servers.first?.literalEnvironment?["PORTAINER_URL"], "https://twoj-portainer.pl")
+        XCTAssertNotNil(analyzed.servers.first?.secretEnvironment?["PORTAINER_API_KEY"])
+
+        let imported = try await service.importMCPJSON(json, singleServerName: "portainer")
+        XCTAssertEqual(imported.servers.map(\.name), ["portainer"])
+        let saved = try await service.mcpConfiguration()
+        XCTAssertEqual(saved.servers.map(\.name), ["portainer"])
+    }
+
     func testOpenCodeUsesDirectMCPMapAndMixedEnvironmentValuesSurviveImport() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let projectURL = root.appending(path: "project")

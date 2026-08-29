@@ -40,6 +40,12 @@ Każdy obraz aktualizacji jest weryfikowany kluczem EdDSA osadzonym w aplikacji.
 
 Podczas analizy JSON Agentbox proponuje typ każdej zmiennej środowiskowej i każdego nagłówka. Przed importem można zmienić propozycję.
 
+Importer przyjmuje zarówno mapę `mcpServers`, jak i pojedynczą definicję, na przykład obiekt zawierający `command`, `args` i `env`. W tym drugim przypadku wpisz nazwę serwera w polu nad przyciskiem „Analizuj” albo zaakceptuj nazwę zaproponowaną z argumentów; `env` nigdy nie jest wtedy traktowane jako osobny serwer.
+
+### Kreator AI
+
+W `Biblioteka → MCP → Importuj z JSON` wybierz `Przygotuj z AI`, wklej fragment instrukcji lub README i podaj klucz API OpenAI. Klucz jest wykorzystywany tylko przez bieżące żądanie i nie jest zapisywany. Agentbox wysyła do OpenAI wyłącznie tekst instrukcji, nigdy zawartość istniejących konfiguracji ani sekretów. Wynik nie jest automatycznie zapisywany: najpierw przechodzi przez analizę JSON, wybór serwerów i klasyfikację wartości. Sprawdź wynik przed importem — AI może przygotować format, ale nie zastępuje weryfikacji dokumentacji serwera.
+
 - `Zmienna systemowa` — Agentbox zapisuje nazwę zmiennej, a wartość ma dostarczyć środowisko procesu klienta AI.
 - `Tylko na tym Macu` — wartość trafia do lokalnego `mcp-secrets.json`, który jest wyłączony z backupu Git. Plik nie jest obecnie szyfrowany.
 - `Zwykła wartość` — wartość trafia do `mcp.json` i może znaleźć się w backupie Git.

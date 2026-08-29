@@ -6,6 +6,16 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-08-29
+
+### Naprawiono
+
+- `MCP → Importuj z JSON` rozpoznaje teraz pojedynczą definicję serwera (np. `uvx` z `args` i `env`) zamiast błędnie traktować `env` jak mapę serwerów. Importer proponuje nazwę serwera z argumentów, a użytkownik może ją podać samodzielnie.
+
+### Dodano
+
+- Kreator `MCP → Importuj z JSON → Przygotuj z AI`: z instrukcji instalacji lub README tworzy kandydacki JSON przez OpenAI. Klucz API nie jest zapisywany, a wynik zawsze trafia najpierw do analizy, wyboru serwerów i kontroli klasyfikacji sekretów.
+
 ## [0.17.0] - 2026-08-28
 
 ### Zmieniono

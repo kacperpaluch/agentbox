@@ -21,21 +21,6 @@ public actor SkillboxStore {
         encoder.dateEncodingStrategy = .iso8601; decoder.dateDecodingStrategy = .iso8601
         try fm.createDirectory(at: self.root, withIntermediateDirectories: true)
         try fm.createDirectory(at: self.root.appending(path: "skills"), withIntermediateDirectories: true)
-        removeOrphanedAIKeysIfNeeded()
-    }
-
-    /// The AI-assisted MCP config generator was removed as a feature — any API key it saved is now
-    /// dead weight sitting in a secrets file. Old copies belong nowhere else, so wipe them.
-    nonisolated private func removeOrphanedAIKeysIfNeeded() {
-        guard let data = try? Data(contentsOf: secretsURL),
-              var raw = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return }
-        let aiKeys = raw.keys.filter { $0.hasPrefix("ai/") && $0.hasSuffix("/api-key") }
-        guard !aiKeys.isEmpty else { return }
-        aiKeys.forEach { raw.removeValue(forKey: $0) }
-        guard let newData = try? JSONSerialization.data(withJSONObject: raw, options: [.prettyPrinted, .sortedKeys]) else { return }
-        let temp = root.appending(path: ".mcp-secrets-\(UUID().uuidString).tmp")
-        guard FileManager.default.createFile(atPath: temp.path, contents: newData, attributes: [.posixPermissions: 0o600]) else { return }
-        _ = rename(temp.path, secretsURL.path)
     }
 
     public func catalog() throws -> Catalog { try read(catalogURL, fallback: Catalog()) }
