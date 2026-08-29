@@ -24,14 +24,7 @@ struct BackupView: View {
                     VStack(alignment: .leading, spacing: Space.section - 2) {
                         Toggle("Automatycznie twórz pełny backup lokalny raz dziennie", isOn: $autoBackup)
                         Text("Kopie są przechowywane lokalnie w folderze biblioteki. Zawierają także projekty oraz wartości MCP.").rowMetadata()
-                        HStack {
-                            Button { Task { await model.refresh() } } label: {
-                                Label("Odśwież wszystko", systemImage: "arrow.triangle.2.circlepath")
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(model.isWorking)
-                            Text("Aktualizuje skille, tworzy pełny backup lokalny, potem synchronizuje wszystkie projekty.").rowMetadata()
-                        }
+                        Text("Pełny workflow jest dostępny w `Biblioteka → Odśwież wszystko`.").rowMetadata()
                     }.padding(Space.row)
                 }
                 snapshotsSection

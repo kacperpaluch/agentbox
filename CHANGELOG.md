@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-08-29
+
+### Zmieniono
+
+- Akcja `Odśwież wszystko` jest w `Biblioteka`, gdzie rozpoczyna się praca z aktualizacjami skilli; sekcja Backup pozostaje miejscem zarządzania kopiami.
+
 ## [0.18.0] - 2026-08-29
 
 ### Dodano

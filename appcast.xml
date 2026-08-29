@@ -6,6 +6,27 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.18.1</title>
+      <pubDate>Sat, 29 Aug 2026 20:01:30 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.1</link>
+      <sparkle:version>40</sparkle:version>
+      <sparkle:shortVersionString>0.18.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.18.1</h2>
+        <ul>
+          <li><strong>Odśwież wszystko</strong> jest teraz w Bibliotece — obok aktualizacji skilli, od których zaczyna się ten proces.</li>
+          <li>Sekcja Backup skupia się wyłącznie na zarządzaniu lokalnymi kopiami.</li>
+        </ul>
+      ]]></description>
+      <enclosure url="https://github.com/kacperpaluch/agentbox/releases/download/v0.18.1/Agentbox-0.18.1.dmg"
+                 sparkle:version="40"
+                 sparkle:shortVersionString="0.18.1"
+                 length="5753435"
+                 type="application/octet-stream"
+                 sparkle:edSignature="5JGzgfHvnHl67AbqotsuelP0zuny/D2mvp3ZfOXYVRNeO6msfFl2PeIdBlKO3kDEnN1rkKKgzKZc2TGqZClFDQ=="/>
+    </item>
+    <item>
       <title>Agentbox 0.18.0</title>
       <pubDate>Sat, 29 Aug 2026 19:48:28 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.0</link>

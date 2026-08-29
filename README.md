@@ -111,7 +111,7 @@ swift run agentbox update --all
 
 `update --all` sprawdza i pobiera wszystkie dostępne aktualizacje skilli Git. Nie synchronizuje automatycznie folderów projektów; po aktualizacji użyj `agentbox sync project <nazwa>` albo `Synchronizuj wszystko` w GUI.
 
-W GUI `Backup → Odśwież wszystko` odpowiada poleceniu `agentbox refresh`: aktualizuje skille, tworzy pełny backup lokalny, a następnie synchronizuje wszystkie projekty.
+W GUI `Biblioteka → Odśwież wszystko` odpowiada poleceniu `agentbox refresh`: aktualizuje skille, tworzy pełny backup lokalny, a następnie synchronizuje wszystkie projekty.
 
 Pełny workflow można wykonać jedną komendą: `agentbox refresh`. Aktualizuje ona skille, tworzy pełny backup lokalny i transakcyjnie synchronizuje wszystkie projekty.
 

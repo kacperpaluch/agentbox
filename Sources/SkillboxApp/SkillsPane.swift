@@ -77,6 +77,12 @@ struct SkillsPane: View {
             }
             Spacer()
             filterMenu
+            Button { Task { await model.refresh() } } label: {
+                Label("Odśwież wszystko", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isWorking)
+            .help("Aktualizuje skille, tworzy pełny backup lokalny i synchronizuje wszystkie projekty")
             if !model.updateAvailable.isEmpty {
                 Button { Task { await model.updateAllAvailable() } } label: {
                     Label("Aktualizuj \(model.updateAvailable.count)", systemImage: "arrow.down.circle.fill")

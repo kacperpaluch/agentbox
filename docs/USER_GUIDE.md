@@ -85,7 +85,7 @@ Skille pochodzące z Git są tylko do odczytu. `Aktualizuj` zastępuje taki skil
 
 W `Biblioteka → Skille` ikona odświeżania najpierw tylko sprawdza dostępne rewizje. Gdy je znajdzie, obok pojawia się pomarańczowy przycisk `Aktualizuj <liczba>` — pobiera wszystkie wykryte aktualizacje do biblioteki. Nie synchronizuje on automatycznie projektów; po aktualizacji użyj `Synchronizuj` dla wybranego projektu albo `Synchronizuj wszystkie projekty`.
 
-Jeżeli chcesz wykonać cały proces jednym kliknięciem, użyj `Backup → Odśwież wszystko`. To odpowiednik `agentbox refresh`: sprawdza i pobiera aktualizacje skilli, tworzy pełny backup lokalny, a następnie transakcyjnie synchronizuje wszystkie projekty. Wynik, także błędy poszczególnych projektów, zostaje w historii operacji.
+Jeżeli chcesz wykonać cały proces jednym kliknięciem, użyj `Biblioteka → Odśwież wszystko`. To odpowiednik `agentbox refresh`: sprawdza i pobiera aktualizacje skilli, tworzy pełny backup lokalny, a następnie transakcyjnie synchronizuje wszystkie projekty. Wynik, także błędy poszczególnych projektów, zostaje w historii operacji.
 
 ### Przejmowanie skilli z projektu
 
