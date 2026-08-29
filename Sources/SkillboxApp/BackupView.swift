@@ -4,63 +4,43 @@ import Combine
 import SkillboxCore
 import Sparkle
 
-/// Backup and recovery together, because "how do I protect and get back my data" is one question
-/// with four mechanisms behind it (Git, snapshots, restore-from-remote, full local copy) — it was
-/// never two separate sections in the author's head, so it no longer is one in the sidebar either.
+/// Local backup and recovery live together: full backups protect the whole library, while
+/// snapshots provide short-term recovery of its metadata.
 struct BackupView: View {
     @ObservedObject var model: AppModel
-    @State private var remote = ""
     @State private var fullBackupToRestore: FullBackupInfo?
     @State private var fullBackupToDelete: FullBackupInfo?
     @State private var snapshotToRestore: LibrarySnapshot?
-    @State private var restoreRemote = ""
-    @State private var showRestoreConfirmation = false
     @AppStorage("AgentboxAutoBackup") private var autoBackup = true
-    @AppStorage("AgentboxAutoPush") private var autoPush = false
     private let formatter: DateFormatter = { let value = DateFormatter(); value.dateStyle = .medium; value.timeStyle = .medium; return value }()
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.page + 2) {
                 Label("Backup i odzyskiwanie", systemImage: "externaldrive.badge.timemachine").font(.largeTitle.bold())
-                Text("Do Git trafiają skille, tagi i konfiguracja MCP bez sekretów. Lokalne ścieżki projektów pozostają tylko na tym Macu.").foregroundStyle(.secondary)
+                Text("Pełne kopie lokalne chronią bibliotekę, projekty i wszystkie wartości MCP.").foregroundStyle(.secondary)
 
                 GroupBox("Automatyzacja") {
                     VStack(alignment: .leading, spacing: Space.section - 2) {
-                        Toggle("Automatycznie twórz lokalne commity", isOn: $autoBackup)
-                        Toggle("Automatycznie wysyłaj do origin", isOn: $autoPush).disabled(!autoBackup)
-                        Text("Zmiany skilli, tagów i serwerów są łączone przez 5 sekund w jeden commit. Pierwszy backup i konfigurację origin wykonaj ręcznie.").rowMetadata()
+                        Toggle("Automatycznie twórz pełny backup lokalny raz dziennie", isOn: $autoBackup)
+                        Text("Kopie są przechowywane lokalnie w folderze biblioteki. Zawierają także projekty oraz wartości MCP.").rowMetadata()
+                        HStack {
+                            Button { Task { await model.refresh() } } label: {
+                                Label("Odśwież wszystko", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(model.isWorking)
+                            Text("Aktualizuje skille, tworzy pełny backup lokalny, potem synchronizuje wszystkie projekty.").rowMetadata()
+                        }
                     }.padding(Space.row)
                 }
-                TextField("Git remote, np. git@github.com:user/agentbox-backup.git", text: $remote).textFieldStyle(.roundedBorder)
-                HStack {
-                    Button("Wykonaj backup teraz") { Task { await model.backup(remote: remote) } }.buttonStyle(.borderedProminent)
-                    Button("Odśwież status") { Task { await model.loadBackupStatus() } }.buttonStyle(.bordered)
-                    Spacer()
-                }
-                GroupBox("Status") { Text(model.backupStatus.isEmpty ? "Kliknij „Odśwież status”." : model.backupStatus).font(.system(.body, design: .monospaced)).frame(maxWidth: .infinity, alignment: .leading).padding(Space.row) }
-
-                Divider()
-
                 snapshotsSection
 
                 Divider()
 
                 VStack(alignment: .leading, spacing: Space.section - 2) {
-                    Label("Odtworzenie biblioteki ze zdalnego repozytorium", systemImage: "arrow.down.circle").font(.title2.bold())
-                    Text("Pobiera skille, katalog i konfigurację MCP z repozytorium backupu — na przykład przy konfiguracji nowego Maca. Projekty, lokalne ścieżki i sekrety na tym Macu pozostają bez zmian. Przed zapisem powstaje pełny backup lokalny.").foregroundStyle(.secondary)
-                    TextField("Adres repozytorium do odtworzenia", text: $restoreRemote).textFieldStyle(.roundedBorder)
-                    HStack {
-                        Button("Odtwórz bibliotekę") { showRestoreConfirmation = true }.buttonStyle(.bordered).disabled(restoreRemote.trimmingCharacters(in: .whitespaces).isEmpty || model.isWorking)
-                        Spacer()
-                    }
-                }
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: Space.section - 2) {
                     Label("Pełny backup lokalny", systemImage: "externaldrive.fill.badge.plus").font(.title2.bold())
-                    Text("Jedyne miejsce chroniące projekty i sekrety — Git backup ich nie obejmuje. Powstaje automatycznie raz dziennie (przy włączonej automatyzacji powyżej); ostatnie 14 kopii zostaje, starsze znikają. Przycisk obok tworzy kopię od razu, np. przed ryzykowną operacją.").foregroundStyle(.secondary)
+                    Text("Chroni całą bibliotekę, projekty i wszystkie wartości MCP. Powstaje automatycznie raz dziennie przy włączonej automatyzacji; ostatnie 14 kopii zostaje, starsze znikają. Przycisk obok tworzy kopię od razu, np. przed ryzykowną operacją.").foregroundStyle(.secondary)
                     Label("Pliki są czytelne i niezaszyfrowane — nie udostępniaj folderu backups.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     HStack {
                         Button("Utwórz teraz") { Task { await model.createFullBackup() } }.buttonStyle(.borderedProminent)
@@ -90,13 +70,9 @@ struct BackupView: View {
             .padding(Space.page + 12)
         }
         .navigationTitle("Backup")
-        .task { await model.loadBackupStatus(); await model.loadFullBackups(); await model.loadRecovery() }
+        .task { await model.loadFullBackups(); await model.loadRecovery() }
         .confirmationDialog("Przywrócić pełny backup?", isPresented: Binding(get: { fullBackupToRestore != nil }, set: { if !$0 { fullBackupToRestore = nil } })) { Button("Przywróć wszystkie dane", role: .destructive) { if let backup = fullBackupToRestore { Task { await model.restoreFullBackup(backup) } }; fullBackupToRestore = nil }; Button("Anuluj", role: .cancel) { fullBackupToRestore = nil } } message: { Text("Aktualna biblioteka, projekty, skille, MCP i sekrety zostaną zastąpione. Agentbox najpierw zachowa pełną kopię aktualnego stanu w backups/restore-rollbacks.") }
         .confirmationDialog("Usunąć pełny backup?", isPresented: Binding(get: { fullBackupToDelete != nil }, set: { if !$0 { fullBackupToDelete = nil } })) { Button("Usuń backup", role: .destructive) { if let backup = fullBackupToDelete { Task { await model.deleteFullBackup(backup) } }; fullBackupToDelete = nil }; Button("Anuluj", role: .cancel) { fullBackupToDelete = nil } } message: { Text("Ta kopia zawierająca również sekrety zostanie trwale usunięta z lokalnego folderu backups/full.") }
-        .confirmationDialog("Odtworzyć bibliotekę z repozytorium?", isPresented: $showRestoreConfirmation) {
-            Button("Odtwórz bibliotekę", role: .destructive) { Task { await model.restoreLibraryFromRemote(restoreRemote.trimmingCharacters(in: .whitespaces)) } }
-            Button("Anuluj", role: .cancel) { }
-        } message: { Text("Katalog skilli, catalog.json i mcp.json zostaną zastąpione zawartością repozytorium. Projekty, lokalne ścieżki i sekrety pozostaną bez zmian, a aktualny stan zostanie zapisany jako pełny backup lokalny.") }
         .confirmationDialog("Przywrócić snapshot biblioteki?", isPresented: Binding(get: { snapshotToRestore != nil }, set: { if !$0 { snapshotToRestore = nil } })) {
             Button("Przywróć bibliotekę", role: .destructive) { if let snapshotToRestore { Task { await model.restoreLibrary(snapshotToRestore) } }; snapshotToRestore = nil }
             Button("Anuluj", role: .cancel) { snapshotToRestore = nil }

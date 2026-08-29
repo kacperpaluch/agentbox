@@ -273,8 +273,8 @@ public struct MCPImportSummary: Sendable {
 
 public enum MCPValueClassification: String, Codable, CaseIterable, Sendable {
     case environment = "Zmienna systemowa"
-    case secret = "Tylko na tym Macu (poza backupem Git)"
-    case literal = "Zwykła wartość (trafia do backupu Git)"
+    case secret = "Wartość lokalna (legacy)"
+    case literal = "Wartość lokalna"
 }
 
 public struct MCPImportField: Identifiable, Hashable, Sendable {

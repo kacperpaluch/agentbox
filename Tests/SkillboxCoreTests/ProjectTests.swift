@@ -829,7 +829,6 @@ final class ProjectTests: AgentboxTestCase {
         let lines = AgentboxCommand.summary(
             updates: ["docx"],
             backupName: "2026-08-26-abc",
-            gitBackup: "To github.com:user/repo.git\n   abc..def  main -> main",
             outcomes: [outcome("alpha", .synced), outcome("beta", .upToDate), outcome("gamma", .failed("konflikt")), outcome("delta", .skipped)])
         let text = lines.joined(separator: "\n")
 
@@ -838,12 +837,8 @@ final class ProjectTests: AgentboxTestCase {
         XCTAssertTrue(text.contains("4 — ✓ 1 zsynchronizowano, = 1 bez zmian, ✗ 1 cofnięto, – 1 pominięto"), text)
         XCTAssertTrue(text.contains("✗ gamma — konflikt"), text)
         XCTAssertTrue(text.contains("– delta"), text)
-        // Multi-line Git output must not break the aligned block.
-        XCTAssertFalse(lines.contains { $0.contains("\n") })
-        XCTAssertTrue(text.contains("To github.com:user/repo.git · abc..def  main -> main"), text)
-
         // A clean run says so without a "wymaga uwagi" section.
-        let clean = AgentboxCommand.summary(updates: [], backupName: "b", gitBackup: "Everything up-to-date", outcomes: [outcome("alpha", .upToDate)]).joined(separator: "\n")
+        let clean = AgentboxCommand.summary(updates: [], backupName: "b", outcomes: [outcome("alpha", .upToDate)]).joined(separator: "\n")
         XCTAssertTrue(clean.contains("bez aktualizacji"), clean)
         XCTAssertFalse(clean.contains("Wymaga uwagi"), clean)
     }

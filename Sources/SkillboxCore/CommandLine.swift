@@ -16,9 +16,7 @@ public enum AgentboxCommand {
       agentbox sync project <name> [--dry-run]
       agentbox sync all [--dry-run]
       agentbox sync global [--skills a,b] [--tags x] [--tools claude,codex,opencode]
-      agentbox refresh [--remote git-url] [--message text]
-      agentbox backup [--remote git-url] [--message text]
-      agentbox restore --remote <git-url>
+      agentbox refresh
       agentbox mcp list|server|assign|preview|sync ...
       agentbox docs list|new|tag|delete|assign|preview|sync ...
     """
@@ -70,12 +68,7 @@ public enum AgentboxCommand {
             return ["Usunięto skill \(rest[0])"]
         case "project": return try await project(rest, service: service, args: args)
         case "sync": return try await sync(rest, service: service, args: args)
-        case "refresh": return try await refresh(service: service, args: args)
-        case "backup":
-            return [try await service.backup(remote: option("--remote", in: args), message: option("--message", in: args) ?? "Agentbox backup")]
-        case "restore":
-            guard let remote = option("--remote", in: args) else { throw SkillboxError.invalidSkill("podaj --remote <adres-repozytorium>") }
-            return [try await service.restoreLibraryFromRemote(remote, applicationVersion: "CLI")]
+        case "refresh": return try await refresh(service: service)
         case "mcp": return try await mcp(rest, service: service, args: args)
         case "docs": return try await docs(rest, service: service, args: args)
         default: return [help]
@@ -244,18 +237,15 @@ public enum AgentboxCommand {
 
     private static let syncUsage = "Użycie: agentbox sync project <nazwa> | global [--skills a,b] [--tags x] [--tools claude,codex] | all [--dry-run]"
 
-    private static func refresh(service: SkillboxService, args: [String]) async throws -> [String] {
-        var lines = ["1/4 Sprawdzanie aktualizacji skilli…"]
+    private static func refresh(service: SkillboxService) async throws -> [String] {
+        var lines = ["1/3 Sprawdzanie aktualizacji skilli…"]
         let updates = try await service.checkUpdates().sorted()
         if updates.isEmpty { lines.append("Wszystkie skille są aktualne") }
         else { for id in updates { _ = try await service.update(skillID: id); lines.append("Zaktualizowano \(id)") } }
-        lines.append("2/4 Tworzenie pełnego backupu lokalnego…")
+        lines.append("2/3 Tworzenie pełnego backupu lokalnego…")
         let backupName = try await service.createFullBackup(applicationVersion: "CLI").name
         lines.append("Utworzono \(backupName)")
-        lines.append("3/4 Tworzenie backupu Git…")
-        let gitBackup = try await service.backup(remote: option("--remote", in: args), message: option("--message", in: args) ?? "Agentbox refresh", push: true, requireRemote: true)
-        lines.append(gitBackup)
-        lines.append("4/4 Synchronizacja projektów…")
+        lines.append("3/3 Synchronizacja projektów…")
         let outcomes = try await service.syncAllProjectsTransactions()
         for outcome in outcomes {
             switch outcome.state {
@@ -265,13 +255,13 @@ public enum AgentboxCommand {
             case .skipped: lines.append("– \(outcome.plan.project.name) — pominięto")
             }
         }
-        return lines + summary(updates: updates, backupName: backupName, gitBackup: gitBackup, outcomes: outcomes)
+        return lines + summary(updates: updates, backupName: backupName, outcomes: outcomes)
     }
 
     /// A closing block for `refresh`. The per-project lines above scroll away on a long run, and a
     /// rolled-back or skipped project was reported only there — so the run could end looking fine
     /// while a project had actually failed. The summary names those projects explicitly.
-    static func summary(updates: [String], backupName: String, gitBackup: String, outcomes: [ProjectSyncOutcome]) -> [String] {
+    static func summary(updates: [String], backupName: String, outcomes: [ProjectSyncOutcome]) -> [String] {
         let synced = outcomes.filter { $0.state == .synced }
         let upToDate = outcomes.filter { $0.state == .upToDate }
         let failed = outcomes.filter { if case .failed = $0.state { return true } else { return false } }
@@ -284,7 +274,6 @@ public enum AgentboxCommand {
             "PODSUMOWANIE",
             "  Skille          \(updates.isEmpty ? "bez aktualizacji" : "zaktualizowano \(updates.count): \(updates.joined(separator: ", "))")",
             "  Backup lokalny  \(backupName)",
-            "  Backup Git      \(compact(gitBackup))",
             "  Projekty        \(outcomes.count) — \(counts.joined(separator: ", "))"
         ]
         if !failed.isEmpty {

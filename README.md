@@ -58,14 +58,13 @@ Skillbox/
 ├── projects.local.json    # projekty i lokalne ścieżki
 ├── mcp.json               # definicje serwerów MCP
 ├── docs.json              # definicje dokumentów
-├── mcp-secrets.json       # sekrety MCP, bez szyfrowania
 └── skills/
     └── nazwa-skilla/SKILL.md
 ```
 
 `selections.json` odpowiada na jedno pytanie: co trafia w które miejsce. Jeden klucz na miejsce — id projektu, id folderu nadrzędnego albo `global` — a pod nim narzędzia, skille, tagi skilli, wykluczenia, serwery MCP, tagi MCP, dokument i tagi dokumentów. Pozostałe pliki trzymają już wyłącznie definicje: `catalog.json` skille, `mcp.json` serwery, `docs.json` dokumenty.
 
-Do backupu Git trafiają `catalog.json`, `selections.json`, `mcp.json`, `docs.json` i katalog `skills/`. Poza nim zostają `projects.local.json` (lokalne ścieżki tego Maca) i `mcp-secrets.json`.
+Wszystkie wartości MCP — także hasła i tokeny — są przechowywane jawnie, lokalnie w `mcp.json`. Chroń folder biblioteki jak plik z hasłami.
 
 Dla CLI można wskazać inną bibliotekę:
 
@@ -101,7 +100,8 @@ Ręcznie napisany katalog ze `SKILL.md`, który leży w projekcie i blokuje sync
 - lista obsługuje wyszukiwanie, filtrowanie po tagu i sortowanie,
 - projekt może wskazywać konkretne skille albo dynamiczne tagi,
 - `Sprawdź` wykrywa nowe rewizje Git bez automatycznej aktualizacji,
-- `Aktualizuj` pobiera nową wersję tylko wskazanego skilla.
+- `Aktualizuj` pobiera nową wersję tylko wskazanego skilla,
+- po sprawdzeniu GUI pokazuje też przycisk `Aktualizuj <liczba>`, który pobiera wszystkie wykryte aktualizacje. Nie synchronizuje on automatycznie projektów.
 
 ```bash
 swift run agentbox tag my-skill seo audit
@@ -111,7 +111,9 @@ swift run agentbox update --all
 
 `update --all` sprawdza i pobiera wszystkie dostępne aktualizacje skilli Git. Nie synchronizuje automatycznie folderów projektów; po aktualizacji użyj `agentbox sync project <nazwa>` albo `Synchronizuj wszystko` w GUI.
 
-Pełny workflow można wykonać jedną komendą: `agentbox refresh`. Aktualizuje ona skille, tworzy pełny backup lokalny, wykonuje commit i obowiązkowy push backupu Git, a następnie transakcyjnie synchronizuje wszystkie projekty. Jeśli biblioteka nie ma `origin`, trzeba podać `--remote`.
+W GUI `Backup → Odśwież wszystko` odpowiada poleceniu `agentbox refresh`: aktualizuje skille, tworzy pełny backup lokalny, a następnie synchronizuje wszystkie projekty.
+
+Pełny workflow można wykonać jedną komendą: `agentbox refresh`. Aktualizuje ona skille, tworzy pełny backup lokalny i transakcyjnie synchronizuje wszystkie projekty.
 
 ### Usuwanie
 
@@ -155,15 +157,15 @@ Checkboxy przy serwerach pozwalają zaznaczyć kilka naraz i dodać im tagi jedn
 
 ### Import JSON
 
-`Importuj z JSON` obsługuje cały obiekt z `mcpServers`, samą mapę serwerów, a także pojedynczą definicję serwera (`command`/`args`/`env` albo `url`). Przy pojedynczym obiekcie Agentbox proponuje nazwę z argumentów; można ją wpisać samodzielnie przed analizą. Po analizie pokazuje typy i liczbę sekretów. Przycisk `Jaki format?` obok pola wklejania pokazuje przykłady obsługiwanych wariantów. Można zaznaczyć tylko wybrane serwery do importu, a po imporcie przypisać im tagi.
+`Importuj z JSON` obsługuje cały obiekt z `mcpServers`, samą mapę serwerów, a także pojedynczą definicję serwera (`command`/`args`/`env` albo `url`). Przy pojedynczym obiekcie Agentbox proponuje nazwę z argumentów; można ją wpisać samodzielnie przed analizą. Można zaznaczyć tylko wybrane serwery do importu, a po imporcie przypisać im tagi.
 
-Tryb `Przygotuj z AI` przyjmuje instrukcję instalacji lub fragment README i prosi OpenAI o sam JSON MCP. Klucz API jest używany tylko dla bieżącego żądania — nie zapisuje się w bibliotece. AI nie importuje ani nie synchronizuje niczego samodzielnie: wygenerowany JSON zawsze przechodzi przez ten sam podgląd, wybór serwerów i klasyfikację sekretów. Prompt zabrania wymyślania poleceń lub tokenów i wymaga zapisu sekretów jako `${NAZWA_ZMIENNEJ}`.
+Tryb `Przygotuj z AI` przyjmuje instrukcję instalacji lub fragment README i prosi OpenAI o sam JSON MCP. Klucz API jest używany tylko dla bieżącego żądania — nie zapisuje się w bibliotece. AI nie importuje ani nie synchronizuje niczego samodzielnie: wygenerowany JSON zawsze przechodzi przez podgląd i wybór serwerów.
 
-Agentbox proponuje również klasyfikację każdej zmiennej i każdego nagłówka jako `Zmienna systemowa`, `Tylko na tym Macu` albo `Zwykła wartość`. Przed importem użytkownik może poprawić każdą propozycję. Automatyczne rozpoznawanie jest heurystyką i nie zastępuje sprawdzenia wartości.
+Wartość zapisana jako `${NAZWA_ZMIENNEJ}` odwołuje się do zmiennej systemowej; każda pozostała wartość jest zapisywana wprost lokalnie w `mcp.json`.
 
 ### Edycja jako JSON
 
-`Biblioteka → MCP → Szczegóły → JSON` pokazuje `command`/`args`/`url`/`env`/`headers` jednego serwera jako zwykły tekst do ręcznej edycji — łącznie z wartościami dotąd oznaczonymi jako sekret, bez maskowania: Agentbox działa lokalnie dla jednej osoby, więc nie ma czego ukrywać na ekranie. Zapis ponownie klasyfikuje każde pole tą samą heurystyką co import; klucz wyglądający na token, hasło czy API key automatycznie zostaje tylko na tym Macu, reszta trafia do backupu Git. Ten tryb zastępuje sekcję `Zmienne i nagłówki`, zamiast pokazywać ją obok — te same wartości nie pojawiają się dwa razy.
+`Biblioteka → MCP → Szczegóły → JSON` pokazuje `command`/`args`/`url`/`env`/`headers` jednego serwera jako zwykły tekst do ręcznej edycji. Wartości pozostają lokalne; `${NAZWA_ZMIENNEJ}` oznacza odczyt ze środowiska systemowego. Ten tryb zastępuje sekcję `Zmienne i nagłówki`, zamiast pokazywać ją obok.
 
 Przycisk `Edytuj wszystko jako JSON` na liście serwerów otwiera osobny, prosty widok dla całej konfiguracji naraz, wypełniony aktualnym stanem: popraw i `Zapisz` — bez kroku analizy i zaznaczania serwerów, bo to edycja własnej konfiguracji, a nie import z zewnątrz. Poprawki nadpisują serwery o tej samej nazwie, reszta zostaje bez zmian. Ta ceremonia (analiza, wybór serwerów, klasyfikacja pól) zostaje tam, gdzie faktycznie jest potrzebna — w `Importuj z JSON`.
 
@@ -200,9 +202,9 @@ swift run agentbox sync all
 
 Sekcja `Backup` — dawne „Odzyskiwanie” ma w niej teraz wspólne miejsce z resztą backupów — pozwala przywrócić snapshot metadanych biblioteki albo pełny backup lokalny. Pliki w folderach projektów odtwarza się ponowną synchronizacją, a czyści przez `Usuń i posprzątaj pliki`. Przed przywróceniem Agentbox automatycznie zachowuje aktualny stan.
 
-### Sekrety
+### Wartości MCP
 
-Sekrety z importu są zapisywane lokalnie w `mcp-secrets.json`. Plik nie jest szyfrowany i nie trafia do backupu Git. Podczas synchronizacji wartości mogą zostać zapisane jawnie w plikach projektu.
+Wartości MCP są zapisywane lokalnie wprost w `mcp.json`, a pełny backup lokalny obejmuje ten plik. Podczas synchronizacji wartości mogą zostać zapisane jawnie w plikach projektu.
 
 Jeśli projekt jest repozytorium Git, Agentbox dopisuje do lokalnego `.git/info/exclude`:
 
@@ -252,45 +254,20 @@ swift run agentbox docs preview website
 swift run agentbox docs sync website
 ```
 
-## Backup Git
-
-Backup zawiera `catalog.json`, `skills/`, `mcp.json` i `docs.json`. Nie zawiera `projects.local.json` z lokalnymi ścieżkami ani `mcp-secrets.json` z sekretami.
-
-```bash
-swift run agentbox backup
-swift run agentbox backup --remote git@github.com:user/agentbox-backup.git
-swift run agentbox backup --message "Aktualizacja skilli i MCP"
-```
-
-Pierwsze wywołanie inicjalizuje Git w folderze biblioteki. `--remote` ustawia `origin`, wykonuje commit zmian i próbuje je wypchnąć.
-
-Po pierwszym ręcznym backupie GUI może automatycznie tworzyć lokalne commity po zmianach skilli, tagów i serwerów MCP. Zmiany wykonane w ciągu 5 sekund są łączone w jeden commit. Automatyczny push do `origin` ma osobny przełącznik i domyślnie jest wyłączony. Projekty, sekrety i sama synchronizacja folderu projektu nie uruchamiają automatycznego backupu.
-
-### Odtworzenie biblioteki
-
-```bash
-swift run agentbox restore --remote git@github.com:user/agentbox-backup.git
-```
-
-Pobiera skille, `catalog.json` i `mcp.json` z repozytorium backupu — na przykład przy konfiguracji nowego Maca. To samo działanie ma `Backup → Odtworzenie biblioteki ze zdalnego repozytorium`. Projekty, lokalne ścieżki i sekrety tego Maca pozostają bez zmian, a przed zapisem powstaje pełny backup lokalny.
-
-Sekrety MCP celowo nie trafiają do tego repozytorium — na nowym Maku serwery wymagające sekretów działają dopiero po ich uzupełnieniu. Najszybciej: skopiuj `mcp-secrets.json` z ostatniego pełnego backupu starego Maca (`<biblioteka>/backups/full/<data>/mcp-secrets.json`) do folderu nowej biblioteki przez AirDrop albo inny bezpieczny kanał — to jeden plik, jednorazowo przy każdym nowym Maku, i sekrety nigdy nie trafiają do Gita.
-
-Przed zapisem danych Agentbox tworzy także lokalny snapshot `catalog.json`, `projects.local.json` i `mcp.json` w `.agentbox-snapshots/`. Zachowuje 10 ostatnich snapshotów; sekrety nie są kopiowane, a folder snapshotów nie trafia do Git.
+Przed zapisem danych Agentbox tworzy także lokalny snapshot `catalog.json`, `projects.local.json` i `mcp.json` w `.agentbox-snapshots/`. Zachowuje 10 ostatnich snapshotów; folder snapshotów nie jest częścią pełnych kopii.
 
 ## Pełny backup lokalny
 
-To jedyny mechanizm chroniący projekty i sekrety — backup Git ich nie obejmuje. Powstaje automatycznie raz dziennie (dopóki włączona jest automatyzacja w `Backup → Automatyzacja`), a `Backup → Utwórz teraz` robi to samo na żądanie, np. przed ryzykowną operacją. Czytelny folder powstaje w `backups/full/` i zawiera skille, źródła Git, projekty, lokalne ścieżki, MCP oraz `mcp-secrets.json`. `backups/` jest wyłączony z Git. Kopia zawiera jawne sekrety i nie jest szyfrowana, dlatego należy chronić ją jak plik z hasłami. Zachowywanych jest 14 ostatnich kopii, starsze są usuwane automatycznie.
+Powstaje automatycznie raz dziennie (dopóki włączona jest automatyzacja w `Backup → Automatyzacja`), a `Backup → Utwórz teraz` robi to samo na żądanie, np. przed ryzykowną operacją. Czytelny folder powstaje w `backups/full/` i zawiera skille, projekty, lokalne ścieżki oraz pełną konfigurację MCP. Kopia zawiera jawne hasła i tokeny, nie jest szyfrowana, dlatego należy chronić ją jak plik z hasłami. Zachowywanych jest 14 ostatnich kopii, starsze są usuwane automatycznie.
 
 ## Ograniczenia i bezpieczeństwo
 
-- `mcp-secrets.json` nie jest szyfrowany.
+- `mcp.json` może zawierać jawne hasła i tokeny oraz nie jest szyfrowany.
 - Podgląd oraz wynikowe pliki MCP mogą zawierać jawne sekrety.
 - Agentbox nie uruchamia ani nie testuje serwerów MCP.
 - Agentbox nie przeprowadza OAuth i nie zarządza sesją klienta.
 - Usunięcie projektu nigdy nie usuwa folderu projektu; sprzątanie plików obejmuje wyłącznie pozycje z manifestów Agentbox.
 - Skille pochodzące z Git są w aplikacji tylko do odczytu.
-- Odtworzenie biblioteki nie przywraca projektów ani sekretów — te dane nie trafiają do backupu Git.
 - Aktualizacje Git są wykonywane wyłącznie na żądanie.
 
 ## Typowy przepływ
@@ -304,4 +281,4 @@ To jedyny mechanizm chroniący projekty i sekrety — backup Git ich nie obejmuj
 7. Sprawdź podgląd i zatwierdź zapis.
 8. Uruchom wybranego klienta w folderze projektu.
 9. Dokończ OAuth w kliencie, jeśli serwer go wymaga.
-10. Wykonaj backup biblioteki do Git.
+10. Utwórz pełny backup lokalny biblioteki.

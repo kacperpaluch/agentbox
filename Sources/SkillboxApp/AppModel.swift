@@ -9,7 +9,6 @@ import SkillboxCore
     @Published var selection: String?
     @Published var markdown = ""
     @Published var message = ""
-    @Published var backupStatus = ""
     @Published var isWorking = false
     @Published var updateAvailable = Set<String>()
     @Published var hasCheckedUpdates = false
@@ -36,7 +35,6 @@ import SkillboxCore
     /// The UI then explains the situation instead of showing an empty library that looks like
     /// lost data.
     @Published var serviceError: String?
-    private var automaticBackupTask: Task<Void, Never>?
     private var lastActivationScan = Date.distantPast
     private var lastFullBackupCheck = Date.distantPast
     var service: SkillboxService?
@@ -147,6 +145,33 @@ import SkillboxCore
     } }
     func checkUpdates() async { isWorking = true; defer { isWorking = false }; do { updateAvailable = try await service?.checkUpdates() ?? []; hasCheckedUpdates = true; message = updateAvailable.isEmpty ? "Wszystkie skille są aktualne" : "Dostępne aktualizacje: \(updateAvailable.count)" } catch { message = error.localizedDescription } }
     func update(_ id: String) async { await perform(autoBackup: true) { _ = try await self.service?.update(skillID: id); self.updateAvailable.remove(id); self.message = "Zaktualizowano \(id)" } }
+    /// Mirrors `agentbox update --all` in the GUI. Updating one skill is intentionally independent
+    /// of the next: a temporary problem with one repository must not prevent the remaining skills
+    /// from receiving their available revisions.
+    func updateAllAvailable() async {
+        let ids = updateAvailable.sorted()
+        guard !ids.isEmpty else { return }
+
+        isWorking = true
+        defer { isWorking = false }
+        var updated: [String] = []
+        var failures: [String] = []
+        for id in ids {
+            do {
+                _ = try await service?.update(skillID: id)
+                updated.append(id)
+                updateAvailable.remove(id)
+            } catch {
+                failures.append("\(id): \(error.localizedDescription)")
+            }
+        }
+        await reload()
+        message = failures.isEmpty
+            ? "Zaktualizowano \(updated.count) skilli"
+            : "Zaktualizowano \(updated.count) z \(ids.count) skilli. Nie udało się: \(failures.joined(separator: "; "))"
+        record(failures.isEmpty ? .success : .error, message)
+        if !updated.isEmpty { scheduleAutomaticBackup() }
+    }
     func saveSkillMarkdown(_ id: String, content: String) async -> Bool {
         isWorking = true; defer { isWorking = false }
         do {
@@ -210,8 +235,6 @@ import SkillboxCore
     func adoptSkills(_ items: [AdoptableSkill]) async {
         await perform { let adopted = try await self.service?.adoptSkills(items) ?? []; self.message = "Przejęto \(adopted.count) skilli do biblioteki" }
     }
-    func loadBackupStatus() async { backupStatus = (try? await service?.backupStatus()) ?? "Nie można odczytać statusu." }
-    func backup(remote: String) async { await perform { self.message = try await self.service?.backup(remote: remote.isEmpty ? nil : remote) ?? "Gotowe" }; await loadBackupStatus() }
     func loadFullBackups() async { do { fullBackups = try await service?.fullBackups() ?? [] } catch { reportError(error) } }
     func createFullBackup() async { await perform { guard let service = self.service else { throw SkillboxError.commandFailed("Brak usługi") }; let backup = try await service.createFullBackup(applicationVersion: AppVersion.short); self.message = "Utworzono pełny backup: \(backup.name)" }; await loadFullBackups() }
     func restoreFullBackup(_ backup: FullBackupInfo) async { await perform { try await self.service?.restoreFullBackup(named: backup.name); self.message = "Przywrócono pełny backup: \(backup.name)" }; await loadFullBackups() }
@@ -423,6 +446,42 @@ import SkillboxCore
             return []
         }
     }
+    /// The GUI counterpart of `agentbox refresh`: update skills, make a local backup, then apply
+    /// the already transactional all-project synchronization.
+    func refresh() async {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
+            let updates = try await service.checkUpdates().sorted()
+            for id in updates { _ = try await service.update(skillID: id) }
+            updateAvailable.subtract(updates)
+
+            let localBackup = try await service.createFullBackup(applicationVersion: AppVersion.short)
+            let outcomes = try await service.syncAllProjectsTransactions()
+
+            let synced = outcomes.filter { $0.state == .synced }.count
+            let unchanged = outcomes.filter { $0.state == .upToDate }.count
+            let failed = outcomes.filter { outcome in
+                if case .failed = outcome.state { return true }
+                return false
+            }
+            let skipped = outcomes.filter { $0.state == .skipped }.count
+            message = "Odświeżono \(updates.count) skilli, utworzono backup \(localBackup.name), zsynchronizowano \(synced) projektów"
+            if unchanged > 0 { message += ", bez zmian \(unchanged)" }
+            if !failed.isEmpty || skipped > 0 { message += ", wymaga uwagi: \(failed.count) błędów, \(skipped) pominiętych" }
+            record(failed.isEmpty && skipped == 0 ? .success : .error, message)
+            for outcome in failed {
+                if case .failed(let reason) = outcome.state { record(.error, "\(outcome.plan.project.name): \(reason)") }
+            }
+            await reload()
+            await loadFullBackups()
+        } catch {
+            await reload()
+            message = "Nie ukończono odświeżania: \(error.localizedDescription)"
+            record(.error, message)
+        }
+    }
     func syncGlobal() async -> Bool {
         isWorking = true; defer { isWorking = false }
         do {
@@ -436,11 +495,6 @@ import SkillboxCore
     // like every other place — only the preview stays a call of its own, because it inspects the
     // user's skill directories rather than the library.
     func previewGlobalSync() async throws -> [SkillSyncPreview] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewGlobalSync() }
-    func restoreLibraryFromRemote(_ remote: String) async {
-        await perform { self.message = try await self.service?.restoreLibraryFromRemote(remote, applicationVersion: AppVersion.short) ?? "Gotowe" }
-        selection = nil
-        await reload(); await loadBackupStatus(); await loadFullBackups()
-    }
     func analyzeMCP(_ text: String, singleServerName: String? = nil) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.analyzeMCPJSON(text, singleServerName: singleServerName) }
     func generateMCP(_ instructions: String, apiKey: String, model: String) async throws -> String { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.generateMCPConfiguration(instructions: instructions, apiKey: apiKey, model: model) }
     func importMCP(_ text: String, serverNames: Set<String>, classifications: [String: MCPValueClassification], singleServerName: String? = nil) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text, serverNames: serverNames, classifications: classifications, singleServerName: singleServerName); await reload(); scheduleAutomaticBackup(); message = "Zaimportowano \(result.servers.count) serwerów MCP"; record(.success, message); return result }
@@ -473,14 +527,8 @@ import SkillboxCore
     private func record(_ kind: OperationLogEntry.Kind, _ text: String) { operationLog.insert(OperationLogEntry(kind: kind, text: text), at: 0); if operationLog.count > 100 { operationLog.removeLast(operationLog.count - 100) } }
     func reportError(_ error: Error) { message = error.localizedDescription; record(.error, message) }
     private func scheduleAutomaticBackup() {
-        guard UserDefaults.standard.object(forKey: "AgentboxAutoBackup") == nil || UserDefaults.standard.bool(forKey: "AgentboxAutoBackup") else { return }
-        automaticBackupTask?.cancel()
-        automaticBackupTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(5))
-            guard !Task.isCancelled, let self, let service = self.service else { return }
-            do { if let result = try await service.automaticBackup(push: UserDefaults.standard.bool(forKey: "AgentboxAutoPush")) { self.backupStatus = "Automatyczny backup: \(result)" } }
-            catch { self.message = "Automatyczny backup: \(error.localizedDescription)" }
-        }
+        // Full local backups are created at most once a day when the app becomes active.
+        // Per-edit Git commits are intentionally gone.
     }
     static func csv(_ text: String) -> [String] { text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty } }
 }

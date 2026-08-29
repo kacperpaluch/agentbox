@@ -21,7 +21,7 @@ final class MCPTests: AgentboxTestCase {
         XCTAssertEqual(analyzed.servers.first?.command, "uvx")
         XCTAssertEqual(analyzed.servers.first?.arguments, ["--from", "mcp-portainer~=2.45.0", "mcp-portainer"])
         XCTAssertEqual(analyzed.servers.first?.literalEnvironment?["PORTAINER_URL"], "https://twoj-portainer.pl")
-        XCTAssertNotNil(analyzed.servers.first?.secretEnvironment?["PORTAINER_API_KEY"])
+        XCTAssertEqual(analyzed.servers.first?.literalEnvironment?["PORTAINER_API_KEY"], "ptr_dummy-secret")
 
         let imported = try await service.importMCPJSON(json, singleServerName: "portainer")
         XCTAssertEqual(imported.servers.map(\.name), ["portainer"])
@@ -61,8 +61,6 @@ final class MCPTests: AgentboxTestCase {
             let expected = try String(contentsOf: expectedURL, encoding: .utf8)
             XCTAssertEqual(preview.content.trimmingCharacters(in: .whitespacesAndNewlines), expected.trimmingCharacters(in: .whitespacesAndNewlines), "Niezgodny format \(preview.tool)")
         }
-        let attributes = try FileManager.default.attributesOfItem(atPath: root.appending(path: "data/mcp-secrets.json").path)
-        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
     }
     func testMCPApplyRollsBackEarlierFileWhenLaterWriteFails() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
@@ -147,23 +145,17 @@ final class MCPTests: AgentboxTestCase {
         catch let error as SkillboxError { XCTAssertTrue(error.localizedDescription.contains("Konflikt MCP")) }
         XCTAssertEqual(try String(contentsOf: projectURL.appending(path: ".mcp.json"), encoding: .utf8), manual)
     }
-    func testImportClassificationCanBeOverriddenByUser() async throws {
+    func testImportKeepsLiteralValuesInLocalConfiguration() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let service = try SkillboxService(root: root)
         let json = #"{"custom":{"command":"tool","env":{"CREDENTIAL":"hidden-value","TOKEN_LIMIT":"4096"}}}"#
         let analyzed = try await service.analyzeMCPJSON(json)
         XCTAssertEqual(analyzed.fields.first(where: { $0.key == "CREDENTIAL" })?.classification, .literal)
-        XCTAssertEqual(analyzed.fields.first(where: { $0.key == "TOKEN_LIMIT" })?.classification, .secret)
-        let overrides: [String: MCPValueClassification] = [
-            MCPImportField.fieldID(serverName: "custom", location: .environment, key: "CREDENTIAL"): .secret,
-            MCPImportField.fieldID(serverName: "custom", location: .environment, key: "TOKEN_LIMIT"): .literal
-        ]
-        let imported = try await service.importMCPJSON(json, classifications: overrides)
+        XCTAssertEqual(analyzed.fields.first(where: { $0.key == "TOKEN_LIMIT" })?.classification, .literal)
+        let imported = try await service.importMCPJSON(json)
         let server = try XCTUnwrap(imported.servers.first)
-        XCTAssertNotNil(server.secretEnvironment?["CREDENTIAL"])
+        XCTAssertEqual(server.literalEnvironment?["CREDENTIAL"], "hidden-value")
         XCTAssertEqual(server.literalEnvironment?["TOKEN_LIMIT"], "4096")
-        let secrets = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: root.appending(path: "mcp-secrets.json")))
-        XCTAssertEqual(secrets["mcp/custom/env/CREDENTIAL"], "hidden-value")
     }
     func testProjectSelectsMCPServersBothDirectlyAndByTag() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
@@ -221,7 +213,7 @@ final class MCPTests: AgentboxTestCase {
         let editedCommand = exported.replacingOccurrences(of: "\"npx\"", with: "\"npx2\"")
         let updated = try await service.updateMCPServerJSON(server.id, name: "api", json: editedCommand, enabled: true, tags: ["seo"])
         XCTAssertEqual(updated.command, "npx2")
-        XCTAssertEqual(updated.secretEnvironment?["API_KEY"], "mcp/api/env/API_KEY")
+        XCTAssertEqual(updated.literalEnvironment?["API_KEY"], "sk-secret")
         let managedAfterUpdate = try await service.managedFields(serverID: server.id)
         XCTAssertEqual(managedAfterUpdate.first { $0.key == "API_KEY" }?.value, "sk-secret")
 
@@ -231,20 +223,16 @@ final class MCPTests: AgentboxTestCase {
         XCTAssertEqual(final.literalEnvironment?["REGION"], "eu-west-1")
         XCTAssertNil(final.secretEnvironment)
     }
-    func testReimportingServerDropsSecretAccountsOfTheDefinitionItReplaces() async throws {
+    func testReimportingServerReplacesItsLocalValues() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let service = try SkillboxService(root: root)
         let server = MCPServer(name: "api", transport: .http, url: "https://example.test/mcp")
         try await service.saveMCPServer(server)
-        try await service.saveMCPServer(server, managedFields: [MCPManagedField(location: .header, key: "Authorization", value: "dummy-old", classification: .secret)])
-        let editorAccount = try await service.mcpConfiguration().servers[0].secretHeaders?["Authorization"]
-        XCTAssertNotNil(editorAccount)
+        try await service.saveMCPServer(server, managedFields: [MCPManagedField(location: .header, key: "Authorization", value: "dummy-old", classification: .literal)])
 
         _ = try await service.importMCPJSON(#"{"api":{"type":"http","url":"https://example.test/mcp","headers":{"Authorization":"Bearer dummy-new"}}}"#)
-        let secrets = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: root.appending(path: "mcp-secrets.json")))
-        XCTAssertFalse(secrets.values.contains("dummy-old"), "stary sekret został osierocony: \(secrets.keys.sorted())")
-        XCTAssertTrue(secrets.values.contains("dummy-new"))
-        XCTAssertEqual(secrets.count, 1)
+        let updated = try await service.mcpConfiguration().servers.first
+        XCTAssertEqual(updated?.literalHeaders?["Authorization"], "Bearer dummy-new")
     }
     func testCodexConflictIsDetectedForQuotedTableKey() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)

@@ -6,6 +6,18 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-08-29
+
+### Dodano
+
+- Biblioteka skilli pokazuje po sprawdzeniu aktualizacji przycisk `Aktualizuj <liczba>`, który pobiera wszystkie wykryte rewizje Git. Nieudane repozytorium nie zatrzymuje aktualizacji pozostałych skilli, a wynik jest zapisany w historii operacji.
+- `Backup → Odśwież wszystko` jest GUI-owym odpowiednikiem `agentbox refresh`: aktualizuje skille, tworzy pełny backup lokalny, a następnie transakcyjnie synchronizuje wszystkie projekty.
+- MCP ma jeden prosty model wartości: `${NAZWA}` oznacza zmienną systemową, a wszystkie pozostałe wartości — także hasła i tokeny — są przechowywane jawnie lokalnie w `mcp.json` i pełnym backupie lokalnym.
+
+### Usunięto
+
+- Backup Git oraz zdalne odtwarzanie biblioteki z interfejsu i CLI. `agentbox refresh` używa wyłącznie pełnego backupu lokalnego.
+
 ## [0.17.1] - 2026-08-29
 
 ### Naprawiono

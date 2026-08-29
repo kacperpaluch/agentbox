@@ -77,7 +77,17 @@ struct SkillsPane: View {
             }
             Spacer()
             filterMenu
+            if !model.updateAvailable.isEmpty {
+                Button { Task { await model.updateAllAvailable() } } label: {
+                    Label("Aktualizuj \(model.updateAvailable.count)", systemImage: "arrow.down.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+                .disabled(model.isWorking)
+                .help("Pobierz wszystkie wykryte aktualizacje skilli")
+            }
             Button { Task { await model.checkUpdates() } } label: { Image(systemName: "arrow.triangle.2.circlepath") }.help("Sprawdź aktualizacje")
+                .disabled(model.isWorking)
             Text("\(filtered.count) z \(model.skills.count)").rowMetadata()
         }
     }

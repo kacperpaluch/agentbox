@@ -104,10 +104,9 @@ Synchronizacja zatrzymuje się, jeśli w katalogu docelowym istnieje katalog ski
 
 ```bash
 agentbox refresh
-agentbox refresh --remote git@github.com:user/agentbox-backup.git --message "Aktualizacja biblioteki"
 ```
 
-`refresh` wykonuje kolejno: sprawdzenie i pobranie aktualizacji skilli Git, pełny backup lokalny, commit i push backupu Git oraz transakcyjną synchronizację skilli i MCP we wszystkich projektach. Push jest obowiązkowy; jeśli biblioteka nie ma skonfigurowanego `origin`, podaj `--remote`. Błąd zatrzymuje workflow, a synchronizacja aktualnie przetwarzanego projektu korzysta z automatycznego rollbacku. Projekty zakończone wcześniej pozostają zsynchronizowane.
+`refresh` wykonuje kolejno: sprawdzenie i pobranie aktualizacji skilli Git, pełny backup lokalny oraz transakcyjną synchronizację skilli i MCP we wszystkich projektach. Błąd zatrzymuje workflow, a synchronizacja aktualnie przetwarzanego projektu korzysta z automatycznego rollbacku. Projekty zakończone wcześniej pozostają zsynchronizowane.
 
 Przebieg kończy blok `PODSUMOWANIE` z bilansem całości:
 
@@ -116,7 +115,6 @@ Przebieg kończy blok `PODSUMOWANIE` z bilansem całości:
 PODSUMOWANIE
   Skille          zaktualizowano 1: docx
   Backup lokalny  2026-08-26T06-24-18.361Z-2EA9FA54
-  Backup Git      To github.com:user/repo.git · abc..def  main -> main
   Projekty        4 — ✓ 1 zsynchronizowano, = 1 bez zmian, ✗ 1 cofnięto, – 1 pominięto
   Wymaga uwagi:
     ✗ gamma — niezarządzany katalog .claude/skills/docx
@@ -195,25 +193,9 @@ agentbox docs delete standard
 
 Zsynchronizowany dokument ląduje jako `AGENTS.md` (pełna treść) i `CLAUDE.md` (wygenerowany import `@AGENTS.md`) w katalogu głównym projektu, niezależnie od tego, jakie narzędzia ma projekt zaznaczone.
 
-## Odtworzenie biblioteki
+## Pełny backup lokalny
 
-```bash
-agentbox restore --remote git@github.com:user/agentbox-backup.git
-```
-
-Pobiera skille, `catalog.json`, `mcp.json` i `docs.json` z repozytorium backupu — na przykład przy konfiguracji nowego Maca. Projekty, lokalne ścieżki i sekrety tego Maca pozostają bez zmian. Przed zapisem powstaje pełny backup lokalny, a `.git` klona jest przejmowany, więc kolejne `agentbox backup` wypychają do tego samego repozytorium.
-
-Sekrety MCP celowo nie trafiają do tego repozytorium, więc serwery, które ich wymagają, ruszą na nowym Maku dopiero po ich uzupełnieniu. Najszybciej: skopiuj `mcp-secrets.json` z ostatniego pełnego backupu starego Maca (`<biblioteka>/backups/full/<data>/mcp-secrets.json`) do folderu nowej biblioteki przez AirDrop albo inny bezpieczny kanał.
-
-## Backup Git
-
-```bash
-agentbox backup
-agentbox backup --message "Aktualizacja konfiguracji"
-agentbox backup --remote git@github.com:user/agentbox-backup.git
-```
-
-Backup Git nie zawiera projektów, lokalnych ścieżek, sekretów ani folderu `backups/`. Pełny backup lokalny ze skillami, projektami i sekretami jest dostępny w sekcji `Backup` aplikacji.
+`agentbox refresh` tworzy pełną, lokalną kopię biblioteki przed synchronizacją. Zawiera ona skille, projekty, konfigurację MCP oraz wszystkie zapisane wartości. Kopie nie są szyfrowane — chroń folder biblioteki jak plik z hasłami.
 
 ## Kody zakończenia i błędy
 

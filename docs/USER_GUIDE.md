@@ -4,7 +4,7 @@
 
 Wersja DMG zawiera aplikację oraz polecenie terminalowe. Po przeniesieniu Agentbox do folderu `Aplikacje` otwórz `Ustawienia → Wiersz poleceń (CLI)` i wybierz `Zainstaluj CLI`. Agentbox utworzy dowiązanie `/usr/local/bin/agentbox`; macOS może poprosić o hasło administratora. Symlink wskazuje plik wewnątrz aplikacji, dlatego aktualizacja Agentbox aktualizuje również CLI.
 
-Po instalacji otwórz nowe okno Terminala i wykonaj np. `agentbox project list`. Polecenie `agentbox update --all` sprawdza i pobiera wszystkie dostępne aktualizacje skilli Git do biblioteki. Nie kopiuje ich automatycznie do projektów — użyj potem `agentbox sync project <nazwa>` albo `Synchronizuj wszystko` w GUI. Komenda `agentbox refresh` łączy aktualizację skilli, pełny backup lokalny, backup Git i transakcyjną synchronizację wszystkich projektów w jeden workflow. Pełna lista poleceń znajduje się w [instrukcji CLI](CLI.md).
+Po instalacji otwórz nowe okno Terminala i wykonaj np. `agentbox project list`. Polecenie `agentbox update --all` sprawdza i pobiera wszystkie dostępne aktualizacje skilli Git do biblioteki. Nie kopiuje ich automatycznie do projektów — użyj potem `agentbox sync project <nazwa>` albo `Synchronizuj wszystko` w GUI. Komenda `agentbox refresh` łączy aktualizację skilli, pełny backup lokalny i transakcyjną synchronizację wszystkich projektów w jeden workflow. Pełna lista poleceń znajduje się w [instrukcji CLI](CLI.md).
 
 ## Nawigacja
 
@@ -14,7 +14,7 @@ Pasek boczny ma cztery pozycje, odpowiadające dwóm pojęciom: rzeczom, które 
 | --- | --- |
 | `Biblioteka` | skille, serwery MCP i dokumenty — jedna lista z przełącznikiem typu, wspólnym wyszukiwaniem i filtrem tagów |
 | `Projekty` | projekty, foldery nadrzędne oraz `Wszystkie sesje` (ten Mac) jako pierwszy wiersz; stąd otwiera się też `Serwery klientów…` |
-| `Backup` | backup Git, pełne backupy lokalne i snapshoty biblioteki |
+| `Backup` | pełne backupy lokalne i snapshoty biblioteki |
 | `Ustawienia` | folder biblioteki, aktualizacje, CLI |
 
 Wcześniej tych pozycji było osiem. Pięć z nich to były te same dwa pojęcia pokrojone po typie i po zasięgu: `Skille`, `MCP` i `Dokumenty` to jedna biblioteka z trzema rodzajami wpisu, a `Globalne` to miejsce, nie osobny ekran. Żadna funkcja nie zniknęła — zmieniła się tylko oś podziału.
@@ -26,7 +26,7 @@ Wcześniej tych pozycji było osiem. Pięć z nich to były te same dwa pojęcia
 3. Przypisz skille bezpośrednio lub przez tagi dynamiczne.
 4. Opcjonalnie zaimportuj serwery MCP i przypisz im tagi.
 5. W projekcie wybierz `Synchronizuj wszystko`, sprawdź plan zmian i zatwierdź.
-6. Skonfiguruj lokalny lub zdalny backup Git biblioteki.
+6. W `Backup` włącz automatyczne pełne kopie lokalne lub utwórz kopię ręcznie.
 
 ## Aktualizacje aplikacji
 
@@ -36,7 +36,7 @@ Numer zainstalowanej wersji i buildu jest stale widoczny na dole paska bocznego.
 
 Każdy obraz aktualizacji jest weryfikowany kluczem EdDSA osadzonym w aplikacji. Prywatny klucz wydawcy pozostaje w macOS Keychain i nie jest przechowywany w repozytorium. Ponieważ wydanie nie ma jeszcze podpisu Developer ID ani notaryzacji Apple, Gatekeeper może wymagać zatwierdzenia aplikacji przez `Otwórz` z menu kontekstowego. Wersję 0.3.0 należy zainstalować ręcznie; mechanizm automatyczny obsłuży następne wydania.
 
-## Klasyfikacja wartości MCP
+## Wartości MCP
 
 Podczas analizy JSON Agentbox proponuje typ każdej zmiennej środowiskowej i każdego nagłówka. Przed importem można zmienić propozycję.
 
@@ -82,6 +82,10 @@ Tak utworzony skill jest lokalny, więc później można go poprawiać w aplikac
 Skille dodane z dysku i napisane w aplikacji można edytować bezpośrednio w aplikacji: wybierz skill i kliknij `Edytuj SKILL.md`. Zapis aktualizuje kopię w bibliotece i od razu oznacza wszystkie projekty z tym skillem jako nieaktualne, więc widać, gdzie trzeba uruchomić synchronizację.
 
 Skille pochodzące z Git są tylko do odczytu. `Aktualizuj` zastępuje taki skill zawartością repozytorium, więc zmiana zrobiona w aplikacji zniknęłaby przy najbliższej aktualizacji. Aby zmienić taki skill, zmodyfikuj repozytorium źródłowe.
+
+W `Biblioteka → Skille` ikona odświeżania najpierw tylko sprawdza dostępne rewizje. Gdy je znajdzie, obok pojawia się pomarańczowy przycisk `Aktualizuj <liczba>` — pobiera wszystkie wykryte aktualizacje do biblioteki. Nie synchronizuje on automatycznie projektów; po aktualizacji użyj `Synchronizuj` dla wybranego projektu albo `Synchronizuj wszystkie projekty`.
+
+Jeżeli chcesz wykonać cały proces jednym kliknięciem, użyj `Backup → Odśwież wszystko`. To odpowiednik `agentbox refresh`: sprawdza i pobiera aktualizacje skilli, tworzy pełny backup lokalny, a następnie transakcyjnie synchronizuje wszystkie projekty. Wynik, także błędy poszczególnych projektów, zostaje w historii operacji.
 
 ### Przejmowanie skilli z projektu
 

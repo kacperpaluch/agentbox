@@ -138,7 +138,7 @@ struct MCPServerEditor: View {
     var body: some View { VStack(spacing: 0) { ScrollView { Form { Text("Serwer MCP").font(.title2.bold()); TextField("Nazwa techniczna", text: $name); HStack { TextField("Tagi, oddzielone przecinkami", text: $tags); ExistingTagMenu(tags: existingTags, text: $tags) }; Toggle("Włączony", isOn: $enabled)
         if isExisting { Picker("Widok", selection: $editingJSON) { Text("Formularz").tag(false); Text("JSON").tag(true) }.pickerStyle(.segmented).onChange(of: editingJSON) { if editingJSON { Task { jsonText = await model.exportMCPServerJSON(original.id) } } } }
         if editingJSON && isExisting {
-            Text("Pełna konfiguracja tego serwera, wartości wprost — łącznie z sekretami. ${VAR} to odczyt zmiennej systemowej; klucze wyglądające na token/hasło/API key automatycznie zostają tylko na tym Macu, reszta trafia do backupu Git.").font(.caption).foregroundStyle(.secondary)
+            Text("Pełna konfiguracja tego serwera, wartości wprost. Zapis `${VAR}` oznacza odczyt zmiennej systemowej; pozostałe wartości są przechowywane lokalnie w bibliotece.").font(.caption).foregroundStyle(.secondary)
             TextEditor(text: $jsonText).font(.system(.body, design: .monospaced)).frame(height: 340).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
         } else {
             Picker("Transport", selection: $transport) { Text("Lokalny STDIO").tag(MCPTransport.stdio); Text("Zdalny HTTP").tag(MCPTransport.http) }.pickerStyle(.segmented)
@@ -147,7 +147,7 @@ struct MCPServerEditor: View {
         // The JSON view already shows env/header values in plain text, so showing this section too
         // would just be the same fields twice in two formats — it appears only in form mode.
         if !(editingJSON && isExisting) {
-            GroupBox("Zmienne i nagłówki") { VStack(alignment: .leading, spacing: 10) { Text("Wartości widać wprost — to lokalna apka na tym Macu. Typ pola decyduje, czy wartość trafia do backupu Git: „Tylko na tym Macu” nigdy nie wychodzi poza mcp-secrets.json.").font(.caption).foregroundStyle(.secondary); ForEach($fields) { $field in MCPManagedFieldRow(field: $field) { fields.removeAll { $0.id == field.id } } }; HStack { Button("Dodaj zmienną") { fields.append(MCPManagedField(location: .environment, key: "", classification: .environment)) }; Button("Dodaj nagłówek") { fields.append(MCPManagedField(location: .header, key: "", classification: .environment)) } } }.padding(7) }
+            GroupBox("Zmienne i nagłówki") { VStack(alignment: .leading, spacing: 10) { Text("Wartości są przechowywane lokalnie wprost. Aby użyć zmiennej systemowej, wpisz `${NAZWA_ZMIENNEJ}`.").font(.caption).foregroundStyle(.secondary); ForEach($fields) { $field in MCPManagedFieldRow(field: $field) { fields.removeAll { $0.id == field.id } } }; HStack { Button("Dodaj zmienną") { fields.append(MCPManagedField(location: .environment, key: "", classification: .literal)) }; Button("Dodaj nagłówek") { fields.append(MCPManagedField(location: .header, key: "", classification: .literal)) } } }.padding(7) }
         }
     }.padding(24) }
     // Pinned below the scrolling form, so the action stays reachable on any display.
@@ -164,7 +164,7 @@ struct MCPServerEditor: View {
 struct MCPManagedFieldRow: View {
     @Binding var field: MCPManagedField
     let onDelete: () -> Void
-    var body: some View { HStack { Picker("Miejsce", selection: $field.location) { Text("Zmienna").tag(MCPImportField.Location.environment); Text("Nagłówek").tag(MCPImportField.Location.header) }.labelsHidden().frame(width: 105); TextField("Nazwa", text: $field.key).frame(minWidth: 120); Picker("Typ", selection: $field.classification) { ForEach(MCPValueClassification.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.labelsHidden().frame(width: 260); TextField(field.classification == .environment ? "Nazwa zmiennej systemowej" : "Wartość", text: $field.value); Button(role: .destructive, action: onDelete) { Image(systemName: "trash") } }.onChange(of: field.classification) { if field.classification == .environment && field.value.isEmpty { field.value = field.key } } }
+    var body: some View { HStack { Picker("Miejsce", selection: $field.location) { Text("Zmienna").tag(MCPImportField.Location.environment); Text("Nagłówek").tag(MCPImportField.Location.header) }.labelsHidden().frame(width: 105); TextField("Nazwa", text: $field.key).frame(minWidth: 120); TextField("Wartość lub ${ZMIENNA}", text: $field.value); Button(role: .destructive, action: onDelete) { Image(systemName: "trash") } } }
 }
 struct MCPImportView: View {
     @Environment(\.dismiss) private var dismiss
@@ -174,7 +174,6 @@ struct MCPImportView: View {
     @State private var error = ""
     @State private var working = false
     @State private var selected = Set<String>()
-    @State private var classifications: [String: MCPValueClassification] = [:]
     @State private var showFormatHelp = false
     @State private var singleServerName = ""
     @State private var useAI = false
@@ -193,7 +192,7 @@ struct MCPImportView: View {
         }
         if useAI {
             HStack { SecureField("Klucz API OpenAI", text: $openAIKey); TextField("Model", text: $openAIModel).frame(width: 160) }
-            Text("Klucz jest używany wyłącznie dla tego żądania i nie jest zapisywany. Treść instrukcji zostanie wysłana do OpenAI; wynik nie zostanie zapisany automatycznie — najpierw go przejrzysz i sklasyfikujesz sekrety.").font(.caption).foregroundStyle(.orange)
+            Text("Klucz jest używany wyłącznie dla tego żądania i nie jest zapisywany. Treść instrukcji zostanie wysłana do OpenAI; wynik nie zostanie zapisany automatycznie — najpierw go przejrzysz.").font(.caption).foregroundStyle(.orange)
         }
         if showFormatHelp { formatHelp }
         TextEditor(text: $source).font(.system(.body, design: .monospaced)).frame(minHeight: 220).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
@@ -205,17 +204,12 @@ struct MCPImportView: View {
                 HStack { Text("\(summary.servers.count) serwerów · \(summary.stdioCount) lokalnych · \(summary.httpCount) HTTP"); Spacer(); Button("Wszystkie") { selected = Set(summary.servers.map(\.name)) }.buttonStyle(.link); Button("Wyczyść") { selected.removeAll() }.buttonStyle(.link) }
                 ForEach(summary.servers) { server in Toggle(isOn: Binding(get: { selected.contains(server.name) }, set: { if $0 { selected.insert(server.name) } else { selected.remove(server.name) } })) { HStack { Image(systemName: server.transport == .stdio ? "terminal" : "globe"); Text(server.name); Spacer() } }.toggleStyle(.checkbox) }
             }.padding(6).frame(maxWidth: .infinity, alignment: .leading) }
-            if !summary.fields.isEmpty { GroupBox("Klasyfikacja wartości") { VStack(alignment: .leading, spacing: 8) {
-                Text("Agentbox zaproponował typ każdej wartości. Sprawdź go przed importem — zwykłe wartości trafiają do backupu Git, sekrety lokalne nie.").font(.caption).foregroundStyle(.secondary)
-                ForEach(summary.fields.filter { selected.contains($0.serverName) }) { field in HStack { VStack(alignment: .leading, spacing: 2) { Text("\(field.serverName) · \(field.key)").font(.callout.weight(.medium)); Text(field.location == .header ? "Nagłówek" : "Zmienna środowiskowa").font(.caption2).foregroundStyle(.secondary) }; Spacer(); Text(field.displayValue).font(.system(.caption, design: .monospaced)).lineLimit(1).frame(maxWidth: 170, alignment: .trailing); Picker("Typ", selection: classificationBinding(field)) { ForEach(MCPValueClassification.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.labelsHidden().frame(width: 175) }.padding(.vertical, 2) }
-            }.padding(6) } }
         }
         if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
     }.padding(24) }; Divider(); HStack { if working { ProgressView() }; if summary != nil { Text(needsReanalysis ? "Zmień nazwę → Analizuj ponownie" : "Wybrano: \(selected.count)").font(.caption).foregroundStyle(needsReanalysis ? .orange : .secondary) }; Spacer(); Button("Anuluj") { dismiss() }; Button(useAI ? "Przygotuj z AI" : "Analizuj") { Task { await prepare() } }.disabled(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (useAI && openAIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) || working); Button("Importuj wybrane") { Task { await importNow() } }.buttonStyle(.borderedProminent).disabled(summary == nil || selected.isEmpty || needsReanalysis || working) }.padding(16).background(.bar)
     }.sheetFrame(width: 760, height: 680) }
-    private func prepare() async { working = true; error = ""; summary = nil; selected.removeAll(); classifications.removeAll(); defer { working = false }; do { if useAI { source = try await model.generateMCP(source, apiKey: openAIKey, model: openAIModel) }; let analyzed = try await model.analyzeMCP(source, singleServerName: singleServerName.isEmpty ? nil : singleServerName); summary = analyzed; if analyzed.isSingleServerInput, singleServerName.isEmpty { singleServerName = analyzed.servers.first?.name ?? "" }; selected = Set(analyzed.servers.map(\.name)); classifications = Dictionary(uniqueKeysWithValues: analyzed.fields.map { ($0.id, $0.classification) }) } catch { self.error = error.localizedDescription; model.reportError(error) } }
-    private func importNow() async { working = true; error = ""; defer { working = false }; do { _ = try await model.importMCP(source, serverNames: selected, classifications: classifications, singleServerName: summary?.isSingleServerInput == true ? singleServerName : nil); dismiss() } catch { self.error = error.localizedDescription; model.reportError(error) } }
-    private func classificationBinding(_ field: MCPImportField) -> Binding<MCPValueClassification> { Binding(get: { classifications[field.id] ?? field.classification }, set: { classifications[field.id] = $0 }) }
+    private func prepare() async { working = true; error = ""; summary = nil; selected.removeAll(); defer { working = false }; do { if useAI { source = try await model.generateMCP(source, apiKey: openAIKey, model: openAIModel) }; let analyzed = try await model.analyzeMCP(source, singleServerName: singleServerName.isEmpty ? nil : singleServerName); summary = analyzed; if analyzed.isSingleServerInput, singleServerName.isEmpty { singleServerName = analyzed.servers.first?.name ?? "" }; selected = Set(analyzed.servers.map(\.name)) } catch { self.error = error.localizedDescription; model.reportError(error) } }
+    private func importNow() async { working = true; error = ""; defer { working = false }; do { _ = try await model.importMCP(source, serverNames: selected, classifications: [:], singleServerName: summary?.isSingleServerInput == true ? singleServerName : nil); dismiss() } catch { self.error = error.localizedDescription; model.reportError(error) } }
     private func chooseFile() { let panel = NSOpenPanel(); panel.allowedContentTypes = [.json, .plainText]; panel.canChooseFiles = true; panel.canChooseDirectories = false; if panel.runModal() == .OK, let url = panel.url { do { source = try String(contentsOf: url, encoding: .utf8); summary = nil } catch { self.error = error.localizedDescription } } }
 
     /// The three shapes `analyzeMCP` actually accepts — collapsed by default so it does not compete

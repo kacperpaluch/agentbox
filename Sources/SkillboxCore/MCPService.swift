@@ -19,19 +19,16 @@ extension SkillboxService {
         try await store.save(config)
     }
 
-    /// Every field with its real value, secrets included in plain text — Agentbox runs locally for
-    /// one person, so the editor can just show what is actually stored instead of masking it.
+    /// Every MCP value lives in the local library configuration. `${NAME}` is the only special
+    /// form: it forwards a system environment variable instead of storing a literal value.
     public func managedFields(serverID: UUID) async throws -> [MCPManagedField] {
         let config = try await store.mcpConfiguration()
         guard let server = config.servers.first(where: { $0.id == serverID }) else { throw SkillboxError.mcpConflict("serwer MCP nie istnieje") }
-        let secrets = try await store.secrets()
         var fields: [MCPManagedField] = []
-        fields += server.environment.map { MCPManagedField(location: .environment, key: $0.key, value: $0.value, classification: .environment) }
+        fields += server.environment.map { MCPManagedField(location: .environment, key: $0.key, value: "${\($0.value)}", classification: .literal) }
         fields += (server.literalEnvironment ?? [:]).map { MCPManagedField(location: .environment, key: $0.key, value: $0.value, classification: .literal) }
-        fields += (server.secretEnvironment ?? [:]).map { MCPManagedField(location: .environment, key: $0.key, value: secrets[$0.value] ?? "", classification: .secret) }
-        fields += server.headers.map { MCPManagedField(location: .header, key: $0.key, value: $0.value, classification: .environment) }
+        fields += server.headers.map { MCPManagedField(location: .header, key: $0.key, value: $0.key.lowercased() == "authorization" ? "Bearer ${\($0.value)}" : "${\($0.value)}", classification: .literal) }
         fields += (server.literalHeaders ?? [:]).map { MCPManagedField(location: .header, key: $0.key, value: $0.value, classification: .literal) }
-        fields += (server.secretHeaders ?? [:]).map { MCPManagedField(location: .header, key: $0.key, value: secrets[$0.value] ?? "", classification: .secret) }
         return fields.sorted { $0.location.rawValue == $1.location.rawValue ? $0.key < $1.key : $0.location.rawValue < $1.location.rawValue }
     }
 
@@ -40,40 +37,27 @@ extension SkillboxService {
         let index = config.servers.firstIndex(where: { $0.id == server.id })
         guard server.name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil else { throw SkillboxError.invalidSkill("nazwa MCP może zawierać litery, cyfry, _ i -") }
         guard !config.servers.contains(where: { $0.id != server.id && $0.name == server.name }) else { throw SkillboxError.mcpConflict("serwer \(server.name) już istnieje") }
-        let old = index.map { config.servers[$0] } ?? server
-        var secrets = try await store.secrets()
-        let oldAccounts = Set(Array((old.secretEnvironment ?? [:]).values) + Array((old.secretHeaders ?? [:]).values))
-        oldAccounts.forEach { secrets.removeValue(forKey: $0) }
         var updated = server
         updated.tags = updated.tags.map(SkillboxService.normalizedTags)
         updated.environment = [:]; updated.headers = [:]
         updated.literalEnvironment = [:]; updated.literalHeaders = [:]
-        updated.secretEnvironment = [:]; updated.secretHeaders = [:]
+        updated.secretEnvironment = nil; updated.secretHeaders = nil
         var seen = Set<String>()
         for field in fields {
             let key = field.key.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !key.isEmpty else { throw SkillboxError.mcpConflict("nazwa pola MCP nie może być pusta") }
             let identity = "\(field.location.rawValue)|\(key.lowercased())"
             guard seen.insert(identity).inserted else { throw SkillboxError.mcpConflict("pole \(key) występuje więcej niż raz") }
-            // Reusing the same account name across saves (instead of minting a fresh one each time)
-            // keeps mcp-secrets.json diff-stable when nothing about this field actually changed.
-            let oldAccount = field.location == .environment ? old.secretEnvironment?[key] : old.secretHeaders?[key]
-            switch field.classification {
-            case .environment:
-                let value = field.value.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !value.isEmpty else { throw SkillboxError.mcpConflict("podaj nazwę zmiennej systemowej dla \(key)") }
-                if field.location == .environment { updated.environment[key] = value } else { updated.headers[key] = value }
-            case .literal:
-                if field.location == .environment { updated.literalEnvironment?[key] = field.value } else { updated.literalHeaders?[key] = field.value }
-            case .secret:
-                guard !field.value.isEmpty else { throw SkillboxError.mcpConflict("podaj wartość sekretu dla \(key)") }
-                let account = oldAccount ?? "mcp/\(server.id.uuidString)/\(field.location.rawValue)/\(key)"
-                secrets[account] = field.value
-                if field.location == .environment { updated.secretEnvironment?[key] = account } else { updated.secretHeaders?[key] = account }
-            }
+            let value = field.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty else { throw SkillboxError.mcpConflict("podaj wartość dla \(key)") }
+            let reference = Self.environmentReference(field.location == .header ? value.replacingOccurrences(of: "Bearer ", with: "", options: [.caseInsensitive, .anchored]) : value)
+            if let reference {
+                if field.location == .environment { updated.environment[key] = reference } else { updated.headers[key] = reference }
+            } else if field.location == .environment { updated.literalEnvironment?[key] = field.value }
+            else { updated.literalHeaders?[key] = field.value }
         }
         if let index { config.servers[index] = updated } else { config.servers.append(updated) }
-        try await store.save(config, replacingSecrets: secrets)
+        try await store.save(config)
     }
 
     /// Adds tags to several servers at once, merging with whatever each one already has — the MCP
@@ -92,9 +76,6 @@ extension SkillboxService {
 
     public func deleteMCPServer(id: UUID) async throws {
         var config = try await store.mcpConfiguration()
-        if let server = config.servers.first(where: { $0.id == id }) {
-            try await store.deleteSecrets(accounts: Array((server.secretEnvironment ?? [:]).values) + Array((server.secretHeaders ?? [:]).values))
-        }
         config.servers.removeAll { $0.id == id }
         var local = try await store.configuration()
         for key in local.selections.keys { local.selections[key]?.serverIDs.removeAll { $0 == id } }
@@ -157,6 +138,11 @@ extension SkillboxService {
         // Lowercased on both sides, so tags saved before normalization keep matching.
         let tags = Set(selection.serverTags.map { $0.lowercased() })
         return mcp.servers.filter { serverIDs.contains($0.id) || !tags.isDisjoint(with: ($0.tags ?? []).map { $0.lowercased() }) }.filter(\.enabled)
+    }
+
+    private static func environmentReference(_ value: String) -> String? {
+        guard value.hasPrefix("${"), value.hasSuffix("}"), value.count > 3 else { return nil }
+        return String(value.dropFirst(2).dropLast())
     }
 
     /// MCP servers found declared globally (outside Agentbox) for the tools of one selection — a
