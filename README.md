@@ -8,14 +8,14 @@ Szczegółowy opis pierwszego uruchomienia, klasyfikacji sekretów, bezpiecznej 
 
 ## Jak to wygląda
 
-Pasek boczny ma cztery pozycje: rzeczy, które zbierasz (`Biblioteka`), miejsca, w które trafiają (`Projekty`), oraz `Backup` i `Ustawienia`.
+Pasek boczny ma trzy pozycje: rzeczy, które zbierasz (`Biblioteka`), miejsca, w które trafiają (`Projekty`) oraz `Ustawienia`. Backup i odzyskiwanie są w `Ustawienia → Backup i odzyskiwanie`.
 
 | | |
 | --- | --- |
 | ![Biblioteka](docs/screenshots/biblioteka.png) | ![Projekty](docs/screenshots/projekty.png) |
 | **Biblioteka** — skille, serwery MCP i dokumenty na jednym ekranie, ze wspólnym wyszukiwaniem i filtrem tagów. | **Projekty** — projekty, foldery ze wspólnymi ustawieniami i `Wszystkie sesje` (ten Mac) jako pierwszy wiersz. |
-| ![Backup](docs/screenshots/backup.png) | ![Ustawienia](docs/screenshots/ustawienia.png) |
-| **Backup** — commity Git, pełne kopie lokalne i snapshoty biblioteki. | **Ustawienia** — folder biblioteki, aktualizacje, instalacja CLI. |
+| ![Ustawienia](docs/screenshots/ustawienia.png) |
+| **Ustawienia** — folder biblioteki, aktualizacje, instalacja CLI oraz backup i odzyskiwanie. |
 
 Zrzuty pochodzą z przykładowej biblioteki przygotowanej na potrzeby dokumentacji.
 
@@ -111,7 +111,7 @@ swift run agentbox update --all
 
 `update --all` sprawdza i pobiera wszystkie dostępne aktualizacje skilli Git. Nie synchronizuje automatycznie folderów projektów; po aktualizacji użyj `agentbox sync project <nazwa>` albo `Synchronizuj wszystko` w GUI.
 
-W GUI `Biblioteka → Odśwież wszystko` odpowiada poleceniu `agentbox refresh`: aktualizuje skille, tworzy pełny backup lokalny, a następnie synchronizuje wszystkie projekty.
+W GUI `Narzędzia → Odśwież bibliotekę i zsynchronizuj projekty` odpowiada poleceniu `agentbox refresh`: aktualizuje skille, tworzy pełny backup lokalny, a następnie synchronizuje wszystkie projekty.
 
 Pełny workflow można wykonać jedną komendą: `agentbox refresh`. Aktualizuje ona skille, tworzy pełny backup lokalny i transakcyjnie synchronizuje wszystkie projekty.
 
@@ -157,9 +157,9 @@ Checkboxy przy serwerach pozwalają zaznaczyć kilka naraz i dodać im tagi jedn
 
 ### Import JSON
 
-`Importuj z JSON` obsługuje cały obiekt z `mcpServers`, samą mapę serwerów, a także pojedynczą definicję serwera (`command`/`args`/`env` albo `url`). Przy pojedynczym obiekcie Agentbox proponuje nazwę z argumentów; można ją wpisać samodzielnie przed analizą. Można zaznaczyć tylko wybrane serwery do importu, a po imporcie przypisać im tagi.
+`Dodaj serwer → JSON` obsługuje cały obiekt z `mcpServers`, samą mapę serwerów, a także pojedynczą definicję serwera (`command`/`args`/`env` albo `url`). Przy pojedynczym obiekcie Agentbox proponuje nazwę z argumentów; można ją wpisać samodzielnie przed analizą. Można zaznaczyć tylko wybrane serwery do importu, a po imporcie przypisać im tagi.
 
-Tryb `Przygotuj z AI` przyjmuje instrukcję instalacji lub fragment README i prosi OpenAI o sam JSON MCP. Klucz API jest używany tylko dla bieżącego żądania — nie zapisuje się w bibliotece. AI nie importuje ani nie synchronizuje niczego samodzielnie: wygenerowany JSON zawsze przechodzi przez podgląd i wybór serwerów.
+Zakładka `Dodaj serwer → AI` przyjmuje instrukcję instalacji lub fragment README i prosi OpenAI o sam JSON MCP. Klucz API jest używany tylko dla bieżącego żądania — nie zapisuje się w bibliotece. AI nie importuje ani nie synchronizuje niczego samodzielnie: wygenerowany JSON zawsze przechodzi przez podgląd i wybór serwerów.
 
 Wartość zapisana jako `${NAZWA_ZMIENNEJ}` odwołuje się do zmiennej systemowej; każda pozostała wartość jest zapisywana wprost lokalnie w `mcp.json`.
 
@@ -167,7 +167,7 @@ Wartość zapisana jako `${NAZWA_ZMIENNEJ}` odwołuje się do zmiennej systemowe
 
 `Biblioteka → MCP → Szczegóły → JSON` pokazuje `command`/`args`/`url`/`env`/`headers` jednego serwera jako zwykły tekst do ręcznej edycji. Wartości pozostają lokalne; `${NAZWA_ZMIENNEJ}` oznacza odczyt ze środowiska systemowego. Ten tryb zastępuje sekcję `Zmienne i nagłówki`, zamiast pokazywać ją obok.
 
-Przycisk `Edytuj wszystko jako JSON` na liście serwerów otwiera osobny, prosty widok dla całej konfiguracji naraz, wypełniony aktualnym stanem: popraw i `Zapisz` — bez kroku analizy i zaznaczania serwerów, bo to edycja własnej konfiguracji, a nie import z zewnątrz. Poprawki nadpisują serwery o tej samej nazwie, reszta zostaje bez zmian. Ta ceremonia (analiza, wybór serwerów, klasyfikacja pól) zostaje tam, gdzie faktycznie jest potrzebna — w `Importuj z JSON`.
+Przycisk `Edytuj całą konfigurację` na liście serwerów otwiera osobny, prosty widok dla całej konfiguracji naraz, wypełniony aktualnym stanem: popraw i `Zapisz` — bez kroku analizy i zaznaczania serwerów, bo to edycja własnej konfiguracji, a nie import z zewnątrz. Poprawki nadpisują serwery o tej samej nazwie, reszta zostaje bez zmian. Ta ceremonia (analiza, wybór serwerów, klasyfikacja pól) zostaje tam, gdzie faktycznie jest potrzebna — w `Dodaj serwer → JSON` lub `AI`.
 
 ### Bezpieczne scalanie
 
@@ -200,7 +200,7 @@ swift run agentbox sync global --skills seo-audit,docx --tags seo --tools claude
 swift run agentbox sync all
 ```
 
-Sekcja `Backup` — dawne „Odzyskiwanie” ma w niej teraz wspólne miejsce z resztą backupów — pozwala przywrócić snapshot metadanych biblioteki albo pełny backup lokalny. Pliki w folderach projektów odtwarza się ponowną synchronizacją, a czyści przez `Usuń i posprzątaj pliki`. Przed przywróceniem Agentbox automatycznie zachowuje aktualny stan.
+`Ustawienia → Backup i odzyskiwanie` pozwala przywrócić snapshot metadanych biblioteki albo pełny backup lokalny. Pliki w folderach projektów odtwarza się ponowną synchronizacją, a czyści przez `Usuń i posprzątaj pliki`. Przed przywróceniem Agentbox automatycznie zachowuje aktualny stan.
 
 ### Wartości MCP
 
@@ -258,7 +258,7 @@ Przed zapisem danych Agentbox tworzy także lokalny snapshot `catalog.json`, `pr
 
 ## Pełny backup lokalny
 
-Powstaje automatycznie raz dziennie (dopóki włączona jest automatyzacja w `Backup → Automatyzacja`), a `Backup → Utwórz teraz` robi to samo na żądanie, np. przed ryzykowną operacją. Czytelny folder powstaje w `backups/full/` i zawiera skille, projekty, lokalne ścieżki oraz pełną konfigurację MCP. Kopia zawiera jawne hasła i tokeny, nie jest szyfrowana, dlatego należy chronić ją jak plik z hasłami. Zachowywanych jest 14 ostatnich kopii, starsze są usuwane automatycznie.
+Powstaje automatycznie raz dziennie (dopóki włączona jest automatyzacja w `Ustawienia → Backup i odzyskiwanie → Automatyzacja`), a przycisk `Utwórz teraz` robi to samo na żądanie, np. przed ryzykowną operacją. Czytelny folder powstaje w `backups/full/` i zawiera skille, projekty, lokalne ścieżki oraz pełną konfigurację MCP. Kopia zawiera jawne hasła i tokeny, nie jest szyfrowana, dlatego należy chronić ją jak plik z hasłami. Zachowywanych jest 14 ostatnich kopii, starsze są usuwane automatycznie.
 
 ## Ograniczenia i bezpieczeństwo
 

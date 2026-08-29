@@ -56,7 +56,7 @@ struct DocsPane: View {
     private var actionBar: some View {
         ActionBar {
             if checked.isEmpty {
-                Button { creatingDoc = true } label: { Label("Nowy dokument", systemImage: "plus") }.buttonStyle(.borderedProminent)
+                Button { creatingDoc = true } label: { Label("Dodaj dokument", systemImage: "plus") }.buttonStyle(.borderedProminent)
             } else {
                 Text("Wybrano \(checked.count)").rowMetadata()
                 Button { showBatchTags = true } label: { Label("Dodaj tagi", systemImage: "tag") }.buttonStyle(.borderedProminent)

@@ -10,7 +10,7 @@ struct MCPPane: View {
     let selectedTag: String
     @State private var editingServer: MCPServer?
     @State private var serverToDelete: MCPServer?
-    @State private var showImport = false
+    @State private var showAdd = false
     @State private var bulkJSON: String?
     @State private var checked = Set<UUID>()
     @State private var showBatchTags = false
@@ -41,7 +41,11 @@ struct MCPPane: View {
                 }
             }
         }
-        .sheet(isPresented: $showImport) { MCPImportView(model: model) }
+        .sheet(isPresented: $showAdd) {
+            MCPImportView(model: model) {
+                editingServer = MCPServer(name: "", transport: .stdio)
+            }
+        }
         .sheet(item: $editingServer) { server in MCPServerEditor(model: model, server: server, existingTags: existingTags) }
         .sheet(item: Binding(get: { bulkJSON.map(IdentifiableString.init) }, set: { bulkJSON = $0?.value })) { text in MCPBulkJSONView(model: model, text: text.value) }
         .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: "serwerów MCP") { text in Task { await model.addMCPServerTags(checked, text: text); checked.removeAll() } } }
@@ -53,9 +57,13 @@ struct MCPPane: View {
     private var actionBar: some View {
         ActionBar {
             if checked.isEmpty {
-                Button { showImport = true } label: { Label("Importuj z JSON", systemImage: "square.and.arrow.down") }.buttonStyle(.borderedProminent)
-                Button { editingServer = MCPServer(name: "", transport: .stdio) } label: { Label("Nowy serwer", systemImage: "plus") }.buttonStyle(.bordered)
-                Button { Task { bulkJSON = await model.exportMCPConfigurationJSON() } } label: { Label("Edytuj wszystko jako JSON", systemImage: "curlybraces") }.buttonStyle(.bordered).disabled(model.mcp.servers.isEmpty)
+                Button { showAdd = true } label: { Label("Dodaj serwer", systemImage: "plus") }
+                    .buttonStyle(.borderedProminent)
+                Button { Task { bulkJSON = await model.exportMCPConfigurationJSON() } } label: {
+                    Label("Edytuj całą konfigurację", systemImage: "curlybraces")
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.mcp.servers.isEmpty)
             } else {
                 Text("Wybrano \(checked.count)").rowMetadata()
                 Button { showBatchTags = true } label: { Label("Dodaj tagi", systemImage: "tag") }.buttonStyle(.borderedProminent)
@@ -169,6 +177,11 @@ struct MCPManagedFieldRow: View {
 struct MCPImportView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var model: AppModel
+    let onOpenManual: () -> Void
+    private enum AddMode: String, CaseIterable, Identifiable {
+        case creator = "Kreator", json = "JSON", ai = "AI"
+        var id: String { rawValue }
+    }
     @State private var source = ""
     @State private var summary: MCPImportSummary?
     @State private var error = ""
@@ -176,21 +189,33 @@ struct MCPImportView: View {
     @State private var selected = Set<String>()
     @State private var showFormatHelp = false
     @State private var singleServerName = ""
-    @State private var useAI = false
+    @State private var mode: AddMode = .creator
     @State private var openAIKey = ""
     @State private var openAIModel = "gpt-5-mini"
+    private var usesAI: Bool { mode == .ai }
     private var needsReanalysis: Bool { summary?.isSingleServerInput == true && summary?.servers.first?.name != singleServerName }
     var body: some View { VStack(alignment: .leading, spacing: 0) { ScrollView { VStack(alignment: .leading, spacing: 14) {
-        Text("Import konfiguracji MCP").font(.title2.bold())
-        Picker("Tryb", selection: $useAI) { Text("Mam JSON").tag(false); Text("Przygotuj z AI").tag(true) }
+        Text("Dodaj serwer MCP").font(.title2.bold())
+        Text("Wybierz sposób dodania. Każda ścieżka kończy się przeglądem konfiguracji przed zapisem.").font(.caption).foregroundStyle(.secondary)
+        Picker("Sposób dodania", selection: $mode) { ForEach(AddMode.allCases) { Text($0.rawValue).tag($0) } }
             .pickerStyle(.segmented)
+        if mode == .creator {
+            GroupBox("Kreator ręczny") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Wypełnij formularz: nazwa, sposób połączenia, argumenty, zmienne i nagłówki.").foregroundStyle(.secondary)
+                    Button("Otwórz kreator") { onOpenManual(); dismiss() }.buttonStyle(.borderedProminent)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Space.row)
+            }
+        } else {
         HStack {
-            Text(useAI ? "Wklej instrukcję instalacji, fragment README albo opisz serwer." : "Wklej mapę serwerów albo konfigurację jednego serwera.").font(.caption).foregroundStyle(.secondary)
+            Text(usesAI ? "Wklej instrukcję instalacji, fragment README albo opisz serwer." : "Wklej mapę serwerów albo konfigurację jednego serwera.").font(.caption).foregroundStyle(.secondary)
             Spacer()
-            if !useAI { Button(showFormatHelp ? "Ukryj format" : "Jaki format?") { showFormatHelp.toggle() }.buttonStyle(.link) }
+            if !usesAI { Button(showFormatHelp ? "Ukryj format" : "Jaki format?") { showFormatHelp.toggle() }.buttonStyle(.link) }
             Button("Wybierz plik…") { chooseFile() }
         }
-        if useAI {
+        if usesAI {
             HStack { SecureField("Klucz API OpenAI", text: $openAIKey); TextField("Model", text: $openAIModel).frame(width: 160) }
             Text("Klucz jest używany wyłącznie dla tego żądania i nie jest zapisywany. Treść instrukcji zostanie wysłana do OpenAI; wynik nie zostanie zapisany automatycznie — najpierw go przejrzysz.").font(.caption).foregroundStyle(.orange)
         }
@@ -206,9 +231,10 @@ struct MCPImportView: View {
             }.padding(6).frame(maxWidth: .infinity, alignment: .leading) }
         }
         if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
-    }.padding(24) }; Divider(); HStack { if working { ProgressView() }; if summary != nil { Text(needsReanalysis ? "Zmień nazwę → Analizuj ponownie" : "Wybrano: \(selected.count)").font(.caption).foregroundStyle(needsReanalysis ? .orange : .secondary) }; Spacer(); Button("Anuluj") { dismiss() }; Button(useAI ? "Przygotuj z AI" : "Analizuj") { Task { await prepare() } }.disabled(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (useAI && openAIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) || working); Button("Importuj wybrane") { Task { await importNow() } }.buttonStyle(.borderedProminent).disabled(summary == nil || selected.isEmpty || needsReanalysis || working) }.padding(16).background(.bar)
+        }
+    }.padding(24) }; Divider(); HStack { if working { ProgressView() }; if summary != nil { Text(needsReanalysis ? "Zmień nazwę → Analizuj ponownie" : "Wybrano: \(selected.count)").font(.caption).foregroundStyle(needsReanalysis ? .orange : .secondary) }; Spacer(); Button("Anuluj") { dismiss() }; if mode != .creator { Button(usesAI ? "Przygotuj z AI" : "Analizuj") { Task { await prepare() } }.disabled(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (usesAI && openAIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) || working); Button("Importuj wybrane") { Task { await importNow() } }.buttonStyle(.borderedProminent).disabled(summary == nil || selected.isEmpty || needsReanalysis || working) } }.padding(16).background(.bar)
     }.sheetFrame(width: 760, height: 680) }
-    private func prepare() async { working = true; error = ""; summary = nil; selected.removeAll(); defer { working = false }; do { if useAI { source = try await model.generateMCP(source, apiKey: openAIKey, model: openAIModel) }; let analyzed = try await model.analyzeMCP(source, singleServerName: singleServerName.isEmpty ? nil : singleServerName); summary = analyzed; if analyzed.isSingleServerInput, singleServerName.isEmpty { singleServerName = analyzed.servers.first?.name ?? "" }; selected = Set(analyzed.servers.map(\.name)) } catch { self.error = error.localizedDescription; model.reportError(error) } }
+    private func prepare() async { working = true; error = ""; summary = nil; selected.removeAll(); defer { working = false }; do { if usesAI { source = try await model.generateMCP(source, apiKey: openAIKey, model: openAIModel) }; let analyzed = try await model.analyzeMCP(source, singleServerName: singleServerName.isEmpty ? nil : singleServerName); summary = analyzed; if analyzed.isSingleServerInput, singleServerName.isEmpty { singleServerName = analyzed.servers.first?.name ?? "" }; selected = Set(analyzed.servers.map(\.name)) } catch { self.error = error.localizedDescription; model.reportError(error) } }
     private func importNow() async { working = true; error = ""; defer { working = false }; do { _ = try await model.importMCP(source, serverNames: selected, classifications: [:], singleServerName: summary?.isSingleServerInput == true ? singleServerName : nil); dismiss() } catch { self.error = error.localizedDescription; model.reportError(error) } }
     private func chooseFile() { let panel = NSOpenPanel(); panel.allowedContentTypes = [.json, .plainText]; panel.canChooseFiles = true; panel.canChooseDirectories = false; if panel.runModal() == .OK, let url = panel.url { do { source = try String(contentsOf: url, encoding: .utf8); summary = nil } catch { self.error = error.localizedDescription } } }
 

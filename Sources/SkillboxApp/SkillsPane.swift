@@ -67,9 +67,17 @@ struct SkillsPane: View {
     private var actionBar: some View {
         ActionBar {
             if checked.isEmpty {
-                Button { showGit = true } label: { Label("Z Git", systemImage: "arrow.down.circle") }.buttonStyle(.borderedProminent)
-                Button { chooseSkill() } label: { Label("Z dysku", systemImage: "folder.badge.plus") }.buttonStyle(.bordered)
-                Button { showNewSkill = true } label: { Label("Napisz własny", systemImage: "square.and.pencil") }.buttonStyle(.bordered)
+                Menu {
+                    Button { showGit = true } label: { Label("Z repozytorium Git…", systemImage: "arrow.down.circle") }
+                    Button { chooseSkill() } label: { Label("Z folderu na dysku…", systemImage: "folder.badge.plus") }
+                    Divider()
+                    Button { showNewSkill = true } label: { Label("Napisz własny…", systemImage: "square.and.pencil") }
+                } label: {
+                    Label("Dodaj skill", systemImage: "plus")
+                }
+                .menuStyle(.borderedButton)
+                .menuIndicator(.visible)
+                .tint(.accentColor)
             } else {
                 Text("Wybrano \(checked.count)").rowMetadata()
                 Button { showBatchTags = true } label: { Label("Dodaj tagi", systemImage: "tag") }.buttonStyle(.borderedProminent)
@@ -77,12 +85,11 @@ struct SkillsPane: View {
             }
             Spacer()
             filterMenu
-            Button { Task { await model.refresh() } } label: {
-                Label("Odśwież wszystko", systemImage: "arrow.triangle.2.circlepath")
+            Button { Task { await model.checkUpdates() } } label: {
+                Label("Sprawdź aktualizacje", systemImage: "arrow.triangle.2.circlepath")
             }
             .buttonStyle(.bordered)
             .disabled(model.isWorking)
-            .help("Aktualizuje skille, tworzy pełny backup lokalny i synchronizuje wszystkie projekty")
             if !model.updateAvailable.isEmpty {
                 Button { Task { await model.updateAllAvailable() } } label: {
                     Label("Aktualizuj \(model.updateAvailable.count)", systemImage: "arrow.down.circle.fill")
@@ -92,8 +99,6 @@ struct SkillsPane: View {
                 .disabled(model.isWorking)
                 .help("Pobierz wszystkie wykryte aktualizacje skilli")
             }
-            Button { Task { await model.checkUpdates() } } label: { Image(systemName: "arrow.triangle.2.circlepath") }.help("Sprawdź aktualizacje")
-                .disabled(model.isWorking)
             Text("\(filtered.count) z \(model.skills.count)").rowMetadata()
         }
     }

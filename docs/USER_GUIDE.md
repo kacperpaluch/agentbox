@@ -8,16 +8,16 @@ Po instalacji otwórz nowe okno Terminala i wykonaj np. `agentbox project list`.
 
 ## Nawigacja
 
-Pasek boczny ma cztery pozycje, odpowiadające dwóm pojęciom: rzeczom, które zbierasz, i miejscom, w które trafiają.
+Pasek boczny ma trzy pozycje, odpowiadające dwóm pojęciom: rzeczom, które zbierasz, i miejscom, w które trafiają.
 
 | Sekcja | Co w niej jest |
 | --- | --- |
 | `Biblioteka` | skille, serwery MCP i dokumenty — jedna lista z przełącznikiem typu, wspólnym wyszukiwaniem i filtrem tagów |
-| `Projekty` | projekty, foldery nadrzędne oraz `Wszystkie sesje` (ten Mac) jako pierwszy wiersz; stąd otwiera się też `Serwery klientów…` |
-| `Backup` | pełne backupy lokalne i snapshoty biblioteki |
+| `Projekty` | projekty, foldery nadrzędne oraz domyślne ustawienia dla nowych projektów; stąd otwiera się też `Serwery klientów…` |
+| `Ustawienia` | folder biblioteki, aktualizacje, CLI oraz `Backup i odzyskiwanie` |
 | `Ustawienia` | folder biblioteki, aktualizacje, CLI |
 
-Wcześniej tych pozycji było osiem. Pięć z nich to były te same dwa pojęcia pokrojone po typie i po zasięgu: `Skille`, `MCP` i `Dokumenty` to jedna biblioteka z trzema rodzajami wpisu, a `Globalne` to miejsce, nie osobny ekran. Żadna funkcja nie zniknęła — zmieniła się tylko oś podziału.
+Wcześniej tych pozycji było osiem. `Skille`, `MCP` i `Dokumenty` to jedna biblioteka z trzema rodzajami wpisu, a domyślne ustawienia to konfiguracja projektów, nie osobny ekran. Backup i odzyskiwanie są częścią ustawień. Żadna funkcja nie zniknęła — zmieniła się tylko oś podziału.
 
 ## Pierwsze uruchomienie
 
@@ -26,7 +26,7 @@ Wcześniej tych pozycji było osiem. Pięć z nich to były te same dwa pojęcia
 3. Przypisz skille bezpośrednio lub przez tagi dynamiczne.
 4. Opcjonalnie zaimportuj serwery MCP i przypisz im tagi.
 5. W projekcie wybierz `Synchronizuj wszystko`, sprawdź plan zmian i zatwierdź.
-6. W `Backup` włącz automatyczne pełne kopie lokalne lub utwórz kopię ręcznie.
+6. W `Ustawienia → Backup i odzyskiwanie` włącz automatyczne pełne kopie lokalne lub utwórz kopię ręcznie.
 
 ## Aktualizacje aplikacji
 
@@ -44,7 +44,7 @@ Importer przyjmuje zarówno mapę `mcpServers`, jak i pojedynczą definicję, na
 
 ### Kreator AI
 
-W `Biblioteka → MCP → Importuj z JSON` wybierz `Przygotuj z AI`, wklej fragment instrukcji lub README i podaj klucz API OpenAI. Klucz jest wykorzystywany tylko przez bieżące żądanie i nie jest zapisywany. Agentbox wysyła do OpenAI wyłącznie tekst instrukcji, nigdy zawartość istniejących konfiguracji ani sekretów. Wynik nie jest automatycznie zapisywany: najpierw przechodzi przez analizę JSON, wybór serwerów i klasyfikację wartości. Sprawdź wynik przed importem — AI może przygotować format, ale nie zastępuje weryfikacji dokumentacji serwera.
+W `Biblioteka → MCP → Dodaj serwer` wybierz zakładkę `AI`, wklej fragment instrukcji lub README i podaj klucz API OpenAI. Klucz jest wykorzystywany tylko przez bieżące żądanie i nie jest zapisywany. Agentbox wysyła do OpenAI wyłącznie tekst instrukcji, nigdy zawartość istniejących konfiguracji ani sekretów. Wynik nie jest automatycznie zapisywany: najpierw przechodzi przez analizę JSON, wybór serwerów i klasyfikację wartości. Sprawdź wynik przed importem — AI może przygotować format, ale nie zastępuje weryfikacji dokumentacji serwera.
 
 - `Zmienna systemowa` — Agentbox zapisuje nazwę zmiennej, a wartość ma dostarczyć środowisko procesu klienta AI.
 - Każda zwykła wartość, w tym hasło lub token, trafia jawnie do lokalnego `mcp.json` oraz pełnego backupu lokalnego.
@@ -84,7 +84,7 @@ Skille pochodzące z Git są tylko do odczytu. `Aktualizuj` zastępuje taki skil
 
 W `Biblioteka → Skille` ikona odświeżania najpierw tylko sprawdza dostępne rewizje. Gdy je znajdzie, obok pojawia się pomarańczowy przycisk `Aktualizuj <liczba>` — pobiera wszystkie wykryte aktualizacje do biblioteki. Nie synchronizuje on automatycznie projektów; po aktualizacji użyj `Synchronizuj` dla wybranego projektu albo `Synchronizuj wszystkie projekty`.
 
-Jeżeli chcesz wykonać cały proces jednym kliknięciem, użyj `Biblioteka → Odśwież wszystko`. To odpowiednik `agentbox refresh`: sprawdza i pobiera aktualizacje skilli, tworzy pełny backup lokalny, a następnie transakcyjnie synchronizuje wszystkie projekty. Wynik, także błędy poszczególnych projektów, zostaje w historii operacji.
+Jeżeli chcesz wykonać cały proces jednym kliknięciem, użyj `Narzędzia → Odśwież bibliotekę i zsynchronizuj projekty`. To odpowiednik `agentbox refresh`: sprawdza i pobiera aktualizacje skilli, tworzy pełny backup lokalny, a następnie transakcyjnie synchronizuje wszystkie projekty. Wynik, także błędy poszczególnych projektów, zostaje w historii operacji.
 
 ### Przejmowanie skilli z projektu
 
@@ -128,7 +128,7 @@ Projekt może wciągać skille tagiem i jednocześnie pomijać wybrane pozycje. 
 
 ### Usuwanie projektu i sprzątanie plików
 
-Usunięcie projektu daje dwie możliwości. `Usuń tylko z Agentbox` zostawia folder projektu nietknięty. `Usuń i posprzątaj pliki w projekcie` dodatkowo kasuje katalogi skilli, wpisy MCP i dokument `AGENTS.md`/`CLAUDE.md` wymienione w manifestach Agentbox — wyłącznie je. Plik konfiguracyjny, który w całości pochodził z Agentbox, znika razem z wpisami; ręcznie dodane skille, serwery MCP i pliki dokumentów zostają. Przed sprzątaniem powstaje backup, który można cofnąć w sekcji `Backup`.
+Usunięcie projektu daje dwie możliwości. `Usuń tylko z Agentbox` zostawia folder projektu nietknięty. `Usuń i posprzątaj pliki w projekcie` dodatkowo kasuje katalogi skilli, wpisy MCP i dokument `AGENTS.md`/`CLAUDE.md` wymienione w manifestach Agentbox — wyłącznie je. Plik konfiguracyjny, który w całości pochodził z Agentbox, znika razem z wpisami; ręcznie dodane skille, serwery MCP i pliki dokumentów zostają. Przed sprzątaniem powstaje backup, który można cofnąć w `Ustawienia → Backup i odzyskiwanie`.
 
 Pliki i manifesty powstają tylko wtedy, gdy projekt ma co synchronizować — projekt bez wybranych skilli, serwerów MCP i dokumentu pozostaje nietknięty, a odznaczenie narzędzia sprząta jego pliki skilli/MCP przy kolejnej synchronizacji.
 
@@ -210,7 +210,7 @@ W przypadku błędu synchronizacji:
 
 ## Odzyskiwanie
 
-Odzyskiwanie ma teraz wspólne miejsce z resztą backupów w sekcji `Backup`, zamiast osobnej pozycji w pasku bocznym — to jedno pytanie („jak chronię i odzyskuję dane”), nie dwa.
+Odzyskiwanie ma wspólne miejsce z resztą backupów w `Ustawienia → Backup i odzyskiwanie`, zamiast osobnej pozycji w pasku bocznym — to jedno pytanie („jak chronię i odzyskuję dane”), nie dwa.
 
 Przed zmianą plików danych Agentbox zachowuje rotacyjne snapshoty w:
 
@@ -220,7 +220,7 @@ Przed zmianą plików danych Agentbox zachowuje rotacyjne snapshoty w:
 
 Snapshot zawiera bieżące wersje `catalog.json`, `selections.json`, `projects.local.json`, `mcp.json` i `docs.json`. Zachowywanych jest 10 ostatnich snapshotów.
 
-W sekcji `Backup → Snapshoty biblioteki` można wybrać kopię na podstawie daty i przywrócić zapisane w niej pliki. Katalog `skills/` nie jest zmieniany. Przed przywróceniem Agentbox tworzy snapshot aktualnego stanu.
+W `Ustawienia → Backup i odzyskiwanie → Snapshoty biblioteki` można wybrać kopię na podstawie daty i przywrócić zapisane w niej pliki. Katalog `skills/` nie jest zmieniany. Przed przywróceniem Agentbox tworzy snapshot aktualnego stanu.
 
 ### Gdzie leżą kopie
 
@@ -234,11 +234,11 @@ Wersje do 0.7.0 zostawiały historię kopii w `<projekt>/.skillbox/sync-backups/
 
 Projekt, w którym nic się nie zmieniło, jest pomijany — nic nie jest zapisywane, a wynik to `Bez zmian`.
 
-Ta część sekcji `Backup` dotyczy wyłącznie biblioteki: snapshotów metadanych i pełnego backupu lokalnego.
+Ta część `Ustawienia → Backup i odzyskiwanie` dotyczy wyłącznie biblioteki: snapshotów metadanych i pełnego backupu lokalnego.
 
 ### Pełny backup lokalny
 
-Pełny backup lokalny chroni projekty i wszystkie wartości MCP. Powstaje automatycznie raz dziennie, gdy automatyzacja w `Backup → Automatyzacja` jest włączona; `Backup → Utwórz teraz` robi to samo na żądanie. Tworzy czytelną kopię w `<biblioteka>/backups/full/<data>/`. Zawiera `catalog.json`, `selections.json`, `projects.local.json`, `mcp.json`, `docs.json`, metadane `backup.json` oraz cały katalog `skills/`. Hasła i tokeny są widoczne lokalnie w `mcp.json`.
+Pełny backup lokalny chroni projekty i wszystkie wartości MCP. Powstaje automatycznie raz dziennie, gdy automatyzacja w `Ustawienia → Backup i odzyskiwanie → Automatyzacja` jest włączona; przycisk `Utwórz teraz` robi to samo na żądanie. Tworzy czytelną kopię w `<biblioteka>/backups/full/<data>/`. Zawiera `catalog.json`, `selections.json`, `projects.local.json`, `mcp.json`, `docs.json`, metadane `backup.json` oraz cały katalog `skills/`. Hasła i tokeny są widoczne lokalnie w `mcp.json`.
 
 Folder `backups/` jest lokalny i nie jest wysyłany przez Agentbox do Gita. Pełny backup nie jest szyfrowany — nie umieszczaj go w chmurze ani repozytorium bez dodatkowego szyfrowania. Zachowywanych jest 14 ostatnich kopii; starsze są usuwane automatycznie, więc miejsce na dysku nie rośnie bez końca. Przed przywróceniem Agentbox waliduje wszystkie pliki JSON i katalog skilli, następnie zapisuje aktualny stan w `backups/restore-rollbacks/`. Nieudana operacja automatycznie odtwarza poprzednie dane. Z interfejsu można również usunąć wybraną pełną kopię po potwierdzeniu.
 

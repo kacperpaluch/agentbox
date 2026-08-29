@@ -6,6 +6,16 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.18.3] - 2026-08-29
+
+### Zmieniono
+
+- Interfejs ma teraz trzy główne obszary: `Biblioteka`, `Projekty` i `Ustawienia`. Backup oraz odzyskiwanie są w `Ustawienia → Backup i odzyskiwanie`, a historia operacji w menu `Narzędzia`.
+- Widok Projektów otrzymał układ tabelaryczny z wyraźnymi kolumnami projektu, stanu, zawartości i akcji. Domyślne ustawienia dla nowych projektów są oddzielone od listy projektów.
+- Dodawanie elementów biblioteki jest zebrane w pojedynczych przyciskach z menu, aby akcje importu nie konkurowały ze sobą na pasku narzędzi.
+- Dodawanie serwera MCP otwiera jeden ekran z zakładkami `Kreator`, `JSON` i `AI`. Edycja całej konfiguracji jest bezpośrednim przyciskiem, bez menu z jedną opcją.
+- Zakładka skilli ma jednoznaczną akcję `Sprawdź aktualizacje`; pełny workflow z backupem i synchronizacją projektów przeniósł się do menu `Narzędzia`.
+
 ## [0.18.2] - 2026-08-29
 
 ### Naprawiono

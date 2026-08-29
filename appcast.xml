@@ -6,6 +6,28 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.18.3</title>
+      <pubDate>Sat, 29 Aug 2026 22:54:08 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.3</link>
+      <sparkle:version>42</sparkle:version>
+      <sparkle:shortVersionString>0.18.3</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.18.3</h2>
+        <ul>
+          <li>Trzy główne obszary aplikacji: Biblioteka, Projekty i Ustawienia.</li>
+          <li>Dodawanie serwera MCP łączy Kreator, JSON i AI w jednym oknie.</li>
+          <li>Biblioteka skilli ma jasną akcję sprawdzania aktualizacji.</li>
+        </ul>
+      ]]></description>
+      <enclosure url="https://github.com/kacperpaluch/agentbox/releases/download/v0.18.3/Agentbox-0.18.3.dmg"
+                 sparkle:version="42"
+                 sparkle:shortVersionString="0.18.3"
+                 length="5793299"
+                 type="application/octet-stream"
+                 sparkle:edSignature="YIEKzTNQM6t2rzQQcAFPXglKz4EfA9y32RkRAluO2E8sVZTbkzOUQBwHfrRiA7i8HyO3YefveErVBc/WhzIqCg=="/>
+    </item>
+    <item>
       <title>Agentbox 0.18.2</title>
       <pubDate>Sat, 29 Aug 2026 20:08:45 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.2</link>

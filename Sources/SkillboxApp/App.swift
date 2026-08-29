@@ -36,17 +36,12 @@ enum AppVersion {
             .commands { CommandGroup(after: .appInfo) { CheckForUpdatesView(updater: updaterController.updater) } }
     }
 }
-// Two concepts, in the order you meet them: the things you collect (Biblioteka) and the places they
-// land (Projekty — including this Mac, as its first row). Then the two rare ones: Backup, which took
-// in Odzyskiwanie as one "protect my data" idea, and settings last.
-//
-// This used to be eight rows. Five of them were the same two concepts sliced by type and by scope —
-// Skille / MCP / Dokumenty are one library with three kinds of entry, and Globalne was a place, not a
-// screen. Nothing was removed to get here; only the axis the sidebar splits on changed.
+// The navigation follows the job to be done: build a library, apply it to projects, then adjust the
+// application. Recovery and history are supporting tools, not destinations users need to scan first.
 enum SectionKind: String, CaseIterable, Identifiable {
-    case library = "Biblioteka", projects = "Projekty", backup = "Backup", settings = "Ustawienia"
+    case library = "Biblioteka", projects = "Projekty", settings = "Ustawienia"
     var id: String { rawValue }
-    var icon: String { switch self { case .library: "books.vertical"; case .projects: "folder"; case .backup: "externaldrive.badge.timemachine"; case .settings: "gearshape" } }
+    var icon: String { switch self { case .library: "books.vertical"; case .projects: "folder"; case .settings: "gearshape" } }
 }
 struct OperationLogEntry: Identifiable {
     enum Kind { case success, error }
@@ -92,7 +87,6 @@ struct ContentView: View {
                     switch section ?? .library {
                     case .library: LibraryView(model: model, showGit: $showGit)
                     case .projects: ProjectsView(model: model, showProject: $showProject)
-                    case .backup: BackupView(model: model)
                     case .settings: SettingsView(model: model, updater: updater)
                     }
                 }
@@ -109,7 +103,18 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showHistory) { OperationHistoryView(entries: model.operationLog) }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in Task { await model.scanRootsOnActivation() } }
-        .toolbar { Button { showHistory = true } label: { Label("Historia operacji", systemImage: "clock.arrow.circlepath") } }
+        .toolbar {
+            Menu {
+                Button { Task { await model.refresh() } } label: {
+                    Label("Odśwież bibliotekę i zsynchronizuj projekty", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .disabled(model.isWorking)
+                Divider()
+                Button { showHistory = true } label: { Label("Historia operacji", systemImage: "clock.arrow.circlepath") }
+            } label: {
+                Label("Narzędzia", systemImage: "ellipsis.circle")
+            }
+        }
     }
 }
 struct OperationHistoryView: View {

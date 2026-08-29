@@ -7,15 +7,42 @@ import SkillboxCore
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     let updater: SPUUpdater
+    @State private var section: SettingsSection = .general
+
+    private enum SettingsSection: String, CaseIterable, Identifiable {
+        case general = "Ogólne"
+        case recovery = "Backup i odzyskiwanie"
+        var id: String { rawValue }
+    }
+
     var body: some View {
+        VStack(spacing: 0) {
+            Picker("Sekcja ustawień", selection: $section) {
+                ForEach(SettingsSection.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: 380)
+            .padding(Space.page)
+            Divider()
+
+            switch section {
+            case .general: generalSettings
+            case .recovery: BackupView(model: model, embedded: true)
+            }
+        }
+        .navigationTitle("Ustawienia")
+    }
+
+    private var generalSettings: some View {
         ScrollView { VStack(alignment: .leading, spacing: 20) {
-            Label("Ustawienia", systemImage: "gearshape").font(.largeTitle.bold())
+            Label("Ustawienia aplikacji", systemImage: "gearshape").font(.largeTitle.bold())
             UpdateSettingsCard(updater: updater)
             CLISettingsCard()
             GroupBox("Folder biblioteki") { VStack(alignment: .leading, spacing: 12) { Text(model.rootPath).font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading); Text("Tutaj Agentbox przechowuje skille, katalog, konfigurację projektów i repozytorium backupu Git.").font(.caption).foregroundStyle(.secondary); Button("Wybierz nowy folder…") { chooseFolder() } }.padding(8) }
             Text("Istniejąca biblioteka Agentbox/Skillbox zostanie podłączona bez kopiowania. Jeśli wskażesz pusty folder, obecna biblioteka zostanie do niego skopiowana.").foregroundStyle(.secondary)
             Spacer()
-        }.padding(28) }.navigationTitle("Ustawienia")
+        }.padding(28) }
     }
     private func chooseFolder() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true; panel.prompt = "Wybierz"; if panel.runModal() == .OK, let url = panel.url { Task { await model.moveLibrary(to: url) } } }
 }

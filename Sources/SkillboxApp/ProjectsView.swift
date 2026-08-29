@@ -110,11 +110,12 @@ struct ProjectsView: View {
 
     private var projectList: some View {
         List {
-            globalRow
+            defaultsSection
             if model.projects.isEmpty && model.projectRoots.isEmpty {
                 ContentUnavailableView("Brak projektów", systemImage: "folder.badge.plus", description: Text("Dodaj folder i wybierz skille dla Claude, Codex lub OpenCode."))
                     .listRowSeparator(.hidden)
             }
+            if !model.projects.isEmpty { projectColumnHeader }
             ForEach(groups) { group in
                 DisclosureGroup(isExpanded: groupExpansion(group.path)) {
                     if group.projects.isEmpty { Text("Folder bez projektów. Dodaj podfoldery przez `Dodaj wiele` albo poczekaj, aż Agentbox je wykryje.").font(.caption).foregroundStyle(.secondary).padding(.vertical, 6) }
@@ -162,23 +163,19 @@ struct ProjectsView: View {
             Button { showAllSync = true } label: { Label("Synchronizuj wszystkie", systemImage: "arrow.triangle.2.circlepath") }
                 .buttonStyle(.borderedProminent)
                 .disabled(model.projects.isEmpty || model.isWorking)
-            Button { Task { await model.refreshProjects() } } label: { Label("Sprawdź stan", systemImage: "arrow.clockwise") }
-                .buttonStyle(.bordered)
-                .disabled((model.projects.isEmpty && model.projectRoots.isEmpty) || model.isCheckingStatuses)
-                .help("Sprawdza, czy projekty odpowiadają bibliotece, i szuka nowych podfolderów w obserwowanych folderach")
-            Button { showProject = true } label: { Label("Dodaj projekt", systemImage: "plus") }.buttonStyle(.bordered)
-            Button { showBatch = true } label: { Label("Dodaj wiele", systemImage: "folder.badge.plus") }.buttonStyle(.bordered)
-            // Not a library and not a place — a diagnostic view answering "where is this server
-            // active", so it opens from here instead of holding a sidebar row of its own.
-            Button { showClientServers = true } label: { Label("Serwery klientów…", systemImage: "server.rack") }
-                .buttonStyle(.bordered)
-                .help("Serwery MCP spoza Agentbox, które Codex i Claude Code ładują w każdym projekcie")
             Menu {
+                Button { showProject = true } label: { Label("Jeden projekt…", systemImage: "folder.badge.plus") }
+                Button { showBatch = true } label: { Label("Wiele projektów…", systemImage: "folder.badge.plus") }
+            } label: { Label("Dodaj projekt", systemImage: "plus") }
+                .menuStyle(.borderedButton)
+            Menu {
+                Button { Task { await model.refreshProjects() } } label: { Label("Sprawdź stan projektów", systemImage: "arrow.clockwise") }
+                    .disabled((model.projects.isEmpty && model.projectRoots.isEmpty) || model.isCheckingStatuses)
+                Button { showClientServers = true } label: { Label("Serwery klientów…", systemImage: "server.rack") }
+                Divider()
                 Button("Rozwiń wszystko") { collapsedGroups.removeAll() }
                 Button("Zwiń wszystko") { collapsedGroups = Set(groups.map(\.path)) }
-            } label: { Image(systemName: "rectangle.expand.vertical") }
-            .menuStyle(.borderlessButton).frame(width: 42)
-            .help("Rozwiń lub zwiń grupy")
+            } label: { Label("Więcej", systemImage: "ellipsis") }
             Spacer()
             if model.isCheckingStatuses { ProgressView().controlSize(.small) }
         }
@@ -187,17 +184,30 @@ struct ProjectsView: View {
     /// The Mac itself, pinned above the folders. Globalne skille are not a different kind of screen —
     /// they are attachments landing in a place, exactly like every row below — so they belong on this
     /// list rather than in a sidebar section whose name collided with `Serwery klientów`.
-    private var globalRow: some View {
+    private var defaultsSection: some View {
         HStack(spacing: Space.tight + 4) {
-            Image(systemName: "person.crop.circle").foregroundStyle(.tint)
+            Image(systemName: "slider.horizontal.3").foregroundStyle(.tint)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Wszystkie sesje").sectionLabel()
+                Text("Domyślne dla nowych projektów").sectionLabel()
                 Text(globalSummary).rowMetadata().lineLimit(1)
             }
             Spacer()
-            Button("Ustawienia globalne…") { showGlobal = true }.buttonStyle(.bordered).controlSize(.small)
+            Button("Skonfiguruj…") { showGlobal = true }.buttonStyle(.bordered).controlSize(.small)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, Space.row)
+        .listRowBackground(Color.accentColor.opacity(0.06))
+    }
+
+    private var projectColumnHeader: some View {
+        HStack(spacing: Space.section) {
+            Text("PROJEKT").frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
+            Text("STAN").frame(width: 145, alignment: .leading)
+            Text("ZAWARTOŚĆ").frame(width: 170, alignment: .leading)
+            Text("AKCJE").frame(width: 150, alignment: .leading)
+        }
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.vertical, Space.tight)
         .listRowSeparator(.hidden)
     }
 
@@ -251,21 +261,29 @@ private struct ProjectRow: View {
     @Binding var adopting: Project?
 
     var body: some View {
-        // Two lines, not three: the name/status/actions line answers "what is this and what can I do
-        // with it"; the path/tools/tags line is purely supporting detail, so it reads quieter below.
-        VStack(alignment: .leading, spacing: Space.tight + 2) {
-            HStack(spacing: Space.row) {
+        HStack(alignment: .center, spacing: Space.section) {
+            VStack(alignment: .leading, spacing: Space.tight) {
                 Text(project.name).rowTitle()
-                if inheritsRoot {
-                    Image(systemName: "arrow.turn.up.right").font(.caption2).foregroundStyle(.tertiary)
-                        .help("Skille, tagi, MCP i dokumenty tego projektu pochodzą z folderu nadrzędnego")
-                }
+                Text(project.path).rowMetadata().lineLimit(1).help(project.path)
+            }
+            .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
+
+            ProjectStatusBadge(status: status)
+                .frame(width: 145, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: Space.tight) {
+                Text(contentSummary).rowMetadata().lineLimit(1)
                 if ownSettingsInRoot {
                     MetaBadge(text: "Własne ustawienia", tint: .orange)
-                        .help("Ten projekt ma własne skille, tagi, MCP i dokumenty zamiast dziedziczyć je z folderu\(rootName.map { " „\($0)”" } ?? "")")
+                        .help("Projekt nie dziedziczy ustawień folderu\(rootName.map { " „\($0)”" } ?? "")")
+                } else if inheritsRoot {
+                    Label("Ustawienia folderu", systemImage: "arrow.turn.up.right")
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
-                ProjectStatusBadge(status: status)
-                Spacer()
+            }
+            .frame(width: 170, alignment: .leading)
+
+            HStack(spacing: Space.tight) {
                 Button("Synchronizuj") { previewProject = project }.buttonStyle(.borderedProminent).controlSize(.small)
                 RowMenu {
                     Button("Edytuj…") { editing = project }
@@ -274,13 +292,14 @@ private struct ProjectRow: View {
                     Button("Usuń projekt…", role: .destructive) { deleting = project }
                 }
             }
-            HStack(spacing: Space.tight + 2) {
-                Text(project.path).rowMetadata().lineLimit(1).help(project.path)
-                ForEach(project.tools, id: \.self) { tool in MetaBadge(text: tool.rawValue) }
-                ForEach(project.tags, id: \.self) { TagPill(tag: $0) }
-            }
+            .frame(width: 150, alignment: .leading)
         }
-        .padding(.vertical, Space.row - 1)
+        .padding(.vertical, Space.row)
+    }
+
+    private var contentSummary: String {
+        let pieces = ["\(project.tools.count) klientów", "\(project.tags.count) tagów"]
+        return pieces.joined(separator: " · ")
     }
 }
 struct AllProjectsSyncPreviewView: View {

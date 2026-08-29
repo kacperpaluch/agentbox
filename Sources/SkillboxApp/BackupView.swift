@@ -8,6 +8,7 @@ import Sparkle
 /// snapshots provide short-term recovery of its metadata.
 struct BackupView: View {
     @ObservedObject var model: AppModel
+    var embedded = false
     @State private var fullBackupToRestore: FullBackupInfo?
     @State private var fullBackupToDelete: FullBackupInfo?
     @State private var snapshotToRestore: LibrarySnapshot?
@@ -17,8 +18,10 @@ struct BackupView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.page + 2) {
-                Label("Backup i odzyskiwanie", systemImage: "externaldrive.badge.timemachine").font(.largeTitle.bold())
-                Text("Pełne kopie lokalne chronią bibliotekę, projekty i wszystkie wartości MCP.").foregroundStyle(.secondary)
+                if !embedded {
+                    Label("Backup i odzyskiwanie", systemImage: "externaldrive.badge.timemachine").font(.largeTitle.bold())
+                    Text("Pełne kopie lokalne chronią bibliotekę, projekty i wszystkie wartości MCP.").foregroundStyle(.secondary)
+                }
 
                 GroupBox("Automatyzacja") {
                     VStack(alignment: .leading, spacing: Space.section - 2) {
@@ -62,7 +65,7 @@ struct BackupView: View {
             }
             .padding(Space.page + 12)
         }
-        .navigationTitle("Backup")
+        .navigationTitle(embedded ? "Ustawienia" : "Backup")
         .task { await model.loadFullBackups(); await model.loadRecovery() }
         .confirmationDialog("Przywrócić pełny backup?", isPresented: Binding(get: { fullBackupToRestore != nil }, set: { if !$0 { fullBackupToRestore = nil } })) { Button("Przywróć wszystkie dane", role: .destructive) { if let backup = fullBackupToRestore { Task { await model.restoreFullBackup(backup) } }; fullBackupToRestore = nil }; Button("Anuluj", role: .cancel) { fullBackupToRestore = nil } } message: { Text("Aktualna biblioteka, projekty, skille, MCP i sekrety zostaną zastąpione. Agentbox najpierw zachowa pełną kopię aktualnego stanu w backups/restore-rollbacks.") }
         .confirmationDialog("Usunąć pełny backup?", isPresented: Binding(get: { fullBackupToDelete != nil }, set: { if !$0 { fullBackupToDelete = nil } })) { Button("Usuń backup", role: .destructive) { if let backup = fullBackupToDelete { Task { await model.deleteFullBackup(backup) } }; fullBackupToDelete = nil }; Button("Anuluj", role: .cancel) { fullBackupToDelete = nil } } message: { Text("Ta kopia zawierająca również sekrety zostanie trwale usunięta z lokalnego folderu backups/full.") }
