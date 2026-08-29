@@ -10,14 +10,7 @@ Szczegółowy opis pierwszego uruchomienia, klasyfikacji sekretów, bezpiecznej 
 
 Pasek boczny ma trzy pozycje: rzeczy, które zbierasz (`Biblioteka`), miejsca, w które trafiają (`Projekty`) oraz `Ustawienia`. Backup i odzyskiwanie są w `Ustawienia → Backup i odzyskiwanie`.
 
-| | |
-| --- | --- |
-| ![Biblioteka](docs/screenshots/biblioteka.png) | ![Projekty](docs/screenshots/projekty.png) |
-| **Biblioteka** — skille, serwery MCP i dokumenty na jednym ekranie, ze wspólnym wyszukiwaniem i filtrem tagów. | **Projekty** — projekty, foldery ze wspólnymi ustawieniami oraz szablon dla nowych projektów. |
-| ![Ustawienia](docs/screenshots/ustawienia.png) |
-| **Ustawienia** — folder biblioteki, aktualizacje, instalacja CLI oraz backup i odzyskiwanie. |
-
-Zrzuty pochodzą z przykładowej biblioteki przygotowanej na potrzeby dokumentacji.
+Interfejs jest aktywnie rozwijany, dlatego dokumentacja opisuje przepływy i funkcje zamiast utrwalać wygląd zrzutami ekranu.
 
 ## Wymagania i uruchomienie
 
