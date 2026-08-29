@@ -170,6 +170,7 @@ struct BatchProjectRequest {
 struct BatchProjectView: View {
     @Environment(\.dismiss) private var dismiss
     let skills: [Skill]; let servers: [MCPServer]; let docs: [AgentDoc]; let existingProjects: [Project]; let existingRoots: [ProjectRoot]
+    let initialSelection: AttachmentSelection
     let onSave: (BatchProjectRequest) -> Void
     @State private var root = ""; @State private var folders: [URL] = []; @State private var selectedFolders = Set<String>()
     @State private var selection = AttachmentSelection(tools: Tool.allCases); @State private var manageGitignore = true; @State private var scanError = ""
@@ -207,7 +208,7 @@ struct BatchProjectView: View {
     SheetFooter {
         Button("Anuluj") { dismiss() }
         Button(sharedSettings ? "Dodaj folder i \(selectedFolders.count) projektów" : "Dodaj \(selectedFolders.count) projektów") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(saveDisabled)
-    } }.sheetFrame(width: 760, height: 640) }
+    } }.sheetFrame(width: 760, height: 640).onAppear { selection = initialSelection } }
 
     private var saveDisabled: Bool {
         if selection.tools.isEmpty || rootAlreadyAdded { return true }

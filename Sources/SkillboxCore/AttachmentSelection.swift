@@ -147,6 +147,23 @@ extension SkillboxService {
 }
 
 extension SkillboxService {
+    /// The local template offered when adding a project. Unlike `global`, it never synchronizes
+    /// anything on its own and does not affect existing projects.
+    public func projectDefaults() async throws -> AttachmentSelection {
+        try await store.configuration().projectDefaults
+    }
+
+    public func setProjectDefaults(_ selection: AttachmentSelection) async throws {
+        var config = try await store.configuration()
+        config.projectDefaults = Self.pruned(
+            selection,
+            catalog: try await store.catalog(),
+            mcp: try await store.mcpConfiguration(),
+            docs: try await store.docsConfiguration()
+        )
+        try await store.save(config)
+    }
+
     /// Every place's attachments in one read. The GUI keeps this in memory and answers "what is
     /// attached here" from it on every redraw, instead of hitting the store per row.
     public func allSelections() async throws -> [String: AttachmentSelection] {

@@ -1,6 +1,41 @@
 import SwiftUI
 import SkillboxCore
 
+/// A local template copied into the new-project form. It deliberately has no preview or sync
+/// action: saving it changes only future projects, never an already configured folder.
+struct ProjectDefaultsEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var model: AppModel
+    @State private var selection = AttachmentSelection(tools: Tool.allCases)
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Domyślne dla nowych projektów").font(.title2.bold())
+                    Text("Ten zestaw pojawi się w formularzu przy tworzeniu pojedynczego projektu lub grupy projektów. Możesz go wtedy dowolnie zmienić; zapis tutaj nie wpływa na istniejące projekty.")
+                        .foregroundStyle(.secondary)
+                    AttachmentPicker(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, selection: $selection)
+                }
+                .padding(24)
+            }
+            SheetFooter {
+                Button("Anuluj") { dismiss() }
+                Button("Zapisz domyślne") {
+                    Task {
+                        await model.saveProjectDefaults(selection)
+                        dismiss()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(selection.tools.isEmpty || model.isWorking)
+            }
+        }
+        .sheetFrame(width: 700, height: 640)
+        .onAppear { selection = model.projectDefaults }
+    }
+}
+
 /// The Mac itself, edited exactly like a project or a parent folder.
 ///
 /// This used to be its own sidebar section called "Globalne", which sat one row away from another
@@ -19,7 +54,7 @@ struct GlobalSelectionEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView { VStack(alignment: .leading, spacing: 14) {
-                Text("Skille globalne").font(.title2.bold())
+                Text("Skille we wszystkich sesjach").font(.title2.bold())
                 Text("Te skille trafiają do katalogu użytkownika i są widoczne we wszystkich sesjach wybranego klienta, niezależnie od projektu.").foregroundStyle(.secondary)
                 GroupBox("Gdzie trafią") { VStack(alignment: .leading, spacing: 4) {
                     ForEach(Tool.allCases, id: \.self) { tool in

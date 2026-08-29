@@ -6,6 +6,16 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.18.4] - 2026-08-29
+
+### Dodano
+
+- `Domyślne dla nowych projektów` jest teraz prawdziwym, lokalnym szablonem skilli, MCP i dokumentów. `Dodaj projekt` oraz `Dodaj wiele` używają go jako edytowalnego punktu startowego, bez zmiany istniejących projektów.
+
+### Zmieniono
+
+- Skille synchronizowane we wszystkich sesjach są oddzielną akcją `Projekty → Więcej → Skille we wszystkich sesjach…`, zamiast błędnie nazwanych domyślnych projektów.
+
 ## [0.18.3] - 2026-08-29
 
 ### Zmieniono

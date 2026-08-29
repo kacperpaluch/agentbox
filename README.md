@@ -13,7 +13,7 @@ Pasek boczny ma trzy pozycje: rzeczy, które zbierasz (`Biblioteka`), miejsca, w
 | | |
 | --- | --- |
 | ![Biblioteka](docs/screenshots/biblioteka.png) | ![Projekty](docs/screenshots/projekty.png) |
-| **Biblioteka** — skille, serwery MCP i dokumenty na jednym ekranie, ze wspólnym wyszukiwaniem i filtrem tagów. | **Projekty** — projekty, foldery ze wspólnymi ustawieniami i `Wszystkie sesje` (ten Mac) jako pierwszy wiersz. |
+| **Biblioteka** — skille, serwery MCP i dokumenty na jednym ekranie, ze wspólnym wyszukiwaniem i filtrem tagów. | **Projekty** — projekty, foldery ze wspólnymi ustawieniami oraz szablon dla nowych projektów. |
 | ![Ustawienia](docs/screenshots/ustawienia.png) |
 | **Ustawienia** — folder biblioteki, aktualizacje, instalacja CLI oraz backup i odzyskiwanie. |
 
@@ -193,7 +193,11 @@ Pliki konfiguracyjne i manifesty powstają tylko wtedy, gdy projekt ma co synchr
 
 ### Skille globalne
 
-Pierwszy wiersz listy w sekcji `Projekty` to `Wszystkie sesje` — ten Mac traktowany jak każde inne miejsce, w które trafiają skille. `Ustawienia globalne…` otwiera ten sam edytor co projekt i synchronizuje wybrane skille do katalogów użytkownika zamiast do projektu: `~/.claude/skills`, `~/.codex/skills` i `~/.config/opencode/skills`. Wybór narzędzi, skilli i tagów jest zapisywany, a podgląd pokazuje zmiany przed zapisem. Globalnie trafiają wyłącznie skille — pliki, w których żyłby globalny serwer MCP, to pliki, których Agentbox celowo nigdy nie zapisuje.
+`Projekty → Więcej → Skille we wszystkich sesjach…` synchronizuje wybrane skille do katalogów użytkownika zamiast do projektu: `~/.claude/skills`, `~/.codex/skills` i `~/.config/opencode/skills`. Wybór narzędzi, skilli i tagów jest zapisywany, a podgląd pokazuje zmiany przed zapisem. Globalnie trafiają wyłącznie skille — pliki, w których żyłby globalny serwer MCP, to pliki, których Agentbox celowo nigdy nie zapisuje.
+
+### Domyślne dla nowych projektów
+
+`Projekty → Domyślne dla nowych projektów → Skonfiguruj…` zapisuje lokalny szablon skilli, serwerów MCP i dokumentów. `Dodaj projekt` oraz `Dodaj wiele` otwierają się z tym wyborem, ale możesz go dowolnie zmienić przed zapisem. Zmiana domyślnych nie wpływa na istniejące projekty.
 
 ```bash
 swift run agentbox sync global --skills seo-audit,docx --tags seo --tools claude,opencode

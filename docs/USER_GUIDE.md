@@ -22,7 +22,8 @@ Wcześniej tych pozycji było osiem. `Skille`, `MCP` i `Dokumenty` to jedna bibl
 ## Pierwsze uruchomienie
 
 1. Dodaj skill z lokalnego katalogu albo repozytorium Git.
-2. Dodaj projekt i wybierz obsługiwane narzędzia.
+2. Opcjonalnie ustaw `Projekty → Domyślne dla nowych projektów → Skonfiguruj…`, wybierając skille, MCP i dokumenty.
+3. Dodaj projekt; formularz startuje z tym wyborem, który możesz zmienić przed zapisem.
 3. Przypisz skille bezpośrednio lub przez tagi dynamiczne.
 4. Opcjonalnie zaimportuj serwery MCP i przypisz im tagi.
 5. W projekcie wybierz `Synchronizuj wszystko`, sprawdź plan zmian i zatwierdź.
@@ -138,13 +139,17 @@ W edytorze projektu można włączyć `Dopisuj wygenerowane pliki MCP do .gitign
 
 ### Skille globalne
 
-Pierwszy wiersz listy w `Projekty` to `Wszystkie sesje`. Przycisk `Ustawienia globalne…` otwiera ten sam edytor co projekt i synchronizuje wybrane skille do katalogu użytkownika, a nie do projektu. Są wtedy widoczne we wszystkich sesjach danego klienta:
+`Projekty → Więcej → Skille we wszystkich sesjach…` synchronizuje wybrane skille do katalogu użytkownika, a nie do projektu. Są wtedy widoczne we wszystkich sesjach danego klienta:
 
 - Claude Code — `~/.claude/skills`,
 - Codex — `~/.codex/skills`,
 - OpenCode — `~/.config/opencode/skills`.
 
 Zaznacz narzędzia, a następnie pojedyncze skille lub tagi dynamiczne. `Zapisz wybór` zapamiętuje ustawienie w `selections.json` pod kluczem `global`, `Odśwież podgląd` pokazuje planowane dodania, aktualizacje i usunięcia, a `Synchronizuj globalnie` zapisuje zmiany. Odznaczenie skilla usuwa go z katalogu użytkownika przy kolejnej synchronizacji — również tutaj usuwane są wyłącznie katalogi z manifestu Agentbox.
+
+### Domyślne dla nowych projektów
+
+`Projekty → Domyślne dla nowych projektów → Skonfiguruj…` to lokalny szablon dla nowych projektów. Wybierz w nim klientów, skille, serwery MCP i dokumenty. `Dodaj projekt` oraz `Dodaj wiele` zaczną z tym zestawem, ale przed zapisem można go zmienić. Edycja domyślnych nie zmienia istniejących projektów ani folderów nadrzędnych.
 
 ### Dodawanie wielu projektów
 

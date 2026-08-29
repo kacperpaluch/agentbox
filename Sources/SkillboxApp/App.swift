@@ -97,7 +97,7 @@ struct ContentView: View {
         .overlay { if model.isWorking { ProgressView().controlSize(.large).padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
         .sheet(isPresented: $showGit) { AddGitView { url, path in Task { await model.addGit(url, subpath: path) } } }
         .sheet(isPresented: $showProject) {
-            ProjectEditor(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, project: nil, initialSelection: AttachmentSelection(tools: Tool.allCases)) { project, selection in
+            ProjectEditor(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, project: nil, initialSelection: model.projectDefaults) { project, selection in
                 Task { await model.addProject(project, selection: selection) }
             }
         }

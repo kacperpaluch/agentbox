@@ -146,4 +146,28 @@ final class AttachmentSelectionTests: AgentboxTestCase {
         XCTAssertEqual(stored.docIDs, [], "tag `web` już obejmuje ten dokument")
         XCTAssertEqual(stored.skillTags, ["web"])
     }
+
+    func testProjectDefaultsPersistAllAttachmentKindsWithoutChangingExistingProjects() async throws {
+        let (service, root, project, server) = try await makeService()
+        let defaults = AttachmentSelection(
+            tools: [.claude, .codex],
+            skillIDs: ["demo"],
+            serverIDs: [server.id],
+            docIDs: ["zasady"]
+        )
+
+        try await service.setProjectDefaults(defaults)
+        let savedDefaults = try await service.projectDefaults()
+        XCTAssertEqual(savedDefaults, defaults)
+
+        // The template is only a starting point for future editors; it never rewrites a project
+        // that was already saved before the user changed defaults.
+        let existing = try await service.selection(for: .project(project.id))
+        XCTAssertEqual(existing.tools, [.claude])
+        XCTAssertEqual(existing.serverIDs, [server.id])
+
+        let reopened = try SkillboxService(root: root.appending(path: "data"))
+        let reopenedDefaults = try await reopened.projectDefaults()
+        XCTAssertEqual(reopenedDefaults, defaults)
+    }
 }

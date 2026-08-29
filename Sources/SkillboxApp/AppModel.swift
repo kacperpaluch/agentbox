@@ -28,6 +28,8 @@ import SkillboxCore
     /// Every place's attachments, exactly as `selections.json` holds them. One map for projects,
     /// parent folders and this Mac alike — the Mac under the key `"global"`.
     @Published var selections: [String: AttachmentSelection] = [:]
+    /// A local template used only to prefill the editor for a newly added project.
+    @Published var projectDefaults = AttachmentSelection(tools: Tool.allCases)
     /// What this Mac itself gets. A view onto `selections`, so `Projekty` can list it as a row.
     var global: AttachmentSelection { selections[SelectionTarget.global.storageKey] ?? AttachmentSelection() }
     @Published var detectedFolders: [DetectedProjectFolder] = []
@@ -51,7 +53,7 @@ import SkillboxCore
     // tags), so it recomputes them here too. That is the only place callers need to remember to
     // call — a skill tag edit or a new tagged MCP server no longer leaves the Projects tab showing
     // a stale "synced" badge until someone happens to touch a project directly.
-    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); docs = try await service?.docsConfiguration() ?? DocsConfiguration(); selections = try await service?.allSelections() ?? [:]; if selection == nil { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses() }
+    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); docs = try await service?.docsConfiguration() ?? DocsConfiguration(); selections = try await service?.allSelections() ?? [:]; projectDefaults = try await service?.projectDefaults() ?? AttachmentSelection(tools: Tool.allCases); if selection == nil { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses() }
 
     // MARK: Parent folders
 
@@ -206,6 +208,9 @@ import SkillboxCore
 
     func saveSelection(_ selection: AttachmentSelection, for target: SelectionTarget, named name: String) async {
         await perform { try await self.service?.setSelection(selection, for: target); self.message = "Zapisano ustawienia: \(name)" }
+    }
+    func saveProjectDefaults(_ selection: AttachmentSelection) async {
+        await perform { try await self.service?.setProjectDefaults(selection); self.message = "Zapisano domyślne ustawienia nowych projektów" }
     }
     func deleteProject(_ project: Project, removingFiles: Bool) async {
         await perform {

@@ -6,6 +6,28 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.18.4</title>
+      <pubDate>Sat, 29 Aug 2026 23:05:19 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.4</link>
+      <sparkle:version>43</sparkle:version>
+      <sparkle:shortVersionString>0.18.4</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.18.4</h2>
+        <ul>
+          <li>Domyślne dla nowych projektów obejmują skille, MCP i dokumenty.</li>
+          <li>Nowy projekt i dodawanie wielu projektów zaczynają się od wybranego szablonu.</li>
+          <li>Edycja domyślnych nie zmienia istniejących projektów.</li>
+        </ul>
+      ]]></description>
+      <enclosure url="https://github.com/kacperpaluch/agentbox/releases/download/v0.18.4/Agentbox-0.18.4.dmg"
+                 sparkle:version="43"
+                 sparkle:shortVersionString="0.18.4"
+                 length="5802499"
+                 type="application/octet-stream"
+                 sparkle:edSignature="fUILMYQylt/IrqvExENYwrYuaAskh3DoJyScnHxuXttVX0dfNmcjYlv3K49f2UHXGzKsU2St8w+XT9Z7bs7ZCQ=="/>
+    </item>
+    <item>
       <title>Agentbox 0.18.3</title>
       <pubDate>Sat, 29 Aug 2026 22:54:08 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.3</link>

@@ -161,13 +161,27 @@ public struct LocalConfiguration: Codable, Sendable {
     /// Parent folders added in a batch. What their projects inherit lives in `selections`.
     public var projectRoots: [ProjectRoot]?
     public var backupRemote: String?
+    /// Starting attachments for a newly created project. This is local to the Mac, just like the
+    /// project list: it is a convenience template, not an assignment that existing projects inherit.
+    public var projectDefaults = AttachmentSelection(tools: Tool.allCases)
     /// Every place's attachments, keyed by project id, folder id or `"global"`. Read from and
     /// written to `selections.json` by the store — never part of `projects.local.json`, which is
     /// this Mac's local record and stays out of the Git backup.
     public var selections: [String: AttachmentSelection] = [:]
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case projects, projectRoots, backupRemote }
+    enum CodingKeys: String, CodingKey { case projects, projectRoots, backupRemote, projectDefaults }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        projects = try values.decodeIfPresent([Project].self, forKey: .projects) ?? []
+        projectRoots = try values.decodeIfPresent([ProjectRoot].self, forKey: .projectRoots)
+        backupRemote = try values.decodeIfPresent(String.self, forKey: .backupRemote)
+        // MVP libraries have no template yet. They retain the historical new-project starting point:
+        // all supported clients selected, with no attached content.
+        projectDefaults = try values.decodeIfPresent(AttachmentSelection.self, forKey: .projectDefaults)
+            ?? AttachmentSelection(tools: Tool.allCases)
+    }
 }
 
 /// `selections.json`. One file answering "what is attached where", for projects, parent folders and

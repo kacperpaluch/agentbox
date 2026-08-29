@@ -18,7 +18,8 @@ struct ProjectsView: View {
     @State private var deletingRoot: ProjectRoot?
     @State private var settingUpRoot: ProjectGroup?
     @State private var showDetected = false
-    @State private var showGlobal = false
+    @State private var showProjectDefaults = false
+    @State private var showGlobalSkills = false
     @State private var showClientServers = false
 
     private struct ProjectGroup: Identifiable {
@@ -54,9 +55,10 @@ struct ProjectsView: View {
             projectList
         }
         .navigationTitle("Projekty")
-        .sheet(isPresented: $showBatch) { BatchProjectView(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, existingProjects: model.projects, existingRoots: model.projectRoots) { request in Task { await model.addBatch(request) } } }
+        .sheet(isPresented: $showBatch) { BatchProjectView(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, existingProjects: model.projects, existingRoots: model.projectRoots, initialSelection: model.projectDefaults) { request in Task { await model.addBatch(request) } } }
         .sheet(isPresented: $showDetected) { DetectedFoldersView(model: model) }
-        .sheet(isPresented: $showGlobal) { GlobalSelectionEditor(model: model) }
+        .sheet(isPresented: $showProjectDefaults) { ProjectDefaultsEditor(model: model) }
+        .sheet(isPresented: $showGlobalSkills) { GlobalSelectionEditor(model: model) }
         .sheet(isPresented: $showClientServers) { ClientServersView(model: model) }
         .sheet(item: $settingUpRoot) { group in GroupRootSetupView(model: model, folderPath: group.path, projects: group.projects) }
         .sheet(item: $editingRoot) { root in
@@ -172,6 +174,7 @@ struct ProjectsView: View {
                 Button { Task { await model.refreshProjects() } } label: { Label("Sprawdź stan projektów", systemImage: "arrow.clockwise") }
                     .disabled((model.projects.isEmpty && model.projectRoots.isEmpty) || model.isCheckingStatuses)
                 Button { showClientServers = true } label: { Label("Serwery klientów…", systemImage: "server.rack") }
+                Button { showGlobalSkills = true } label: { Label("Skille we wszystkich sesjach…", systemImage: "person.crop.circle") }
                 Divider()
                 Button("Rozwiń wszystko") { collapsedGroups.removeAll() }
                 Button("Zwiń wszystko") { collapsedGroups = Set(groups.map(\.path)) }
@@ -181,9 +184,8 @@ struct ProjectsView: View {
         }
     }
 
-    /// The Mac itself, pinned above the folders. Globalne skille are not a different kind of screen —
-    /// they are attachments landing in a place, exactly like every row below — so they belong on this
-    /// list rather than in a sidebar section whose name collided with `Serwery klientów`.
+    /// A starting template, not an inherited configuration: it is copied into the editor only when
+    /// a project is created, so changing it can never alter an existing project.
     private var defaultsSection: some View {
         HStack(spacing: Space.tight + 4) {
             Image(systemName: "slider.horizontal.3").foregroundStyle(.tint)
@@ -192,7 +194,7 @@ struct ProjectsView: View {
                 Text(globalSummary).rowMetadata().lineLimit(1)
             }
             Spacer()
-            Button("Skonfiguruj…") { showGlobal = true }.buttonStyle(.bordered).controlSize(.small)
+            Button("Skonfiguruj…") { showProjectDefaults = true }.buttonStyle(.bordered).controlSize(.small)
         }
         .padding(.vertical, Space.row)
         .listRowBackground(Color.accentColor.opacity(0.06))
@@ -212,11 +214,12 @@ struct ProjectsView: View {
     }
 
     private var globalSummary: String {
-        let global = model.global
-        guard !global.tools.isEmpty else { return "Nieskonfigurowane — żaden klient nie dostaje skilli globalnie" }
-        let clients = global.tools.map { $0.rawValue.capitalized }.joined(separator: ", ")
-        let count = global.skillIDs.count + global.skillTags.count
-        return count == 0 ? "\(clients) · nic nie wybrano" : "\(clients) · \(global.skillIDs.count) skilli, \(global.skillTags.count) tagów"
+        let defaults = model.projectDefaults
+        let clients = defaults.tools.isEmpty ? "bez klientów" : defaults.tools.map { $0.rawValue.capitalized }.joined(separator: ", ")
+        let skills = defaults.skillIDs.count + defaults.skillTags.count
+        let servers = defaults.serverIDs.count + defaults.serverTags.count
+        let docs = defaults.docIDs.count + defaults.docTags.count
+        return "\(clients) · \(skills) skilli · \(servers) MCP · \(docs) dokumentów"
     }
 
     private func groupExpansion(_ path: String) -> Binding<Bool> {
