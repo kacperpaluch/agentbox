@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.18.5] - 2026-08-30
+
+### Naprawiono
+
+- Import i ręczna edycja JSON-a MCP akceptują teraz typograficzne cudzysłowy wstawiane przez macOS. Poprawny JSON pozostaje bez zmian; normalizacja jest podejmowana wyłącznie jako drugi krok po nieudanym odczycie.
+
 ## [0.18.4] - 2026-08-29
 
 ### Dodano

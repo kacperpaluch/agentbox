@@ -41,7 +41,7 @@ Każdy obraz aktualizacji jest weryfikowany kluczem EdDSA osadzonym w aplikacji.
 
 Podczas analizy JSON Agentbox proponuje typ każdej zmiennej środowiskowej i każdego nagłówka. Przed importem można zmienić propozycję.
 
-Importer przyjmuje zarówno mapę `mcpServers`, jak i pojedynczą definicję, na przykład obiekt zawierający `command`, `args` i `env`. W tym drugim przypadku wpisz nazwę serwera w polu nad przyciskiem „Analizuj” albo zaakceptuj nazwę zaproponowaną z argumentów; `env` nigdy nie jest wtedy traktowane jako osobny serwer.
+Importer przyjmuje zarówno mapę `mcpServers`, jak i pojedynczą definicję, na przykład obiekt zawierający `command`, `args` i `env`. W tym drugim przypadku wpisz nazwę serwera w polu nad przyciskiem „Analizuj” albo zaakceptuj nazwę zaproponowaną z argumentów; `env` nigdy nie jest wtedy traktowane jako osobny serwer. Jeśli macOS wstawi typograficzne cudzysłowy zamiast znaków JSON-a, Agentbox spróbuje je automatycznie poprawić podczas importu.
 
 ### Kreator AI
 

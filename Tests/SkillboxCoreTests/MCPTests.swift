@@ -29,6 +29,19 @@ final class MCPTests: AgentboxTestCase {
         XCTAssertEqual(saved.servers.map(\.name), ["portainer"])
     }
 
+    func testImportsSingleServerWithMacOSTypographicQuotes() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let service = try SkillboxService(root: root)
+        let json = #"{“args”: [“-y”, “actual-mcp-server”, “--stdio”], “command”: “npx”, “env”: {“ACTUAL_SERVER_URL”: “http://example.test:5006”}}"#
+
+        let analyzed = try await service.analyzeMCPJSON(json)
+
+        XCTAssertTrue(analyzed.isSingleServerInput)
+        XCTAssertEqual(analyzed.servers.map(\.name), ["actual-mcp-server"])
+        XCTAssertEqual(analyzed.servers.first?.command, "npx")
+        XCTAssertEqual(analyzed.servers.first?.literalEnvironment?["ACTUAL_SERVER_URL"], "http://example.test:5006")
+    }
+
     func testOpenCodeUsesDirectMCPMapAndMixedEnvironmentValuesSurviveImport() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let projectURL = root.appending(path: "project")

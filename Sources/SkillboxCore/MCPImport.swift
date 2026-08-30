@@ -53,7 +53,7 @@ extension SkillboxService {
     /// automatically without a manual "mark as secret" step.
     public func updateMCPServerJSON(_ id: UUID, name: String, json: String, enabled: Bool, tags: [String]) async throws -> MCPServer {
         guard name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil else { throw SkillboxError.invalidSkill("nazwa MCP może zawierać litery, cyfry, _ i -") }
-        guard let data = json.data(using: .utf8), let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { throw SkillboxError.invalidSkill("konfiguracja serwera nie jest poprawnym JSON") }
+        guard let value = Self.jsonObject(from: json) else { throw SkillboxError.invalidSkill("konfiguracja serwera nie jest poprawnym JSON") }
         var config = try await store.mcpConfiguration()
         guard let index = config.servers.firstIndex(where: { $0.id == id }) else { throw SkillboxError.mcpConflict("serwer MCP nie istnieje") }
         guard !config.servers.contains(where: { $0.id != id && $0.name == name }) else { throw SkillboxError.mcpConflict("serwer \(name) już istnieje") }
@@ -89,7 +89,7 @@ extension SkillboxService {
     }
 
     private func parseMCPJSON(_ text: String, singleServerName: String? = nil) throws -> (summary: MCPImportSummary, secrets: [String: String]) {
-        guard let data = text.data(using: .utf8), let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw SkillboxError.invalidSkill("konfiguracja MCP nie jest poprawnym JSON") }
+        guard let raw = Self.jsonObject(from: text) else { throw SkillboxError.invalidSkill("konfiguracja MCP nie jest poprawnym JSON") }
         let explicitEntries = raw["mcpServers"] as? [String: Any]
         let isSingleServerInput = explicitEntries == nil && Self.isServerEntry(raw)
         let entries: [String: Any]
@@ -105,6 +105,26 @@ extension SkillboxService {
             servers.append(parsed.server); fields += parsed.fields; secrets.merge(parsed.secrets) { _, new in new }
         }
         return (MCPImportSummary(servers: servers, secretCount: 0, stdioCount: servers.filter { $0.transport == .stdio }.count, httpCount: servers.filter { $0.transport == .http }.count, fields: fields, isSingleServerInput: isSingleServerInput), secrets)
+    }
+
+    /// macOS can replace JSON delimiters with typographic quotes while typing or pasting. Keep a
+    /// valid JSON document completely unchanged; only retry a failed parse with those delimiters
+    /// normalized. This means typographic quotes inside an otherwise valid string are preserved.
+    private static func jsonObject(from text: String) -> [String: Any]? {
+        func decode(_ source: String) -> [String: Any]? {
+            guard let data = source.data(using: .utf8) else { return nil }
+            return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        }
+        if let object = decode(text) { return object }
+
+        let normalized = text
+            .replacingOccurrences(of: "\u{201C}", with: "\"") // “
+            .replacingOccurrences(of: "\u{201D}", with: "\"") // ”
+            .replacingOccurrences(of: "\u{201E}", with: "\"") // „
+            .replacingOccurrences(of: "\u{00AB}", with: "\"") // «
+            .replacingOccurrences(of: "\u{00BB}", with: "\"") // »
+        guard normalized != text else { return nil }
+        return decode(normalized)
     }
 
     private static func isServerEntry(_ value: [String: Any]) -> Bool {

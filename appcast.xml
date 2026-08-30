@@ -6,6 +6,27 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.18.5</title>
+      <pubDate>Sun, 30 Aug 2026 18:21:48 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.5</link>
+      <sparkle:version>44</sparkle:version>
+      <sparkle:shortVersionString>0.18.5</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.18.5</h2>
+        <ul>
+          <li>Import i ręczna edycja konfiguracji MCP obsługują typograficzne cudzysłowy wstawiane przez macOS.</li>
+          <li>Poprawny JSON pozostaje bez zmian; korekta jest uruchamiana tylko po nieudanej walidacji.</li>
+        </ul>
+      ]]></description>
+      <enclosure url="https://github.com/kacperpaluch/agentbox/releases/download/v0.18.5/Agentbox-0.18.5.dmg"
+                 sparkle:version="44"
+                 sparkle:shortVersionString="0.18.5"
+                 length="5802618"
+                 type="application/octet-stream"
+                 sparkle:edSignature="2CeV096cckdCkhczFUIRf8qS+1ARjJLsBSop7V0CmbJDdBMysx/sQi1Igc26eIdqaCZch33NOqEzKwEg78v3CA=="/>
+    </item>
+    <item>
       <title>Agentbox 0.18.4</title>
       <pubDate>Sat, 29 Aug 2026 23:05:19 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.4</link>
