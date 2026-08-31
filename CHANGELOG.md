@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-08-31
+
+### Naprawiono
+
+- Instalacja pluginów z aplikacji poprawnie znajduje Claude Code z Homebrew (`/opt/homebrew/bin/claude`), także gdy aplikacja GUI nie dziedziczy PATH Terminala.
+
 ## [0.19.1] - 2026-08-31
 
 ### Naprawiono

@@ -14,6 +14,13 @@ public struct ClaudePlugin: Identifiable, Hashable, Sendable {
 }
 
 extension SkillboxService {
+    private static func claudeExecutable() throws -> String {
+        let fm = FileManager.default
+        var candidates = ["/opt/homebrew/bin/claude", "/usr/local/bin/claude", "/usr/bin/claude"]
+        if let path = ProcessInfo.processInfo.environment["PATH"] { candidates += path.split(separator: ":").map { "\($0)/claude" } }
+        if let executable = candidates.first(where: { fm.isExecutableFile(atPath: $0) }) { return executable }
+        throw SkillboxError.commandFailed("Nie znaleziono Claude Code. Zainstaluj go lub upewnij się, że istnieje /opt/homebrew/bin/claude albo /usr/local/bin/claude.")
+    }
     public func libraryClaudePlugins() async throws -> [ClaudePluginDefinition] {
         (try await store.catalog().claudePlugins ?? []).sorted { $0.name < $1.name }
     }
@@ -75,12 +82,13 @@ extension SkillboxService {
         guard !identifier.isEmpty else { throw SkillboxError.invalidSkill("podaj nazwę pluginu") }
         let project = URL(fileURLWithPath: projectPath).standardizedFileURL
         guard FileManager.default.fileExists(atPath: project.path) else { throw SkillboxError.projectNotFound(projectPath) }
-        if !source.isEmpty { _ = try ProcessRunner.run("/usr/bin/env", ["claude", "plugin", "marketplace", "add", source, "--scope", scope.rawValue], cwd: project) }
-        _ = try ProcessRunner.run("/usr/bin/env", ["claude", "plugin", "install", identifier, "--scope", scope.rawValue], cwd: project)
+        let executable = try Self.claudeExecutable()
+        if !source.isEmpty { _ = try ProcessRunner.run(executable, ["plugin", "marketplace", "add", source, "--scope", scope.rawValue], cwd: project) }
+        _ = try ProcessRunner.run(executable, ["plugin", "install", identifier, "--scope", scope.rawValue], cwd: project)
     }
 
     public func uninstallClaudePlugin(projectPath: String, plugin: ClaudePlugin) throws {
         let project = URL(fileURLWithPath: projectPath).standardizedFileURL
-        _ = try ProcessRunner.run("/usr/bin/env", ["claude", "plugin", "uninstall", plugin.id, "--scope", plugin.scope.rawValue], cwd: project)
+        _ = try ProcessRunner.run(try Self.claudeExecutable(), ["plugin", "uninstall", plugin.id, "--scope", plugin.scope.rawValue], cwd: project)
     }
 }
