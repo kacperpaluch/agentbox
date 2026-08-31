@@ -450,6 +450,7 @@ private struct AllProjectsSyncPlanRow: View {
                         SyncChangeRows(added: item.added, updated: [], removed: item.removed)
                     }
                 }
+                if !plan.preview.plugins.isEmpty { VStack(alignment: .leading, spacing: 4) { Text("Pluginy Claude").font(.caption.weight(.semibold)); ForEach(plan.preview.plugins, id: \.self) { Label("Sprawdź/zainstaluj: \($0)", systemImage: "puzzlepiece.extension").font(.caption) } } }
             }
             .padding(.top, 8)
         } label: {

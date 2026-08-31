@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.19.3] - 2026-08-31
+
+### Naprawiono
+
+- Podglądy pojedynczej i zbiorczej synchronizacji pokazują pluginy Claude oraz informują, że będą sprawdzone lub zainstalowane.
+
 ## [0.19.2] - 2026-08-31
 
 ### Naprawiono

@@ -197,7 +197,9 @@ extension SkillboxService {
         let skills = try perTool.map { tool, current in
             try SkillboxService.skillPreview(tool: tool, target: URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath), current: current, library: library)
         }
-        return ProjectSyncPreview(skills: skills, mcp: try await previewMCP(projectID: projectID), docs: try await previewDocs(projectID: projectID))
+        let ids = config.selections[config.selectionID(for: project).uuidString]?.claudePluginIDs ?? []
+        let plugins = (catalog.claudePlugins ?? []).filter { ids.contains($0.id) }.map(\.name).sorted()
+        return ProjectSyncPreview(skills: skills, mcp: try await previewMCP(projectID: projectID), docs: try await previewDocs(projectID: projectID), plugins: plugins)
     }
 
     /// True when synchronizing would write exactly what is already on disk.

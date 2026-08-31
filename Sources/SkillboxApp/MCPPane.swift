@@ -324,8 +324,9 @@ struct MCPPreviewView: View {
                     Text("Dokumenty").font(.headline).padding(.top, 4)
                     ForEach(preview.docs, id: \.file) { item in GroupBox { VStack(alignment: .leading, spacing: 8) { Text(item.file).font(.caption).foregroundStyle(.secondary); SyncChangeRows(added: item.added, updated: [], removed: item.removed); DisclosureGroup("Podgląd pliku") { Text(item.content.isEmpty ? "Plik nie jest potrzebny — nie zostanie utworzony, a istniejący zarządzany plik zostanie usunięty." : item.content).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6) } }.padding(7) } label: { Label(URL(fileURLWithPath: item.file).lastPathComponent, systemImage: "doc.text") } }
                 }
+                if !preview.plugins.isEmpty { Text("Pluginy Claude").font(.headline).padding(.top, 4); ForEach(preview.plugins, id: \.self) { Label("Zostanie sprawdzony/ zainstalowany: \($0)", systemImage: "puzzlepiece.extension").font(.caption) } }
             } } }
-            HStack { Spacer(); Button("Zamknij") { dismiss() }; Button("Synchronizuj skille, MCP i dokumenty") { Task { await model.syncEverything(project) } }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || preview == nil || model.isWorking) }
+            HStack { Spacer(); Button("Zamknij") { dismiss() }; Button("Synchronizuj skille, MCP, dokumenty i pluginy") { Task { await model.syncEverything(project) } }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || preview == nil || model.isWorking) }
         }.padding(24).sheetFrame(width: 820, height: 700).task { do { preview = try await model.previewProjectSync(project) } catch { self.error = error.localizedDescription; model.reportError(error) } }
     }
 }

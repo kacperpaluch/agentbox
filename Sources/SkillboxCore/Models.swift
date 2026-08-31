@@ -410,7 +410,8 @@ public struct ProjectSyncPreview: Sendable {
     public var skills: [SkillSyncPreview]
     public var mcp: [MCPPreview]
     public var docs: [DocPreview]
-    public init(skills: [SkillSyncPreview], mcp: [MCPPreview], docs: [DocPreview] = []) { self.skills = skills; self.mcp = mcp; self.docs = docs }
+    public var plugins: [String]
+    public init(skills: [SkillSyncPreview], mcp: [MCPPreview], docs: [DocPreview] = [], plugins: [String] = []) { self.skills = skills; self.mcp = mcp; self.docs = docs; self.plugins = plugins }
 }
 
 public struct ProjectSyncPlan: Identifiable, Sendable {
