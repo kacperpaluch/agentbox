@@ -254,6 +254,13 @@ import SkillboxCore
             message = "Zapisano serwer MCP"; record(.success, message); await reload(); scheduleAutomaticBackup(); return true
         } catch { message = error.localizedDescription; record(.error, message); await reload(); return false }
     }
+    func duplicateMCPServer(_ server: MCPServer, name: String) async -> Bool {
+        isWorking = true; defer { isWorking = false }
+        do {
+            _ = try await service?.duplicateMCPServer(id: server.id, name: name)
+            message = "Utworzono kopię serwera MCP"; record(.success, message); await reload(); scheduleAutomaticBackup(); return true
+        } catch { message = error.localizedDescription; record(.error, message); await reload(); return false }
+    }
     func deleteMCPServer(_ id: UUID) async { await perform(autoBackup: true) { try await self.service?.deleteMCPServer(id: id); self.message = "Usunięto serwer MCP" } }
     func addMCPServerTags(_ ids: Set<UUID>, text: String) async { await perform(autoBackup: true) { try await self.service?.addMCPServerTags(serverIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) serwerów MCP" } }
     func exportMCPServerJSON(_ id: UUID) async -> String { (try? await service?.exportMCPServerJSON(id)) ?? "" }

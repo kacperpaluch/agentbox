@@ -27,6 +27,32 @@ final class MCPTests: AgentboxTestCase {
         XCTAssertEqual(copy.tags, server.tags)
     }
 
+    func testDuplicateMCPServerPersistsAnExactCopyUnderNewName() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let service = try SkillboxService(root: root)
+        let server = MCPServer(name: "actual-budget", transport: .http, url: "https://actual.example/mcp", headers: ["X-Token": "ACTUAL_TOKEN"], enabled: false, literalEnvironment: ["REGION": "home"], literalHeaders: ["Authorization": "Bearer dummy-secret"], secretEnvironment: ["LEGACY_TOKEN": "actual-token"], secretHeaders: ["X-Legacy": "actual-header"], tags: ["finance"])
+        try await service.saveMCPServer(server)
+
+        let copy = try await service.duplicateMCPServer(id: server.id, name: "actual-budget-tailscale")
+        let configuration = try await service.mcpConfiguration()
+        let stored = try XCTUnwrap(configuration.servers.first { $0.id == copy.id })
+
+        XCTAssertNotEqual(stored.id, server.id)
+        XCTAssertEqual(stored.name, "actual-budget-tailscale")
+        XCTAssertEqual(stored.transport, server.transport)
+        XCTAssertEqual(stored.command, server.command)
+        XCTAssertEqual(stored.arguments, server.arguments)
+        XCTAssertEqual(stored.url, server.url)
+        XCTAssertEqual(stored.environment, server.environment)
+        XCTAssertEqual(stored.headers, server.headers)
+        XCTAssertEqual(stored.literalEnvironment, server.literalEnvironment)
+        XCTAssertEqual(stored.literalHeaders, server.literalHeaders)
+        XCTAssertEqual(stored.secretEnvironment, server.secretEnvironment)
+        XCTAssertEqual(stored.secretHeaders, server.secretHeaders)
+        XCTAssertEqual(stored.enabled, server.enabled)
+        XCTAssertEqual(stored.tags, server.tags)
+    }
+
     func testAIPromptRequiresMCPWrapperAndEnvironmentReferencesForSecrets() {
         let prompt = SkillboxService.mcpAIPrompt("Use the token from the docs")
         XCTAssertTrue(prompt.contains("{\"mcpServers\": {...}}"))

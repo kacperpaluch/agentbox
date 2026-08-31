@@ -58,7 +58,7 @@ Po imporcie `Biblioteka → MCP → Szczegóły → JSON` daje pełną konfigura
 
 `Edytuj wszystko jako JSON` na liście serwerów otwiera osobny, prosty widok dla całej konfiguracji naraz: popraw i `Zapisz`, bez kroku analizy i zaznaczania — to edycja własnej konfiguracji, nie import czegoś nowego. Checkboxy przy serwerach pozwalają zaznaczyć kilka naraz i dodać im tagi jedną operacją, tak jak w Bibliotece.
 
-Menu przy serwerze ma także `Duplikuj…`. Nowy formularz zaczyna z pełną kopią transportu, argumentów, zmiennych, nagłówków, wartości lokalnych i tagów, ale dostaje nową nazwę techniczną (`<nazwa>-copy`). Zmień w nim np. URL na adres Tailscale, a potem zapisz. Dopóki nie wybierzesz `Zapisz`, kopia nie trafia do biblioteki; nie przejmuje też żadnych przypisań do projektów.
+Menu przy serwerze ma także `Duplikuj…`. Wpisz własną nową nazwę techniczną, a Agentbox od razu utworzy niezależną kopię 1:1 transportu, URL-a, argumentów, zmiennych, nagłówków, wartości lokalnych i tagów. Kopia nie przejmuje żadnych przypisań do projektów.
 
 ## Podgląd i synchronizacja
 

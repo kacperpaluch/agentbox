@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.18.7] - 2026-08-31
+
+### Naprawiono
+
+- Duplikowanie serwera MCP zapisuje teraz pełną kopię 1:1, również URL, zmienne, nagłówki i wartości lokalne. Nazwę nowej kopii wybiera użytkownik w osobnym oknie.
+
 ## [0.18.6] - 2026-08-31
 
 ### Dodano

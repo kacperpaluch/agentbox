@@ -6,6 +6,28 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.18.7</title>
+      <pubDate>Mon, 31 Aug 2026 06:50:01 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.7</link>
+      <sparkle:version>46</sparkle:version>
+      <sparkle:shortVersionString>0.18.7</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.18.7</h2>
+        <ul>
+          <li>Duplikowanie MCP tworzy teraz pełną kopię 1:1 konfiguracji.</li>
+          <li>Kopiowane są także URL-e, zmienne, nagłówki i wartości lokalne.</li>
+          <li>Własną nazwę nowej kopii podajesz przed jej utworzeniem.</li>
+        </ul>
+      ]]></description>
+      <enclosure url="https://github.com/kacperpaluch/agentbox/releases/download/v0.18.7/Agentbox-0.18.7.dmg"
+                 sparkle:version="46"
+                 sparkle:shortVersionString="0.18.7"
+                 length="5817467"
+                 type="application/octet-stream"
+                 sparkle:edSignature="cBcZTqwWtdpUO4m+NMcgK478ffmjlb4VJB7tE36gbfTsicvKOpSVP8itFBkvIWTa8T6aFyym8Jh6PubeFnODDw=="/>
+    </item>
+    <item>
       <title>Agentbox 0.18.6</title>
       <pubDate>Mon, 31 Aug 2026 06:23:26 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.6</link>

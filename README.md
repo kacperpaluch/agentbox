@@ -148,7 +148,7 @@ Usunięcie serwera usuwa jego bezpośrednie przypisania i kasuje jego wartości 
 
 Checkboxy przy serwerach pozwalają zaznaczyć kilka naraz i dodać im tagi jedną operacją — `Dodaj tagi (N)` w pasku akcji, tak samo jak w Bibliotece.
 
-Menu serwera zawiera też `Duplikuj…`. Otwiera ono niezapisaną kopię pełnej konfiguracji z nową, proponowaną nazwą (`<nazwa>-copy`); przed zapisem zmień ją oraz, na przykład, URL na adres przez Tailscale. Kopia nie przejmuje przypisań do projektów — wybierasz ją świadomie tam, gdzie ma działać.
+Menu serwera zawiera też `Duplikuj…`. Wpisz własną nową nazwę techniczną, a Agentbox utworzy niezależną kopię 1:1 całej konfiguracji — także URL-a, argumentów, zmiennych, nagłówków, wartości lokalnych i tagów. Kopia nie przejmuje przypisań do projektów — wybierasz ją świadomie tam, gdzie ma działać.
 
 ### Import JSON
 

@@ -19,6 +19,26 @@ extension SkillboxService {
         try await store.save(config)
     }
 
+    /// Creates an independent, byte-for-byte MCP definition under a user-selected name.  This is
+    /// deliberately separate from the editor save path: rebuilding a server from form fields can
+    /// otherwise omit data that is not currently visible in that form.
+    public func duplicateMCPServer(id: UUID, name: String) async throws -> MCPServer {
+        var config = try await store.mcpConfiguration()
+        guard let source = config.servers.first(where: { $0.id == id }) else {
+            throw SkillboxError.mcpConflict("serwer MCP nie istnieje")
+        }
+        guard name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil else {
+            throw SkillboxError.invalidSkill("nazwa MCP może zawierać litery, cyfry, _ i -")
+        }
+        guard !config.servers.contains(where: { $0.name == name }) else {
+            throw SkillboxError.mcpConflict("serwer \(name) już istnieje")
+        }
+        let copy = source.duplicated(name: name)
+        config.servers.append(copy)
+        try await store.save(config)
+        return copy
+    }
+
     /// Every MCP value lives in the local library configuration. `${NAME}` is the only special
     /// form: it forwards a system environment variable instead of storing a literal value.
     public func managedFields(serverID: UUID) async throws -> [MCPManagedField] {
