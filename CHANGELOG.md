@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-08-31
+
+### Dodano
+
+- `Biblioteka → Pluginy` przechowuje definicje marketplace’ów i pluginów Claude Code. Można je zaznaczać dla projektu, a `Synchronizuj` instaluje wybrane pluginy przez Claude Code w zakresie projektu albo lokalnego Maca.
+
 ## [0.18.9] - 2026-08-31
 
 ### Dodano

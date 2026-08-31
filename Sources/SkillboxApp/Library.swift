@@ -5,13 +5,14 @@ import SkillboxCore
 /// four operations — list, search, tag, delete — which made the sidebar look like it held three
 /// unrelated features instead of one library with three kinds of entry in it.
 enum LibraryKind: String, CaseIterable, Identifiable {
-    case skills = "Skille", mcp = "MCP", docs = "Dokumenty"
+    case skills = "Skille", mcp = "MCP", docs = "Dokumenty", plugins = "Pluginy"
     var id: String { rawValue }
     var icon: String {
         switch self {
         case .skills: "square.grid.2x2"
         case .mcp: "network"
         case .docs: "doc.text"
+        case .plugins: "puzzlepiece.extension"
         }
     }
 }
@@ -38,6 +39,7 @@ struct LibraryView: View {
         case .skills: Array(Set(model.skills.flatMap(\.tags))).sorted()
         case .mcp: Array(Set(model.mcp.servers.flatMap { $0.tags ?? [] })).sorted()
         case .docs: Array(Set(model.docs.docs.flatMap(\.tags))).sorted()
+        case .plugins: []
         }
     }
 
@@ -49,6 +51,7 @@ struct LibraryView: View {
             case .skills: SkillsPane(model: model, showGit: $showGit, search: search, selectedTag: selectedTag)
             case .mcp: MCPPane(model: model, search: search, selectedTag: selectedTag)
             case .docs: DocsPane(model: model, search: search, selectedTag: selectedTag)
+            case .plugins: ClaudePluginLibraryPane(model: model, search: search)
             }
         }
         .navigationTitle("Biblioteka")
@@ -61,6 +64,7 @@ struct LibraryView: View {
         case .skills: "Nazwa lub tag skilla"
         case .mcp: "Nazwa lub tag serwera"
         case .docs: "Nazwa lub tag dokumentu"
+        case .plugins: "Nazwa pluginu lub marketplace"
         }
     }
 

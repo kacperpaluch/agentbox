@@ -1,6 +1,6 @@
 import Foundation
 
-public enum ClaudePluginScope: String, CaseIterable, Identifiable, Sendable {
+public enum ClaudePluginScope: String, CaseIterable, Identifiable, Sendable, Codable {
     case project, local
     public var id: String { rawValue }
     public var displayName: String { self == .project ? "Projekt — wspólne z zespołem" : "Tylko ten Mac" }
@@ -14,6 +14,41 @@ public struct ClaudePlugin: Identifiable, Hashable, Sendable {
 }
 
 extension SkillboxService {
+    public func libraryClaudePlugins() async throws -> [ClaudePluginDefinition] {
+        (try await store.catalog().claudePlugins ?? []).sorted { $0.name < $1.name }
+    }
+
+    public func addLibraryClaudePlugin(_ plugin: ClaudePluginDefinition) async throws {
+        var catalog = try await store.catalog()
+        var values = catalog.claudePlugins ?? []
+        guard !values.contains(where: { $0.plugin == plugin.plugin }) else { throw SkillboxError.duplicateSkill(plugin.plugin) }
+        values.append(plugin); catalog.claudePlugins = values
+        try await store.save(catalog)
+    }
+
+    public func installLibraryClaudePlugins(projectPath: String, ids: [UUID]) async throws {
+        let catalog = try await store.catalog()
+        let selected = (catalog.claudePlugins ?? []).filter { ids.contains($0.id) }
+        for item in selected { try installClaudePlugin(projectPath: projectPath, marketplace: item.marketplace, plugin: item.plugin, scope: item.scope) }
+    }
+
+    public func setClaudePluginSelection(projectID: UUID, ids: [UUID]) async throws {
+        var config = try await store.configuration()
+        guard let project = config.projects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
+        let known = Set((try await store.catalog().claudePlugins ?? []).map(\.id))
+        let selected = Array(Set(ids).intersection(known)).sorted { $0.uuidString < $1.uuidString }
+        let target = config.selectionID(for: project).uuidString
+        var selection = config.selections[target] ?? AttachmentSelection()
+        selection.claudePluginIDs = selected
+        config.selections[target] = selection
+        try await store.save(config)
+    }
+
+    public func selectedClaudePluginIDs(projectID: UUID) async throws -> [UUID] {
+        let config = try await store.configuration()
+        guard let project = config.projects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
+        return config.selections[config.selectionID(for: project).uuidString]?.claudePluginIDs ?? []
+    }
     /// Claude Code owns these settings. Agentbox reads them directly for the project view but asks
     /// Claude's CLI to install, enable or remove plugins so its cache and dependency graph remain
     /// authoritative.

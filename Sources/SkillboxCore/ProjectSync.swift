@@ -300,6 +300,8 @@ extension SkillboxService {
             _ = try await syncProject(id: projectID)
             _ = try await syncMCP(projectID: projectID)
             _ = try await syncDocs(projectID: projectID)
+            let pluginIDs = config.selections[config.selectionID(for: project).uuidString]?.claudePluginIDs ?? []
+            try await installLibraryClaudePlugins(projectPath: project.path, ids: pluginIDs)
             return preview
         } catch {
             try? Self.applySyncBackup(project: projectURL, backup: backup, metadata: metadata)

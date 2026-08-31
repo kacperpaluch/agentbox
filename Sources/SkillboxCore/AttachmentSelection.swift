@@ -26,6 +26,8 @@ public struct AttachmentSelection: Codable, Hashable, Sendable {
     public var serverTags: [String]
     public var docIDs: [String]
     public var docTags: [String]
+    /// Optional so existing selections decode without migration.
+    public var claudePluginIDs: [UUID]?
 
     public init(
         tools: [Tool] = [],
@@ -35,17 +37,20 @@ public struct AttachmentSelection: Codable, Hashable, Sendable {
         serverIDs: [UUID] = [],
         serverTags: [String] = [],
         docIDs: [String] = [],
-        docTags: [String] = []
+        docTags: [String] = [],
+        claudePluginIDs: [UUID]? = nil
     ) {
         self.tools = tools
         self.skillIDs = skillIDs; self.skillTags = skillTags; self.excludedSkillIDs = excludedSkillIDs
         self.serverIDs = serverIDs; self.serverTags = serverTags
         self.docIDs = docIDs; self.docTags = docTags
+        self.claudePluginIDs = claudePluginIDs
     }
 
     public var isEmpty: Bool {
         skillIDs.isEmpty && skillTags.isEmpty && serverIDs.isEmpty && serverTags.isEmpty
             && docIDs.isEmpty && docTags.isEmpty
+            && (claudePluginIDs?.isEmpty ?? true)
     }
 }
 

@@ -320,12 +320,20 @@ struct ClaudePluginsView: View {
     @State private var installConfirmation = false
     @State private var uninstalling: ClaudePlugin?
     @State private var error = ""
+    @State private var selectedLibraryPlugins = Set<UUID>()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Pluginy Claude").font(.title2.bold())
             Text(project.path).font(.caption).foregroundStyle(.secondary).lineLimit(1).textSelection(.enabled)
             Text("Pluginy mogą dodawać skille, agentów, hooki, MCP i programy wykonywalne. Instaluj wyłącznie źródła, którym ufasz. Agentbox przekazuje instalację do Claude Code, aby zachować jego zależności i cache.").font(.caption).foregroundStyle(.orange)
+            GroupBox("Z biblioteki Agentbox") {
+                if model.claudePluginLibrary.isEmpty { Text("Dodaj definicję w Biblioteka → Pluginy.").font(.caption).foregroundStyle(.secondary).padding(6) }
+                else { VStack(alignment: .leading, spacing: 5) {
+                    ForEach(model.claudePluginLibrary) { item in Toggle(item.name, isOn: Binding(get: { selectedLibraryPlugins.contains(item.id) }, set: { enabled in if enabled { selectedLibraryPlugins.insert(item.id) } else { selectedLibraryPlugins.remove(item.id) } })).toggleStyle(.checkbox).help(item.plugin) }
+                    HStack { Spacer(); Button("Zapisz wybór") { Task { await model.saveClaudePluginSelection(project: project, ids: Array(selectedLibraryPlugins)) } }.buttonStyle(.bordered).disabled(model.isWorking) }
+                }.padding(6) }
+            }
             GroupBox("Zainstaluj plugin") {
                 VStack(alignment: .leading, spacing: 8) {
                     TextField("Marketplace, np. AgriciDaniel/claude-seo (opcjonalnie)", text: $marketplace)
@@ -345,7 +353,7 @@ struct ClaudePluginsView: View {
             HStack { Spacer(); Button("Zamknij") { dismiss() } }
         }
         .padding(24).sheetFrame(width: 680, height: 590)
-        .task { await reload() }
+        .task { await reload(); selectedLibraryPlugins = Set((try? await model.selectedClaudePluginIDs(for: project)) ?? []) }
         .confirmationDialog("Zainstalować plugin w projekcie?", isPresented: $installConfirmation) {
             Button("Zainstaluj", role: .destructive) { let requestedMarketplace = marketplace.trimmingCharacters(in: .whitespacesAndNewlines); Task { await model.installClaudePlugin(project: project, marketplace: requestedMarketplace.isEmpty ? nil : requestedMarketplace, plugin: plugin, scope: scope); await reload() } }
             Button("Anuluj", role: .cancel) {}

@@ -153,7 +153,20 @@ public struct DocsConfiguration: Codable, Sendable {
 public struct Catalog: Codable, Sendable {
     public var version = 1
     public var skills: [Skill] = []
+    /// Optional for libraries created before 0.19.0.
+    public var claudePlugins: [ClaudePluginDefinition]?
     public init() {}
+}
+
+public struct ClaudePluginDefinition: Codable, Identifiable, Hashable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var marketplace: String
+    public var plugin: String
+    public var scope: ClaudePluginScope
+    public init(id: UUID = UUID(), name: String, marketplace: String, plugin: String, scope: ClaudePluginScope = .project) {
+        self.id = id; self.name = name; self.marketplace = marketplace; self.plugin = plugin; self.scope = scope
+    }
 }
 
 public struct LocalConfiguration: Codable, Sendable {
