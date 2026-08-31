@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.18.8] - 2026-08-31
+
+### Dodano
+
+- Zaznaczoną grupę skilli można teraz usunąć zbiorczo z paska akcji. Operacja wymaga potwierdzenia, usuwa też przypisania projektów i zapisuje całość jako jedną zmianę biblioteki.
+
 ## [0.18.7] - 2026-08-31
 
 ### Naprawiono

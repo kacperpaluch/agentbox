@@ -19,6 +19,7 @@ struct SkillsPane: View {
     @State private var checked = Set<String>()
     @State private var expanded = Set<String>()
     @State private var showBatchTags = false
+    @State private var confirmBatchDelete = false
     var tags: [String] { Array(Set(model.skills.flatMap(\.tags))).sorted() }
     var filtered: [Skill] {
         var result = model.skills.filter { libraryMatches(name: $0.name, id: $0.id, tags: $0.tags, search: search, selectedTag: selectedTag) }
@@ -59,6 +60,16 @@ struct SkillsPane: View {
         }
         .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: tags) { text in Task { await model.addTags(checked, text: text); checked.removeAll() } } }
         .sheet(isPresented: $showNewSkill) { NewSkillView(existingTags: tags, existingIDs: Set(model.skills.map(\.id))) { draft in Task { await model.createSkill(draft) } } }
+        .confirmationDialog("Usunąć \(checked.count) skilli?", isPresented: $confirmBatchDelete) {
+            Button("Usuń \(checked.count) skilli", role: .destructive) {
+                let ids = checked
+                checked.removeAll()
+                Task { await model.deleteSkills(ids) }
+            }
+            Button("Anuluj", role: .cancel) {}
+        } message: {
+            Text("Skille zostaną usunięte z biblioteki i przypisań projektów. Znikną z folderów projektów przy kolejnej synchronizacji.")
+        }
     }
 
     // One row instead of two stacked toolbars: the add actions swap for a selection bar the moment
@@ -81,6 +92,8 @@ struct SkillsPane: View {
             } else {
                 Text("Wybrano \(checked.count)").rowMetadata()
                 Button { showBatchTags = true } label: { Label("Dodaj tagi", systemImage: "tag") }.buttonStyle(.borderedProminent)
+                Button(role: .destructive) { confirmBatchDelete = true } label: { Label("Usuń", systemImage: "trash") }.buttonStyle(.bordered)
+                    .disabled(model.isWorking)
                 Button("Anuluj") { checked.removeAll() }.buttonStyle(.bordered)
             }
             Spacer()

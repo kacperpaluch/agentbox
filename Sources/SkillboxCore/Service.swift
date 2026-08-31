@@ -246,17 +246,29 @@ public actor SkillboxService {
     }
 
     public func deleteSkill(skillID: String) async throws {
+        try await deleteSkills(skillIDs: [skillID])
+    }
+
+    /// Removes a selection of library skills as one user action. All IDs are validated before
+    /// changing either the catalog or project assignments, so a stale selection cannot result in
+    /// a partial deletion.
+    public func deleteSkills(skillIDs: [String]) async throws {
+        let ids = Set(skillIDs)
+        guard !ids.isEmpty else { return }
         var catalog = try await store.catalog()
-        guard catalog.skills.contains(where: { $0.id == skillID }) else { throw SkillboxError.skillNotFound(skillID) }
-        let directory = try await skillDirectory(skillID)
-        if fm.fileExists(atPath: directory.path) { try fm.removeItem(at: directory) }
-        catalog.skills.removeAll { $0.id == skillID }
+        if let missing = ids.first(where: { id in !catalog.skills.contains(where: { $0.id == id }) }) {
+            throw SkillboxError.skillNotFound(missing)
+        }
+        var directories: [URL] = []
+        for id in ids { directories.append(try await skillDirectory(id)) }
+        for directory in directories where fm.fileExists(atPath: directory.path) { try fm.removeItem(at: directory) }
+        catalog.skills.removeAll { ids.contains($0.id) }
         // One pass over every place — projects, parent folders and this Mac alike. Before selections
         // lived in one map this needed two loops that had to be kept in step.
         var projects = try await store.configuration()
         for key in projects.selections.keys {
-            projects.selections[key]?.skillIDs.removeAll { $0 == skillID }
-            projects.selections[key]?.excludedSkillIDs.removeAll { $0 == skillID }
+            projects.selections[key]?.skillIDs.removeAll { ids.contains($0) }
+            projects.selections[key]?.excludedSkillIDs.removeAll { ids.contains($0) }
         }
         try await store.save(catalog, projects)
     }

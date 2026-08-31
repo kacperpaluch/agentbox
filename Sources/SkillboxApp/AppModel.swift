@@ -185,6 +185,14 @@ import SkillboxCore
     func saveTags(_ id: String, text: String) async { await perform(autoBackup: true) { try await self.service?.setTags(skillID: id, tags: Self.csv(text)); self.message = "Zapisano tagi" } }
     func addTags(_ ids: Set<String>, text: String) async { await perform(autoBackup: true) { try await self.service?.addTags(skillIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) skilli" } }
     func deleteSkill(_ id: String) async { await perform(autoBackup: true) { try await self.service?.deleteSkill(skillID: id); if self.selection == id { self.selection = nil; self.markdown = "" }; self.updateAvailable.remove(id); self.message = "Usunięto skill \(id)" } }
+    func deleteSkills(_ ids: Set<String>) async {
+        await perform(autoBackup: true) {
+            try await self.service?.deleteSkills(skillIDs: Array(ids))
+            if let selection = self.selection, ids.contains(selection) { self.selection = nil; self.markdown = "" }
+            self.updateAvailable.subtract(ids)
+            self.message = "Usunięto \(ids.count) skilli"
+        }
+    }
     func addProject(_ project: Project, selection: AttachmentSelection) async { await perform { _ = try await self.service?.addProject(project, selection: selection); self.message = "Dodano projekt" } }
     func updateProject(_ project: Project, selection: AttachmentSelection) async { await perform { try await self.service?.updateProject(project, selection: selection); self.message = "Zapisano projekt" } }
     /// The state already loaded here, in the shape the core expects. Rebuilding it costs nothing and

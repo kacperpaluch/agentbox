@@ -4,6 +4,8 @@ Agentbox to natywna aplikacja macOS i CLI do zarządzania skillami oraz serweram
 
 Agentbox nie uruchamia serwerów MCP i nie zastępuje klientów AI — przygotowuje dla nich pliki konfiguracyjne i katalogi skilli.
 
+W zakładce skilli można zaznaczyć cały nagłówek grupy (repozytorium, tag lub źródło), a następnie zbiorczo dodać tagi albo usunąć zaznaczone skille. Usunięcie zawsze wymaga potwierdzenia i odłącza skille od projektów; katalogi projektów zmienią się dopiero przy kolejnej synchronizacji.
+
 Szczegółowy opis pierwszego uruchomienia, klasyfikacji sekretów, bezpiecznej synchronizacji i odzyskiwania danych znajduje się w [instrukcji użytkownika](docs/USER_GUIDE.md). Wszystkie polecenia terminalowe opisuje [instrukcja CLI](docs/CLI.md). Historia wydań i zmian jest prowadzona w [changelogu](CHANGELOG.md).
 
 ## Jak to wygląda

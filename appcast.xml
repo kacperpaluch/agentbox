@@ -6,6 +6,27 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.18.8</title>
+      <pubDate>Mon, 31 Aug 2026 07:09:40 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.8</link>
+      <sparkle:version>47</sparkle:version>
+      <sparkle:shortVersionString>0.18.8</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.18.8</h2>
+        <ul>
+          <li>Możesz usunąć wszystkie skille zaznaczone w grupie jednym potwierdzonym działaniem.</li>
+          <li>Usunięcie odłącza skille od projektów i zapisuje całość jako jedną zmianę biblioteki.</li>
+        </ul>
+      ]]></description>
+      <enclosure url="https://github.com/kacperpaluch/agentbox/releases/download/v0.18.8/Agentbox-0.18.8.dmg"
+                 sparkle:version="47"
+                 sparkle:shortVersionString="0.18.8"
+                 length="5828993"
+                 type="application/octet-stream"
+                 sparkle:edSignature="5XGQvJMR4PStTzxq+W8kbo5ziRyj+RRFHsZBp29HJ3I/EW0yljbL9t3AJRzV6IOGn14UQQogCnWRd4nMEEWxDQ=="/>
+    </item>
+    <item>
       <title>Agentbox 0.18.7</title>
       <pubDate>Mon, 31 Aug 2026 06:50:01 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.7</link>

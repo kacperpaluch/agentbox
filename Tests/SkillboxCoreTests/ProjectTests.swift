@@ -23,6 +23,28 @@ final class ProjectTests: AgentboxTestCase {
         XCTAssertTrue(projectsAfterDelete.isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: projectFolder.path))
     }
+
+    func testDeletingManySkillsCleansEveryAssignmentInOneOperation() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectFolder = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: projectFolder, withIntermediateDirectories: true)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        for id in ["first", "second"] {
+            let source = root.appending(path: "source/\(id)")
+            try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+            try id.write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+            _ = try await service.addLocal(path: source.path)
+        }
+        let project = try await service.addProject(name: "sample", path: projectFolder.path, tools: [.claude])
+        try await service.configureProject(id: project.id, skillIDs: ["first", "second"], tags: [])
+
+        try await service.deleteSkills(skillIDs: ["first", "second"])
+
+        let remainingSkills = try await service.listSkills()
+        let remainingProjects = try await service.listProjects()
+        XCTAssertTrue(remainingSkills.isEmpty)
+        XCTAssertTrue(remainingProjects.first?.skillIDs.isEmpty == true)
+    }
     func testLocalImportTagsAndProjectSync() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let source = root.appending(path: "source/demo")

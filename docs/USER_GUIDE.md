@@ -83,6 +83,8 @@ Tak utworzony skill jest lokalny, więc później można go poprawiać w aplikac
 
 Skille dodane z dysku i napisane w aplikacji można edytować bezpośrednio w aplikacji: wybierz skill i kliknij `Edytuj SKILL.md`. Zapis aktualizuje kopię w bibliotece i od razu oznacza wszystkie projekty z tym skillem jako nieaktualne, więc widać, gdzie trzeba uruchomić synchronizację.
 
+Checkbox przy nagłówku grupy zaznacza wszystkie widoczne w niej skille. Po zaznaczeniu możesz dodać im wspólne tagi albo wybrać `Usuń`; Agentbox prosi o potwierdzenie, usuwa je z biblioteki i odłącza od przypisań projektów. Skille znikną z katalogów projektów przy ich następnej synchronizacji.
+
 Skille pochodzące z Git są tylko do odczytu. `Aktualizuj` zastępuje taki skill zawartością repozytorium, więc zmiana zrobiona w aplikacji zniknęłaby przy najbliższej aktualizacji. Aby zmienić taki skill, zmodyfikuj repozytorium źródłowe.
 
 W `Biblioteka → Skille` ikona odświeżania najpierw tylko sprawdza dostępne rewizje. Gdy je znajdzie, obok pojawia się pomarańczowy przycisk `Aktualizuj <liczba>` — pobiera wszystkie wykryte aktualizacje do biblioteki. Nie synchronizuje on automatycznie projektów; po aktualizacji użyj `Synchronizuj` dla wybranego projektu albo `Synchronizuj wszystkie projekty`.
