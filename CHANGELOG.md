@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.18.6] - 2026-08-31
+
+### Dodano
+
+- Menu serwera MCP ma akcję `Duplikuj…`, która otwiera niezapisaną kopię kompletnej konfiguracji z nową nazwą. Można od razu podmienić URL, na przykład na adres przez Tailscale; przypisania projektów nie są kopiowane.
+
 ## [0.18.5] - 2026-08-30
 
 ### Naprawiono

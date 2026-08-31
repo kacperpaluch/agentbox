@@ -246,6 +246,15 @@ public struct MCPServer: Codable, Identifiable, Hashable, Sendable {
         self.secretEnvironment = secretEnvironment; self.secretHeaders = secretHeaders
         self.tags = tags
     }
+
+    /// Keeps a full connection definition while deliberately creating a new library identity.
+    /// Project assignments use `id`, so they never follow a duplicated server automatically.
+    public func duplicated(name: String) -> MCPServer {
+        var copy = self
+        copy.id = UUID()
+        copy.name = name
+        return copy
+    }
 }
 
 public struct MCPConfiguration: Codable, Sendable {

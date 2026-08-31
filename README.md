@@ -148,6 +148,8 @@ Usunięcie serwera usuwa jego bezpośrednie przypisania i kasuje jego wartości 
 
 Checkboxy przy serwerach pozwalają zaznaczyć kilka naraz i dodać im tagi jedną operacją — `Dodaj tagi (N)` w pasku akcji, tak samo jak w Bibliotece.
 
+Menu serwera zawiera też `Duplikuj…`. Otwiera ono niezapisaną kopię pełnej konfiguracji z nową, proponowaną nazwą (`<nazwa>-copy`); przed zapisem zmień ją oraz, na przykład, URL na adres przez Tailscale. Kopia nie przejmuje przypisań do projektów — wybierasz ją świadomie tam, gdzie ma działać.
+
 ### Import JSON
 
 `Dodaj serwer → JSON` obsługuje cały obiekt z `mcpServers`, samą mapę serwerów, a także pojedynczą definicję serwera (`command`/`args`/`env` albo `url`). Przy pojedynczym obiekcie Agentbox proponuje nazwę z argumentów; można ją wpisać samodzielnie przed analizą. Można zaznaczyć tylko wybrane serwery do importu, a po imporcie przypisać im tagi. Jeśli macOS zamieni cudzysłowy JSON-a na typograficzne, importer rozpozna je automatycznie.

@@ -2,6 +2,31 @@ import XCTest
 @testable import SkillboxCore
 
 final class MCPTests: AgentboxTestCase {
+    func testDuplicateMCPServerCreatesIndependentFullConfiguration() {
+        let server = MCPServer(
+            name: "actual-budget",
+            transport: .http,
+            url: "https://actual.example/mcp",
+            headers: ["X-Token": "ACTUAL_TOKEN"],
+            enabled: false,
+            literalEnvironment: ["REGION": "home"],
+            literalHeaders: ["Authorization": "Bearer dummy-secret"],
+            tags: ["finance"]
+        )
+
+        let copy = server.duplicated(name: "actual-budget-tailscale")
+
+        XCTAssertNotEqual(copy.id, server.id)
+        XCTAssertEqual(copy.name, "actual-budget-tailscale")
+        XCTAssertEqual(copy.transport, server.transport)
+        XCTAssertEqual(copy.url, server.url)
+        XCTAssertEqual(copy.headers, server.headers)
+        XCTAssertEqual(copy.literalEnvironment, server.literalEnvironment)
+        XCTAssertEqual(copy.literalHeaders, server.literalHeaders)
+        XCTAssertEqual(copy.enabled, server.enabled)
+        XCTAssertEqual(copy.tags, server.tags)
+    }
+
     func testAIPromptRequiresMCPWrapperAndEnvironmentReferencesForSecrets() {
         let prompt = SkillboxService.mcpAIPrompt("Use the token from the docs")
         XCTAssertTrue(prompt.contains("{\"mcpServers\": {...}}"))

@@ -9,6 +9,7 @@ struct MCPPane: View {
     let search: String
     let selectedTag: String
     @State private var editingServer: MCPServer?
+    @State private var duplicateSourceID: UUID?
     @State private var serverToDelete: MCPServer?
     @State private var showAdd = false
     @State private var bulkJSON: String?
@@ -34,7 +35,7 @@ struct MCPPane: View {
                         ForEach(filtered) { server in
                             HStack(alignment: .top, spacing: Space.row + 1) {
                                 Toggle("", isOn: checkBinding(server.id)).labelsHidden().toggleStyle(.checkbox).padding(.top, 5)
-                                MCPServerRow(server: server, onDetails: { editingServer = server }, onDelete: { serverToDelete = server })
+                                MCPServerRow(server: server, onDetails: { duplicateSourceID = nil; editingServer = server }, onDuplicate: { duplicate(server) }, onDelete: { serverToDelete = server })
                             }
                         }
                     }
@@ -43,10 +44,11 @@ struct MCPPane: View {
         }
         .sheet(isPresented: $showAdd) {
             MCPImportView(model: model) {
+                duplicateSourceID = nil
                 editingServer = MCPServer(name: "", transport: .stdio)
             }
         }
-        .sheet(item: $editingServer) { server in MCPServerEditor(model: model, server: server, existingTags: existingTags) }
+        .sheet(item: $editingServer) { server in MCPServerEditor(model: model, server: server, existingTags: existingTags, managedFieldsSourceID: duplicateSourceID) }
         .sheet(item: Binding(get: { bulkJSON.map(IdentifiableString.init) }, set: { bulkJSON = $0?.value })) { text in MCPBulkJSONView(model: model, text: text.value) }
         .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: "serwerów MCP") { text in Task { await model.addMCPServerTags(checked, text: text); checked.removeAll() } } }
         .confirmationDialog("Usunąć serwer \(serverToDelete?.name ?? "")?", isPresented: Binding(get: { serverToDelete != nil }, set: { if !$0 { serverToDelete = nil } })) { Button("Usuń", role: .destructive) { if let serverToDelete { Task { await model.deleteMCPServer(serverToDelete.id) } }; serverToDelete = nil }; Button("Anuluj", role: .cancel) { serverToDelete = nil } } message: { Text("Serwer zostanie usunięty także z bezpośrednich przypisań projektów.") }
@@ -75,6 +77,21 @@ struct MCPPane: View {
     }
 
     private func checkBinding(_ id: UUID) -> Binding<Bool> { Binding(get: { checked.contains(id) }, set: { if $0 { checked.insert(id) } else { checked.remove(id) } }) }
+
+    /// A duplicate starts as an unsaved server so cancelling its editor cannot leave an accidental
+    /// entry in the library. Assignments are keyed by UUID and intentionally aren't copied.
+    private func duplicate(_ server: MCPServer) {
+        let names = Set(model.mcp.servers.map(\.name))
+        let base = "\(server.name)-copy"
+        var name = base
+        var number = 2
+        while names.contains(name) {
+            name = "\(base)-\(number)"
+            number += 1
+        }
+        duplicateSourceID = server.id
+        editingServer = server.duplicated(name: name)
+    }
 }
 
 /// Two lines per server: name, transport and tags on top; the supporting counts (arguments,
@@ -82,6 +99,7 @@ struct MCPPane: View {
 private struct MCPServerRow: View {
     let server: MCPServer
     let onDetails: () -> Void
+    let onDuplicate: () -> Void
     let onDelete: () -> Void
     private var secretCount: Int { (server.secretEnvironment?.count ?? 0) + (server.secretHeaders?.count ?? 0) }
     private var variableCount: Int { server.environment.count + (server.literalEnvironment?.count ?? 0) + (server.secretEnvironment?.count ?? 0) }
@@ -100,6 +118,7 @@ private struct MCPServerRow: View {
             Button("Szczegóły", action: onDetails).controlSize(.small)
             RowMenu {
                 Button("Szczegóły…", action: onDetails)
+                Button("Duplikuj…", action: onDuplicate)
                 Divider()
                 Button("Usuń…", role: .destructive, action: onDelete)
             }
@@ -139,7 +158,10 @@ struct MCPServerEditor: View {
     @State private var fields: [MCPManagedField] = []
     @State private var editingJSON = false
     @State private var jsonText = ""
-    init(model: AppModel, server: MCPServer, existingTags: [String]) { self.model = model; original = server; self.existingTags = existingTags; _name = State(initialValue: server.name); _transport = State(initialValue: server.transport); _command = State(initialValue: server.command); _arguments = State(initialValue: server.arguments.joined(separator: "\n")); _url = State(initialValue: server.url); _enabled = State(initialValue: server.enabled); _tags = State(initialValue: (server.tags ?? []).joined(separator: ", ")) }
+    /// An unsaved duplicate receives its field values from the existing source server. Its own UUID
+    /// remains new, so saving it creates a distinct server rather than modifying the source.
+    private let managedFieldsSourceID: UUID?
+    init(model: AppModel, server: MCPServer, existingTags: [String], managedFieldsSourceID: UUID? = nil) { self.model = model; original = server; self.existingTags = existingTags; self.managedFieldsSourceID = managedFieldsSourceID; _name = State(initialValue: server.name); _transport = State(initialValue: server.transport); _command = State(initialValue: server.command); _arguments = State(initialValue: server.arguments.joined(separator: "\n")); _url = State(initialValue: server.url); _enabled = State(initialValue: server.enabled); _tags = State(initialValue: (server.tags ?? []).joined(separator: ", ")) }
     /// The JSON view only makes sense once the server is actually saved — a brand-new, unsaved one
     /// has nothing in the store yet to export or to match by id.
     private var isExisting: Bool { model.mcp.servers.contains { $0.id == original.id } }
@@ -162,7 +184,7 @@ struct MCPServerEditor: View {
     SheetFooter {
         Button("Anuluj") { dismiss() }
         Button("Zapisz") { Task { if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(name.isEmpty || (editingJSON && isExisting ? jsonText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty : (transport == .stdio ? command.isEmpty : url.isEmpty)) || model.isWorking)
-    } }.sheetFrame(width: 760, height: 660).task { fields = await model.managedFields(for: original) } }
+    } }.sheetFrame(width: 760, height: 660).task { fields = await model.managedFields(for: model.mcp.servers.first(where: { $0.id == managedFieldsSourceID }) ?? original) } }
     private func save() async -> Bool {
         if editingJSON && isExisting { return await model.updateMCPServerJSON(original.id, name: name, json: jsonText, enabled: enabled, tags: AppModel.csv(tags)) }
         let server = MCPServer(id: original.id, name: name, transport: transport, command: command, arguments: arguments.split(whereSeparator: \.isNewline).map(String.init), url: url, enabled: enabled, tags: AppModel.csv(tags))
