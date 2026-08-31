@@ -64,7 +64,7 @@ struct ProjectsView: View {
         .sheet(item: $settingUpRoot) { group in GroupRootSetupView(model: model, folderPath: group.path, projects: group.projects) }
         .sheet(item: $editingRoot) { root in
             ProjectRootEditor(
-                skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, root: root,
+                skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, claudePlugins: model.claudePluginLibrary, root: root,
                 followingProjects: model.storedProjects.filter { $0.rootID == root.id && $0.overridesRoot != true }.count,
                 initialSelection: model.selection(for: .root(root.id))
             ) { updated, selection in Task { await model.saveRoot(updated, selection: selection) } }

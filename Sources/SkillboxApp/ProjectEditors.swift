@@ -101,6 +101,7 @@ struct ProjectRootEditor: View {
     let skills: [Skill]
     let servers: [MCPServer]
     let docs: [AgentDoc]
+    let claudePlugins: [ClaudePluginDefinition]
     let root: ProjectRoot
     let followingProjects: Int
     let initialSelection: AttachmentSelection
@@ -136,7 +137,7 @@ struct ProjectRootEditor: View {
                         }
                     }.padding(6)
                 }
-                AttachmentPicker(skills: skills, servers: servers, docs: docs, selection: $selection, manageGitignore: $manageGitignore)
+                AttachmentPicker(skills: skills, servers: servers, docs: docs, claudePlugins: claudePlugins, selection: $selection, manageGitignore: $manageGitignore)
             }.padding(24) }
             SheetFooter {
                 Button("Anuluj") { dismiss() }

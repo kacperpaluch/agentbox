@@ -13,6 +13,7 @@ struct AttachmentPicker: View {
     let skills: [Skill]
     let servers: [MCPServer]
     let docs: [AgentDoc]
+    let claudePlugins: [ClaudePluginDefinition]
     @Binding var selection: AttachmentSelection
     /// A project property rather than an attachment, so it stays a separate binding — and the global
     /// target has no repository to write a `.gitignore` into, which is why it can be left out.
@@ -21,6 +22,10 @@ struct AttachmentPicker: View {
     /// Agentbox deliberately never writes, and a global `AGENTS.md` has no defined location. Showing
     /// those pickers there would offer a choice nothing acts on.
     var includesServersAndDocs = true
+    init(skills: [Skill], servers: [MCPServer], docs: [AgentDoc], claudePlugins: [ClaudePluginDefinition] = [], selection: Binding<AttachmentSelection>, manageGitignore: Binding<Bool>? = nil, includesServersAndDocs: Bool = true) {
+        self.skills = skills; self.servers = servers; self.docs = docs; self.claudePlugins = claudePlugins
+        self._selection = selection; self.manageGitignore = manageGitignore; self.includesServersAndDocs = includesServersAndDocs
+    }
 
     private var availableTags: [String] { Array(Set(skills.flatMap(\.tags))).sorted() }
     private var mcpTags: [String] { Array(Set(servers.flatMap { $0.tags ?? [] })).sorted() }
@@ -36,6 +41,7 @@ struct AttachmentPicker: View {
                 GroupBox("Pojedyncze serwery MCP") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(servers.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { server in serverToggle(server) } }.padding(6) }
                 TagCheckGrid(title: "Tagi MCP", tags: mcpTags, selection: serverTagsBinding)
             }
+            if !claudePlugins.isEmpty { pluginSection }
             exclusionsBox
             if includesServersAndDocs { docSection }
             if let manageGitignore {
@@ -67,6 +73,15 @@ struct AttachmentPicker: View {
     }
     private var docTagsBinding: Binding<Set<String>> {
         Binding(get: { Set(selection.docTags) }, set: { selection.docTags = $0.sorted() })
+    }
+    private var pluginIDsBinding: Binding<Set<UUID>> { Binding(get: { Set(selection.claudePluginIDs ?? []) }, set: { selection.claudePluginIDs = $0.sorted { $0.uuidString < $1.uuidString } }) }
+    private var pluginSection: some View {
+        GroupBox("Pluginy Claude") {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Zostaną zainstalowane przez Claude Code przy synchronizacji projektu.").font(.caption).foregroundStyle(.secondary)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(claudePlugins) { item in Toggle(item.name, isOn: setBinding(item.id, in: pluginIDsBinding)).toggleStyle(.checkbox).help(item.plugin) } }
+            }.padding(6)
+        }
     }
     /// A project can hold exactly one `AGENTS.md`, so the stored list is at most one long.
     private var docBinding: Binding<String?> {

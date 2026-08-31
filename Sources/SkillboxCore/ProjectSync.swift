@@ -259,6 +259,7 @@ extension SkillboxService {
         let config = try await store.configuration()
         guard let project = config.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
         let projectURL = URL(fileURLWithPath: project.path)
+        let pluginIDs = config.selections[config.selectionID(for: project).uuidString]?.claudePluginIDs ?? []
         Self.removeLegacyBackupDirectories(projectURL)
         // Independent of the sync content and idempotent, so it also runs for an unchanged project
         // whose owner has just switched the option on.
@@ -278,6 +279,9 @@ extension SkillboxService {
                     try SkillboxService.writeSkillManifest(selected, to: projectURL.appending(path: tool.projectSkillsPath))
                 }
             }
+            // A plugin is installed by Claude Code, outside Agentbox's managed file manifests.
+            // It must therefore run even when skills, MCP and docs were already current.
+            try await installLibraryClaudePlugins(projectPath: project.path, ids: pluginIDs)
             return preview
         }
         var targets = preview.skills.map { URL(fileURLWithPath: $0.target) }
@@ -300,7 +304,6 @@ extension SkillboxService {
             _ = try await syncProject(id: projectID)
             _ = try await syncMCP(projectID: projectID)
             _ = try await syncDocs(projectID: projectID)
-            let pluginIDs = config.selections[config.selectionID(for: project).uuidString]?.claudePluginIDs ?? []
             try await installLibraryClaudePlugins(projectPath: project.path, ids: pluginIDs)
             return preview
         } catch {
