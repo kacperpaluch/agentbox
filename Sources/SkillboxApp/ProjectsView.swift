@@ -71,7 +71,7 @@ struct ProjectsView: View {
         }
         .sheet(item: $editing) { project in
             ProjectEditor(
-                skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs,
+                skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, claudePlugins: model.claudePluginLibrary,
                 project: model.storedProject(id: project.id) ?? project,
                 root: model.root(for: project),
                 inheritedFrom: model.inheritsRoot(project) ? model.projects.first { $0.id == project.id } : nil,
@@ -321,6 +321,7 @@ struct ClaudePluginsView: View {
     @State private var uninstalling: ClaudePlugin?
     @State private var error = ""
     @State private var selectedLibraryPlugins = Set<UUID>()
+    private var inheritsRoot: Bool { model.inheritsRoot(project) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -330,8 +331,15 @@ struct ClaudePluginsView: View {
             GroupBox("Z biblioteki Agentbox") {
                 if model.claudePluginLibrary.isEmpty { Text("Dodaj definicję w Biblioteka → Pluginy.").font(.caption).foregroundStyle(.secondary).padding(6) }
                 else { VStack(alignment: .leading, spacing: 5) {
-                    ForEach(model.claudePluginLibrary) { item in Toggle(item.name, isOn: Binding(get: { selectedLibraryPlugins.contains(item.id) }, set: { enabled in if enabled { selectedLibraryPlugins.insert(item.id) } else { selectedLibraryPlugins.remove(item.id) } })).toggleStyle(.checkbox).help(item.plugin) }
-                    HStack { Spacer(); Button("Zapisz wybór") { Task { await model.saveClaudePluginSelection(project: project, ids: Array(selectedLibraryPlugins)) } }.buttonStyle(.bordered).disabled(model.isWorking) }
+                    // A project following its folder shares one selection with every other project
+                    // there, so saving here would change all of them at once. The choice is shown —
+                    // it is what this project gets — but it stays the folder's to change.
+                    if inheritsRoot {
+                        Label("Wybór pochodzi z folderu nadrzędnego i obowiązuje wszystkie projekty w nim. Zmień go w ustawieniach folderu albo nadaj projektowi własne ustawienia.", systemImage: "arrow.down.right.circle")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    ForEach(model.claudePluginLibrary) { item in Toggle(item.name, isOn: Binding(get: { selectedLibraryPlugins.contains(item.id) }, set: { enabled in if enabled { selectedLibraryPlugins.insert(item.id) } else { selectedLibraryPlugins.remove(item.id) } })).toggleStyle(.checkbox).help(item.plugin).disabled(inheritsRoot) }
+                    HStack { Spacer(); Button("Zapisz wybór") { Task { await model.saveClaudePluginSelection(project: project, ids: Array(selectedLibraryPlugins)); await reloadSelection() } }.buttonStyle(.bordered).disabled(model.isWorking || inheritsRoot) }
                 }.padding(6) }
             }
             GroupBox("Zainstaluj plugin") {
@@ -353,20 +361,28 @@ struct ClaudePluginsView: View {
             HStack { Spacer(); Button("Zamknij") { dismiss() } }
         }
         .padding(24).sheetFrame(width: 680, height: 590)
-        .task { await reload(); selectedLibraryPlugins = Set((try? await model.selectedClaudePluginIDs(for: project)) ?? []) }
+        .task { await reload(); await reloadSelection() }
         .confirmationDialog("Zainstalować plugin w projekcie?", isPresented: $installConfirmation) {
             Button("Zainstaluj", role: .destructive) { let requestedMarketplace = marketplace.trimmingCharacters(in: .whitespacesAndNewlines); Task { await model.installClaudePlugin(project: project, marketplace: requestedMarketplace.isEmpty ? nil : requestedMarketplace, plugin: plugin, scope: scope); await reload() } }
             Button("Anuluj", role: .cancel) {}
         } message: { Text("Claude Code pobierze plugin „\(plugin)” i może aktywować jego hooki, MCP oraz pliki wykonywalne. Zakres: \(scope.displayName).") }
         .confirmationDialog("Usunąć plugin \(uninstalling?.id ?? "")?", isPresented: Binding(get: { uninstalling != nil }, set: { if !$0 { uninstalling = nil } })) {
-            Button("Usuń plugin", role: .destructive) { if let uninstalling { Task { await model.uninstallClaudePlugin(project: project, plugin: uninstalling); self.uninstalling = nil; await reload() } } }
+            Button("Usuń plugin", role: .destructive) { if let uninstalling { Task { await model.uninstallClaudePlugin(project: project, plugin: uninstalling); self.uninstalling = nil; await reload(); await reloadSelection() } } }
             Button("Anuluj", role: .cancel) { uninstalling = nil }
-        } message: { Text("Plugin zostanie wyłączony w tym zakresie projektu przez Claude Code.") }
+        } message: { Text(inheritsRoot
+            ? "Plugin zostanie wyłączony w tym zakresie projektu przez Claude Code. Wybór z biblioteki należy do folderu nadrzędnego, więc kolejna synchronizacja może go przywrócić."
+            : "Plugin zostanie wyłączony w tym zakresie projektu przez Claude Code i zniknie z wyboru dla tego projektu, więc synchronizacja go nie przywróci.") }
     }
 
     private func reload() async {
         do { plugins = try await model.claudePlugins(for: project); error = "" }
         catch let loadError { plugins = []; error = loadError.localizedDescription }
+    }
+
+    /// Read back instead of assumed: removing a plugin also drops it from the selection, and the
+    /// checkboxes have to show what is actually stored.
+    private func reloadSelection() async {
+        selectedLibraryPlugins = Set((try? await model.selectedClaudePluginIDs(for: project)) ?? [])
     }
 }
 
@@ -450,7 +466,7 @@ private struct AllProjectsSyncPlanRow: View {
                         SyncChangeRows(added: item.added, updated: [], removed: item.removed)
                     }
                 }
-                if !plan.preview.plugins.isEmpty { VStack(alignment: .leading, spacing: 4) { Text("Pluginy Claude").font(.caption.weight(.semibold)); ForEach(plan.preview.plugins, id: \.self) { Label("Sprawdź/zainstaluj: \($0)", systemImage: "puzzlepiece.extension").font(.caption) } } }
+                if !plan.preview.plugins.isEmpty { VStack(alignment: .leading, spacing: 4) { Text("Pluginy Claude").font(.caption.weight(.semibold)); ForEach(plan.preview.plugins) { item in ClaudePluginPreviewRow(item: item) } } }
             }
             .padding(.top, 8)
         } label: {

@@ -110,6 +110,27 @@ private struct MCPDuplicateView: View {
     }
 }
 
+/// One line per selected plugin, saying plainly whether synchronization still has work to do for
+/// it. The distinction matters: an already declared plugin is left alone, a missing one is handed
+/// to Claude Code.
+struct ClaudePluginPreviewRow: View {
+    let item: ClaudePluginPreview
+    var body: some View {
+        Label {
+            HStack(spacing: 6) {
+                Text(item.isInstalled ? "Już w projekcie: \(item.name)" : "Zostanie zainstalowany: \(item.name)")
+                Text(item.plugin).foregroundStyle(.secondary)
+                Text("·").foregroundStyle(.secondary)
+                Text(item.scope.displayName).foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: item.isInstalled ? "checkmark.circle" : "puzzlepiece.extension")
+        }
+        .font(.caption)
+        .foregroundStyle(item.isInstalled ? Color.secondary : Color.primary)
+    }
+}
+
 /// Two lines per server: name, transport and tags on top; the supporting counts (arguments,
 /// variables, secrets) quiet underneath instead of trailing off the end of one long line.
 private struct MCPServerRow: View {
@@ -324,7 +345,10 @@ struct MCPPreviewView: View {
                     Text("Dokumenty").font(.headline).padding(.top, 4)
                     ForEach(preview.docs, id: \.file) { item in GroupBox { VStack(alignment: .leading, spacing: 8) { Text(item.file).font(.caption).foregroundStyle(.secondary); SyncChangeRows(added: item.added, updated: [], removed: item.removed); DisclosureGroup("Podgląd pliku") { Text(item.content.isEmpty ? "Plik nie jest potrzebny — nie zostanie utworzony, a istniejący zarządzany plik zostanie usunięty." : item.content).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6) } }.padding(7) } label: { Label(URL(fileURLWithPath: item.file).lastPathComponent, systemImage: "doc.text") } }
                 }
-                if !preview.plugins.isEmpty { Text("Pluginy Claude").font(.headline).padding(.top, 4); ForEach(preview.plugins, id: \.self) { Label("Zostanie sprawdzony/ zainstalowany: \($0)", systemImage: "puzzlepiece.extension").font(.caption) } }
+                if !preview.plugins.isEmpty {
+                    Text("Pluginy Claude").font(.headline).padding(.top, 4)
+                    ForEach(preview.plugins) { item in ClaudePluginPreviewRow(item: item) }
+                }
             } } }
             HStack { Spacer(); Button("Zamknij") { dismiss() }; Button("Synchronizuj skille, MCP, dokumenty i pluginy") { Task { await model.syncEverything(project) } }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || preview == nil || model.isWorking) }
         }.padding(24).sheetFrame(width: 820, height: 700).task { do { preview = try await model.previewProjectSync(project) } catch { self.error = error.localizedDescription; model.reportError(error) } }

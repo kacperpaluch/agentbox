@@ -8,6 +8,7 @@ struct ProjectEditor: View {
     let skills: [Skill]
     let servers: [MCPServer]
     let docs: [AgentDoc]
+    var claudePlugins: [ClaudePluginDefinition] = []
     let project: Project?
     /// The parent folder this project belongs to, when it came from one.
     var root: ProjectRoot?
@@ -34,7 +35,7 @@ struct ProjectEditor: View {
                 TextField("Nazwa", text: $name)
                 HStack { TextField("Folder projektu", text: $path); Button("Wybierz…") { chooseFolder() } }
                 inheritanceBox
-                AttachmentPicker(skills: skills, servers: servers, docs: docs, selection: $selection, manageGitignore: $manageGitignore)
+                AttachmentPicker(skills: skills, servers: servers, docs: docs, claudePlugins: claudePlugins, selection: $selection, manageGitignore: $manageGitignore)
                     .disabled(!usesOwnSettings)
             }.padding(24) }
             SheetFooter {

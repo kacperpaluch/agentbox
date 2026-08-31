@@ -34,7 +34,10 @@ extension SkillboxService {
             guard !failed else { outcomes.append(ProjectSyncOutcome(plan: plan, state: .skipped)); continue }
             do {
                 let selected = SkillboxService.selectedSkills(in: try await store.catalog(), for: plan.project)
-                let upToDate = await isUpToDate(plan.preview, skills: selected)
+                // `isUpToDate` answers about files only, because that is what decides whether a
+                // backup is worth taking. A missing plugin is still work done, so the reported
+                // outcome asks about it separately instead of claiming the project was untouched.
+                let upToDate = await isUpToDate(plan.preview, skills: selected) && plan.preview.missingPlugins.isEmpty
                 _ = try await syncProjectTransaction(projectID: plan.project.id)
                 outcomes.append(ProjectSyncOutcome(plan: plan, state: upToDate ? .upToDate : .synced))
             } catch {
@@ -57,7 +60,9 @@ extension SkillboxService {
             }
             do {
                 let preview = try await previewProjectSync(projectID: project.id)
-                let added = preview.skills.reduce(0) { $0 + $1.added.count } + preview.mcp.reduce(0) { $0 + $1.added.count } + (preview.docs.first?.added.count ?? 0)
+                // A plugin Claude Code has not been asked for yet is as pending as a missing skill:
+                // without it here a project stayed `synchronized` while its selection was not applied.
+                let added = preview.skills.reduce(0) { $0 + $1.added.count } + preview.mcp.reduce(0) { $0 + $1.added.count } + (preview.docs.first?.added.count ?? 0) + preview.missingPlugins.count
                 let outdated = preview.skills.reduce(0) { $0 + $1.updated.count }
                 let removed = preview.skills.reduce(0) { $0 + $1.removed.count } + preview.mcp.reduce(0) { $0 + $1.removed.count } + (preview.docs.first?.removed.count ?? 0)
                 let stale = preview.mcp.contains { $0.staleFile != nil } ? 1 : 0
@@ -198,7 +203,7 @@ extension SkillboxService {
             try SkillboxService.skillPreview(tool: tool, target: URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath), current: current, library: library)
         }
         let ids = config.selections[config.selectionID(for: project).uuidString]?.claudePluginIDs ?? []
-        let plugins = (catalog.claudePlugins ?? []).filter { ids.contains($0.id) }.map(\.name).sorted()
+        let plugins = try await previewClaudePlugins(projectPath: project.path, ids: ids)
         return ProjectSyncPreview(skills: skills, mcp: try await previewMCP(projectID: projectID), docs: try await previewDocs(projectID: projectID), plugins: plugins)
     }
 

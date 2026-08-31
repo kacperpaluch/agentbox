@@ -6,6 +6,24 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-08-31
+
+### Dodano
+
+- `Biblioteka → Pluginy` pozwala poprawić (`Edytuj`) i usunąć definicję pluginu. Poprawka obowiązuje wszystkie projekty, które mają ją zaznaczoną; usunięcie kasuje też wybór we wszystkich projektach, a pluginów zainstalowanych już przez Claude Code nie rusza.
+- Sekcja `Pluginy Claude` jest widoczna także w edytorze pojedynczego projektu, nie tylko w ustawieniach folderu nadrzędnego.
+- Podgląd synchronizacji rozróżnia pluginy `Już w projekcie` od tych, które zostaną zainstalowane, i pokazuje ich identyfikator oraz zakres.
+
+### Naprawiono
+
+- Zapis wyboru pluginów dla projektu korzystającego z ustawień folderu nadrzędnego zmieniał po cichu wszystkie projekty w tym folderze. Teraz jest odrzucany tak samo jak przy skillach i MCP, a panel projektu wyszarza listę i mówi, skąd wybór pochodzi.
+- Usunięcie pluginu z projektu odznacza go też w wyborze z biblioteki, więc kolejna synchronizacja go nie przywraca.
+- Projekt z zaznaczonym, jeszcze niezainstalowanym pluginem nie jest już oznaczany jako zsynchronizowany — plakietka i podsumowanie `Synchronizuj wszystko` liczą brakujące pluginy.
+- Instalacja pluginu przekazuje `--yes`, więc plugin instalowany komendą zadeklarowaną w marketplace nie przerywa synchronizacji z powodu braku terminala.
+- Nieudana instalacja pluginu przywraca `.claude/settings.json` i `.claude/settings.local.json` sprzed synchronizacji, więc projekt nie zostaje z połową wybranych pluginów po wycofanej zmianie.
+- Wpis w `enabledPlugins` zapisany inaczej niż `true`/`false` — obiektem z konfiguracją albo tekstem — jest odczytywany zamiast po cichu pomijany.
+- Definicja pluginu jest przycinana z białych znaków i sprawdzana przy zapisie: pusty identyfikator oraz zduplikowana nazwa są odrzucane z czytelnym komunikatem.
+
 ## [0.19.3] - 2026-08-31
 
 ### Naprawiono

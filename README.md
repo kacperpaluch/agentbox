@@ -8,7 +8,7 @@ W zakładce skilli można zaznaczyć cały nagłówek grupy (repozytorium, tag l
 
 `Projekty → … → Pluginy Claude…` przekazuje instalację marketplace’ów i pluginów do CLI Claude Code dla wskazanego projektu. Wybierz zakres `Projekt`, aby współdzielić wpis w `.claude/settings.json`, albo `Tylko ten Mac` dla `.claude/settings.local.json`. Przed instalacją Agentbox ostrzega, że plugin może zawierać hooki, MCP i programy wykonywalne.
 
-Pluginy można też definiować raz w `Biblioteka → Pluginy`, wybrać dla projektów i instalować podczas zwykłej synchronizacji projektu.
+Pluginy można też definiować raz w `Biblioteka → Pluginy`, wybrać dla projektów i instalować podczas zwykłej synchronizacji projektu. Definicje da się poprawiać i usuwać, a projekt z zaznaczonym, jeszcze niezainstalowanym pluginem jest oznaczony jako wymagający synchronizacji.
 
 Szczegółowy opis pierwszego uruchomienia, klasyfikacji sekretów, bezpiecznej synchronizacji i odzyskiwania danych znajduje się w [instrukcji użytkownika](docs/USER_GUIDE.md). Wszystkie polecenia terminalowe opisuje [instrukcja CLI](docs/CLI.md). Historia wydań i zmian jest prowadzona w [changelogu](CHANGELOG.md).
 

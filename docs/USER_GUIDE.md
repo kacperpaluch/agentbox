@@ -91,7 +91,15 @@ Skille pochodzące z Git są tylko do odczytu. `Aktualizuj` zastępuje taki skil
 
 W wierszu projektu wybierz `… → Pluginy Claude…`. Podaj opcjonalny marketplace oraz identyfikator pluginu, np. `claude-seo@agricidaniel-claude-seo`. Zakres `Projekt` zapisuje aktywację w `.claude/settings.json`, więc plik można współdzielić z zespołem. `Tylko ten Mac` używa `.claude/settings.local.json` i nie powinien trafiać do repozytorium. Agentbox zleca instalację samemu Claude Code, aby jego zależności i cache pozostały spójne. Przed instalacją sprawdź źródło: plugin może dodawać hooki, serwery MCP oraz programy wykonywalne.
 
-Jeśli plugin ma być używany w wielu projektach, dodaj go raz w `Biblioteka → Pluginy`. W projekcie zaznacz definicję w sekcji `Z biblioteki Agentbox` i zapisz wybór. Następne `Synchronizuj` instaluje zaznaczone pluginy przez Claude Code dla tego projektu.
+Jeśli plugin ma być używany w wielu projektach, dodaj go raz w `Biblioteka → Pluginy`. W projekcie zaznacz definicję w sekcji `Z biblioteki Agentbox` i zapisz wybór. Następne `Synchronizuj` instaluje zaznaczone pluginy przez Claude Code dla tego projektu. Projekt z zaznaczonym, jeszcze niezainstalowanym pluginem ma na liście plakietkę „do zsynchronizowania”, a podgląd synchronizacji rozróżnia pluginy `Już w projekcie` od tych, które zostaną zainstalowane.
+
+Definicję w bibliotece można poprawić (`Edytuj`) — poprawka obowiązuje wszystkie projekty, które ją mają zaznaczoną — albo usunąć. Usunięcie kasuje definicję i wybór we wszystkich projektach, więc synchronizacja przestaje instalować ten plugin; tego, co Claude Code już zainstalował na dysku, nie rusza.
+
+`Usuń` przy pluginie aktywnym w projekcie odinstalowuje go przez Claude Code i jednocześnie odznacza w wyborze tego projektu, więc kolejna synchronizacja go nie przywróci.
+
+Projekt korzystający z ustawień folderu nadrzędnego dziedziczy także wybór pluginów. W jego panelu lista jest wtedy wyszarzona z informacją, skąd pochodzi — zmień ją w ustawieniach folderu albo nadaj projektowi własne ustawienia. Sekcja `Pluginy Claude` jest też w edytorze projektu i folderu, obok skilli i serwerów MCP.
+
+Jeśli instalacja pluginu nie powiedzie się w trakcie synchronizacji, Agentbox przywraca `.claude/settings.json` i `.claude/settings.local.json` do stanu sprzed niej, więc projekt nie zostaje z połową wybranych pluginów.
 
 W `Biblioteka → Skille` ikona odświeżania najpierw tylko sprawdza dostępne rewizje. Gdy je znajdzie, obok pojawia się pomarańczowy przycisk `Aktualizuj <liczba>` — pobiera wszystkie wykryte aktualizacje do biblioteki. Nie synchronizuje on automatycznie projektów; po aktualizacji użyj `Synchronizuj` dla wybranego projektu albo `Synchronizuj wszystkie projekty`.
 

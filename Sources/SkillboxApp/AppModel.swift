@@ -198,7 +198,9 @@ import SkillboxCore
         guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
         return try await service.claudePlugins(projectPath: project.path)
     }
-    func addLibraryClaudePlugin(_ plugin: ClaudePluginDefinition) async { await perform(autoBackup: true) { try await self.service?.addLibraryClaudePlugin(plugin); self.message = "Dodano plugin Claude do biblioteki" } }
+    func addLibraryClaudePlugin(_ plugin: ClaudePluginDefinition) async -> Bool { await performing(autoBackup: true) { try await self.service?.addLibraryClaudePlugin(plugin); self.message = "Dodano plugin Claude do biblioteki" } }
+    func updateLibraryClaudePlugin(_ plugin: ClaudePluginDefinition) async -> Bool { await performing(autoBackup: true) { try await self.service?.updateLibraryClaudePlugin(plugin); self.message = "Zapisano plugin \(plugin.name)" } }
+    func deleteLibraryClaudePlugin(_ plugin: ClaudePluginDefinition) async { await perform(autoBackup: true) { try await self.service?.deleteLibraryClaudePlugin(id: plugin.id); self.message = "Usunięto plugin \(plugin.name) z biblioteki" } }
     func selectedClaudePluginIDs(for project: Project) async throws -> [UUID] { try await service?.selectedClaudePluginIDs(projectID: project.id) ?? [] }
     func saveClaudePluginSelection(project: Project, ids: [UUID]) async { await perform { try await self.service?.setClaudePluginSelection(projectID: project.id, ids: ids); self.message = "Zapisano pluginy Claude dla \(project.name)" } }
     func installClaudePlugin(project: Project, marketplace: String?, plugin: String, scope: ClaudePluginScope) async {
@@ -209,8 +211,10 @@ import SkillboxCore
     }
     func uninstallClaudePlugin(project: Project, plugin: ClaudePlugin) async {
         await perform {
-            try await self.service?.uninstallClaudePlugin(projectPath: project.path, plugin: plugin)
-            self.message = "Usunięto plugin \(plugin.id)"
+            let deselected = try await self.service?.uninstallClaudePlugin(projectPath: project.path, plugin: plugin) ?? false
+            self.message = deselected
+                ? "Usunięto plugin \(plugin.id) i wybór z biblioteki, więc synchronizacja go nie przywróci"
+                : "Usunięto plugin \(plugin.id)"
         }
     }
     func addProject(_ project: Project, selection: AttachmentSelection) async { await perform { _ = try await self.service?.addProject(project, selection: selection); self.message = "Dodano projekt" } }
@@ -564,6 +568,15 @@ import SkillboxCore
         catch { message = error.localizedDescription }
     }
     private func perform(autoBackup: Bool = false, _ action: @escaping @MainActor () async throws -> Void) async { isWorking = true; defer { isWorking = false }; do { try await action(); await reload(); if !message.isEmpty { record(.success, message) }; if autoBackup { scheduleAutomaticBackup() } } catch { await reload(); message = error.localizedDescription; record(.error, message) } }
+    /// `perform` for an action a sheet stays open for. The result says whether it succeeded, so a
+    /// form can show the reason next to the field that caused it instead of dismissing and leaving
+    /// the message to the status bar.
+    @discardableResult
+    private func performing(autoBackup: Bool = false, _ action: @escaping @MainActor () async throws -> Void) async -> Bool {
+        isWorking = true; defer { isWorking = false }
+        do { try await action(); await reload(); if !message.isEmpty { record(.success, message) }; if autoBackup { scheduleAutomaticBackup() }; return true }
+        catch { await reload(); message = error.localizedDescription; record(.error, message); return false }
+    }
     private func record(_ kind: OperationLogEntry.Kind, _ text: String) { operationLog.insert(OperationLogEntry(kind: kind, text: text), at: 0); if operationLog.count > 100 { operationLog.removeLast(operationLog.count - 100) } }
     func reportError(_ error: Error) { message = error.localizedDescription; record(.error, message) }
     private func scheduleAutomaticBackup() {

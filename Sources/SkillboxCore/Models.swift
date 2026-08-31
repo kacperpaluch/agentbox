@@ -410,8 +410,11 @@ public struct ProjectSyncPreview: Sendable {
     public var skills: [SkillSyncPreview]
     public var mcp: [MCPPreview]
     public var docs: [DocPreview]
-    public var plugins: [String]
-    public init(skills: [SkillSyncPreview], mcp: [MCPPreview], docs: [DocPreview] = [], plugins: [String] = []) { self.skills = skills; self.mcp = mcp; self.docs = docs; self.plugins = plugins }
+    public var plugins: [ClaudePluginPreview]
+    public init(skills: [SkillSyncPreview], mcp: [MCPPreview], docs: [DocPreview] = [], plugins: [ClaudePluginPreview] = []) { self.skills = skills; self.mcp = mcp; self.docs = docs; self.plugins = plugins }
+    /// Selected plugins Claude Code has not been asked for yet. The project status counts these,
+    /// so `Synchronizuj` is offered for a plugin exactly as it is for a missing skill.
+    public var missingPlugins: [ClaudePluginPreview] { plugins.filter { !$0.isInstalled } }
 }
 
 public struct ProjectSyncPlan: Identifiable, Sendable {
