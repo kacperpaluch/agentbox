@@ -193,6 +193,22 @@ import SkillboxCore
             self.message = "Usunięto \(ids.count) skilli"
         }
     }
+    func claudePlugins(for project: Project) async throws -> [ClaudePlugin] {
+        guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
+        return try await service.claudePlugins(projectPath: project.path)
+    }
+    func installClaudePlugin(project: Project, marketplace: String?, plugin: String, scope: ClaudePluginScope) async {
+        await perform {
+            try await self.service?.installClaudePlugin(projectPath: project.path, marketplace: marketplace, plugin: plugin, scope: scope)
+            self.message = "Zainstalowano plugin Claude w projekcie \(project.name)"
+        }
+    }
+    func uninstallClaudePlugin(project: Project, plugin: ClaudePlugin) async {
+        await perform {
+            try await self.service?.uninstallClaudePlugin(projectPath: project.path, plugin: plugin)
+            self.message = "Usunięto plugin \(plugin.id)"
+        }
+    }
     func addProject(_ project: Project, selection: AttachmentSelection) async { await perform { _ = try await self.service?.addProject(project, selection: selection); self.message = "Dodano projekt" } }
     func updateProject(_ project: Project, selection: AttachmentSelection) async { await perform { try await self.service?.updateProject(project, selection: selection); self.message = "Zapisano projekt" } }
     /// The state already loaded here, in the shape the core expects. Rebuilding it costs nothing and

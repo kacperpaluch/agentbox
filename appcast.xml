@@ -6,6 +6,27 @@
     <description>Aktualizacje Agentbox</description>
     <language>pl</language>
     <item>
+      <title>Agentbox 0.18.9</title>
+      <pubDate>Mon, 31 Aug 2026 07:17:42 +0200</pubDate>
+      <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.9</link>
+      <sparkle:version>48</sparkle:version>
+      <sparkle:shortVersionString>0.18.9</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>Agentbox 0.18.9</h2>
+        <ul>
+          <li>Dodano zarządzanie pluginami Claude Code dla konkretnego projektu.</li>
+          <li>Wybierz zakres współdzielony z zespołem albo lokalny dla tego Maca.</li>
+        </ul>
+      ]]></description>
+      <enclosure url="https://github.com/kacperpaluch/agentbox/releases/download/v0.18.9/Agentbox-0.18.9.dmg"
+                 sparkle:version="48"
+                 sparkle:shortVersionString="0.18.9"
+                 length="5894724"
+                 type="application/octet-stream"
+                 sparkle:edSignature="kzQXZLDnrt9SnsJAXb3tTb2mI8cc0QsQ0XWc6hWVrePw+EJd3lS2+3RS/m2Q/xk0bnDlaE9rnv7B1zwc8Gx2BQ=="/>
+    </item>
+    <item>
       <title>Agentbox 0.18.8</title>
       <pubDate>Mon, 31 Aug 2026 07:09:40 +0200</pubDate>
       <link>https://github.com/kacperpaluch/agentbox/releases/tag/v0.18.8</link>

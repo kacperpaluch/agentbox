@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.18.9] - 2026-08-31
+
+### Dodano
+
+- Projekty mają teraz panel `Pluginy Claude`, który instaluje pluginy Claude Code z marketplace’u w zakresie współdzielonego projektu albo tylko lokalnego Maca oraz pokazuje i usuwa aktywne pluginy.
+
 ## [0.18.8] - 2026-08-31
 
 ### Dodano

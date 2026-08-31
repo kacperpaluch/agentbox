@@ -12,6 +12,7 @@ struct ProjectsView: View {
     @State private var previewProject: Project?
     @State private var deleting: Project?
     @State private var adopting: Project?
+    @State private var managingPlugins: Project?
     @State private var deleteFiles = false
     @State private var collapsedGroups = Set<String>()
     @State private var editingRoot: ProjectRoot?
@@ -87,6 +88,7 @@ struct ProjectsView: View {
             Button("Anuluj", role: .cancel) { deleting = nil }
         } message: { Text("Sprzątanie usuwa z folderu projektu wyłącznie katalogi skilli i wpisy MCP wymienione w manifestach Agentbox. Przed zmianą powstaje backup, który można cofnąć w sekcji Odzyskiwanie.") }
         .sheet(item: $adopting) { project in AdoptSkillsView(model: model, project: project) }
+        .sheet(item: $managingPlugins) { project in ClaudePluginsView(model: model, project: project) }
         .confirmationDialog("Usunąć wspólne ustawienia folderu \(deletingRoot?.name ?? "")?", isPresented: Binding(get: { deletingRoot != nil }, set: { if !$0 { deletingRoot = nil } })) {
             Button("Usuń ustawienia folderu", role: .destructive) { if let deletingRoot { Task { await model.deleteRoot(deletingRoot) } }; deletingRoot = nil }
             Button("Anuluj", role: .cancel) { deletingRoot = nil }
@@ -128,7 +130,7 @@ struct ProjectsView: View {
                         // it here means a change to the folder's settings does not quietly skip this
                         // project without anyone noticing on the list.
                         let ownSettings = group.root != nil && !model.inheritsRoot(project)
-                        ProjectRow(project: project, status: model.statuses[project.id], inheritsRoot: model.inheritsRoot(project), ownSettingsInRoot: ownSettings, rootName: group.root?.name, editing: $editing, previewProject: $previewProject, deleting: $deleting, adopting: $adopting)
+                        ProjectRow(project: project, status: model.statuses[project.id], inheritsRoot: model.inheritsRoot(project), ownSettingsInRoot: ownSettings, rootName: group.root?.name, editing: $editing, previewProject: $previewProject, deleting: $deleting, adopting: $adopting, managingPlugins: $managingPlugins)
                     }
                 } label: {
                     HStack {
@@ -262,6 +264,7 @@ private struct ProjectRow: View {
     @Binding var previewProject: Project?
     @Binding var deleting: Project?
     @Binding var adopting: Project?
+    @Binding var managingPlugins: Project?
 
     var body: some View {
         HStack(alignment: .center, spacing: Space.section) {
@@ -291,6 +294,7 @@ private struct ProjectRow: View {
                 RowMenu {
                     Button("Edytuj…") { editing = project }
                     Button("Przejmij skille z projektu…") { adopting = project }
+                    Button("Pluginy Claude…") { managingPlugins = project }
                     Divider()
                     Button("Usuń projekt…", role: .destructive) { deleting = project }
                 }
@@ -305,6 +309,59 @@ private struct ProjectRow: View {
         return pieces.joined(separator: " · ")
     }
 }
+struct ClaudePluginsView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var model: AppModel
+    let project: Project
+    @State private var plugins: [ClaudePlugin]?
+    @State private var marketplace = ""
+    @State private var plugin = ""
+    @State private var scope: ClaudePluginScope = .project
+    @State private var installConfirmation = false
+    @State private var uninstalling: ClaudePlugin?
+    @State private var error = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Pluginy Claude").font(.title2.bold())
+            Text(project.path).font(.caption).foregroundStyle(.secondary).lineLimit(1).textSelection(.enabled)
+            Text("Pluginy mogą dodawać skille, agentów, hooki, MCP i programy wykonywalne. Instaluj wyłącznie źródła, którym ufasz. Agentbox przekazuje instalację do Claude Code, aby zachować jego zależności i cache.").font(.caption).foregroundStyle(.orange)
+            GroupBox("Zainstaluj plugin") {
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Marketplace, np. AgriciDaniel/claude-seo (opcjonalnie)", text: $marketplace)
+                    TextField("Plugin, np. claude-seo@agricidaniel-claude-seo", text: $plugin)
+                    Picker("Zakres", selection: $scope) { ForEach(ClaudePluginScope.allCases) { Text($0.displayName).tag($0) } }
+                    HStack { Spacer(); Button("Zainstaluj…") { installConfirmation = true }.buttonStyle(.borderedProminent).disabled(plugin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isWorking) }
+                }.padding(6)
+            }
+            if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+            GroupBox("Aktywne w tym projekcie") {
+                if plugins == nil { ProgressView().padding(8) }
+                else if plugins?.isEmpty == true { Text("Brak pluginów Claude w zakresie projektu lub lokalnym.").font(.caption).foregroundStyle(.secondary).padding(8) }
+                else { List(plugins ?? []) { item in
+                    HStack { VStack(alignment: .leading, spacing: 2) { Text(item.id).fontWeight(.medium); Text(item.scope.displayName).font(.caption).foregroundStyle(.secondary) }; Spacer(); if !item.enabled { MetaBadge(text: "wyłączony", tint: .secondary) }; Button("Usuń", role: .destructive) { uninstalling = item }.buttonStyle(.bordered).controlSize(.small).disabled(model.isWorking) }.padding(.vertical, 2)
+                }.frame(minHeight: 120) }
+            }
+            HStack { Spacer(); Button("Zamknij") { dismiss() } }
+        }
+        .padding(24).sheetFrame(width: 680, height: 590)
+        .task { await reload() }
+        .confirmationDialog("Zainstalować plugin w projekcie?", isPresented: $installConfirmation) {
+            Button("Zainstaluj", role: .destructive) { let requestedMarketplace = marketplace.trimmingCharacters(in: .whitespacesAndNewlines); Task { await model.installClaudePlugin(project: project, marketplace: requestedMarketplace.isEmpty ? nil : requestedMarketplace, plugin: plugin, scope: scope); await reload() } }
+            Button("Anuluj", role: .cancel) {}
+        } message: { Text("Claude Code pobierze plugin „\(plugin)” i może aktywować jego hooki, MCP oraz pliki wykonywalne. Zakres: \(scope.displayName).") }
+        .confirmationDialog("Usunąć plugin \(uninstalling?.id ?? "")?", isPresented: Binding(get: { uninstalling != nil }, set: { if !$0 { uninstalling = nil } })) {
+            Button("Usuń plugin", role: .destructive) { if let uninstalling { Task { await model.uninstallClaudePlugin(project: project, plugin: uninstalling); self.uninstalling = nil; await reload() } } }
+            Button("Anuluj", role: .cancel) { uninstalling = nil }
+        } message: { Text("Plugin zostanie wyłączony w tym zakresie projektu przez Claude Code.") }
+    }
+
+    private func reload() async {
+        do { plugins = try await model.claudePlugins(for: project); error = "" }
+        catch let loadError { plugins = []; error = loadError.localizedDescription }
+    }
+}
+
 struct AllProjectsSyncPreviewView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var model: AppModel

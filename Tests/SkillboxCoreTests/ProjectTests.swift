@@ -45,6 +45,22 @@ final class ProjectTests: AgentboxTestCase {
         XCTAssertTrue(remainingSkills.isEmpty)
         XCTAssertTrue(remainingProjects.first?.skillIDs.isEmpty == true)
     }
+
+    func testClaudePluginsAreReadFromProjectAndLocalScopes() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let project = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: project.appending(path: ".claude"), withIntermediateDirectories: true)
+        try "{\"enabledPlugins\": {\"seo@market\": true}}".write(to: project.appending(path: ".claude/settings.json"), atomically: true, encoding: .utf8)
+        try "{\"enabledPlugins\": {\"private@market\": false}}".write(to: project.appending(path: ".claude/settings.local.json"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+
+        let plugins = try await service.claudePlugins(projectPath: project.path)
+
+        XCTAssertEqual(plugins, [
+            ClaudePlugin(id: "private@market", scope: .local, enabled: false),
+            ClaudePlugin(id: "seo@market", scope: .project, enabled: true)
+        ])
+    }
     func testLocalImportTagsAndProjectSync() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let source = root.appending(path: "source/demo")

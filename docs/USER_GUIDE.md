@@ -87,6 +87,10 @@ Checkbox przy nagłówku grupy zaznacza wszystkie widoczne w niej skille. Po zaz
 
 Skille pochodzące z Git są tylko do odczytu. `Aktualizuj` zastępuje taki skill zawartością repozytorium, więc zmiana zrobiona w aplikacji zniknęłaby przy najbliższej aktualizacji. Aby zmienić taki skill, zmodyfikuj repozytorium źródłowe.
 
+### Pluginy Claude w projekcie
+
+W wierszu projektu wybierz `… → Pluginy Claude…`. Podaj opcjonalny marketplace oraz identyfikator pluginu, np. `claude-seo@agricidaniel-claude-seo`. Zakres `Projekt` zapisuje aktywację w `.claude/settings.json`, więc plik można współdzielić z zespołem. `Tylko ten Mac` używa `.claude/settings.local.json` i nie powinien trafiać do repozytorium. Agentbox zleca instalację samemu Claude Code, aby jego zależności i cache pozostały spójne. Przed instalacją sprawdź źródło: plugin może dodawać hooki, serwery MCP oraz programy wykonywalne.
+
 W `Biblioteka → Skille` ikona odświeżania najpierw tylko sprawdza dostępne rewizje. Gdy je znajdzie, obok pojawia się pomarańczowy przycisk `Aktualizuj <liczba>` — pobiera wszystkie wykryte aktualizacje do biblioteki. Nie synchronizuje on automatycznie projektów; po aktualizacji użyj `Synchronizuj` dla wybranego projektu albo `Synchronizuj wszystkie projekty`.
 
 Jeżeli chcesz wykonać cały proces jednym kliknięciem, użyj `Narzędzia → Odśwież bibliotekę i zsynchronizuj projekty`. To odpowiednik `agentbox refresh`: sprawdza i pobiera aktualizacje skilli, tworzy pełny backup lokalny, a następnie transakcyjnie synchronizuje wszystkie projekty. Wynik, także błędy poszczególnych projektów, zostaje w historii operacji.
