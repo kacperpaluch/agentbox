@@ -190,6 +190,34 @@ final class GlobalMCPTests: AgentboxTestCase {
         let heading = try XCTUnwrap(lines[..<index].last { $0.hasPrefix("#") })
         XCTAssertFalse(heading.contains("sekrety"), heading)
     }
+    /// Claude Code's opt-out is a managed file like any other, so a transaction that fails after it
+    /// was written must put it back. It lives outside `MCPPreview.content`, and leaving it out of the
+    /// rollback targets left the opt-out in the project while `mcp-manifest.json` was restored
+    /// without it — the next sync then no longer recognised the name as ours and never cleaned it up.
+    func testFailedTransactionRollsBackTheClaudeGlobalOptOut() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: projectURL.appending(path: ".claude"), withIntermediateDirectories: true)
+        let settings = projectURL.appending(path: ".claude/settings.local.json")
+        let original = "{\n  \"permissions\" : {\n    \"allow\" : [\n      \"Bash\"\n    ]\n  }\n}\n"
+        try original.write(to: settings, atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let project = try await service.addProject(name: "app", path: projectURL.path, tools: [.claude])
+        try await service.setDisabledGlobalServers(projectID: project.id, tool: .claude, names: ["hubspot"])
+
+        // A document makes the sync reach its docs step, which is the one made to fail below.
+        let doc = try await service.createDoc(id: "standard", name: "Standard", tags: [], content: "# Guidelines")
+        try await service.setDocs(projectID: project.id, docIDs: [doc.id], tags: [])
+        // Stands in for any later write failing: the docs manifest cannot be written over a
+        // directory, and the preview cannot see that coming because it never writes the manifest.
+        try FileManager.default.createDirectory(at: projectURL.appending(path: ".skillbox/docs-manifest.json"), withIntermediateDirectories: true)
+
+        await XCTAssertThrowsErrorAsync(try await service.syncProjectTransaction(projectID: project.id))
+
+        XCTAssertEqual(try String(contentsOf: settings, encoding: .utf8), original)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: projectURL.appending(path: ".skillbox/mcp-manifest.json").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: projectURL.appending(path: "AGENTS.md").path))
+    }
     /// Opting out is per project, so without a default a project added next month silently gets the
     /// global server back. The default applies when a selection is created — and only then, so
     /// projects that already exist are never changed behind the user's back.

@@ -87,31 +87,8 @@ public actor SkillboxStore {
             throw error
         }
     }
-    public func save(_ config: MCPConfiguration, replacingSecrets secrets: [String: String]) throws {
-        let oldMCP = try? Data(contentsOf: mcpURL)
-        let oldSecrets = try? Data(contentsOf: secretsURL)
-        try snapshotLibrary()
-        do {
-            try writeSecrets(secrets)
-            try atomicWrite(config, to: mcpURL)
-        } catch {
-            if let oldSecrets { try? oldSecrets.write(to: secretsURL, options: .atomic) } else { try? fm.removeItem(at: secretsURL) }
-            if let oldMCP { try? oldMCP.write(to: mcpURL, options: .atomic) } else { try? fm.removeItem(at: mcpURL) }
-            throw error
-        }
-    }
     public func secrets() throws -> [String: String] { try read(secretsURL, fallback: [:]) }
-    public func saveSecrets(_ additions: [String: String]) throws {
-        var values: [String: String] = try read(secretsURL, fallback: [:])
-        values.merge(additions) { _, new in new }
-        try writeSecrets(values)
-    }
     public func replaceSecrets(_ values: [String: String]) throws { try writeSecrets(values) }
-    public func deleteSecrets(accounts: [String]) throws {
-        var values: [String: String] = try read(secretsURL, fallback: [:])
-        accounts.forEach { values.removeValue(forKey: $0) }
-        try writeSecrets(values)
-    }
     private func writeSecrets(_ values: [String: String]) throws {
         // Created with 0600 from the first byte and renamed into place, so the secrets file
         // never exists with default permissions, even for a moment.
@@ -270,49 +247,6 @@ public actor SkillboxStore {
         try pruneFullRestoreBackups(at: rollbackRoot, keeping: 3)
     }
 
-    /// Replaces the Git-backed part of the library with a freshly cloned copy.
-    ///
-    /// `projects.local.json` and `mcp-secrets.json` are deliberately untouched: they never leave
-    /// this Mac, so a restore must not wipe the local project paths or secrets of the machine it
-    /// runs on. The clone's `.git` is adopted so later backups push straight back to the remote.
-    public func adoptLibrary(from clone: URL) throws {
-        let names = ["catalog.json", "selections.json", "mcp.json", "docs.json", "skills", ".gitignore", ".git"]
-        var isDirectory: ObjCBool = false
-        let hasCatalog = fm.fileExists(atPath: clone.appending(path: "catalog.json").path)
-        let hasSkills = fm.fileExists(atPath: clone.appending(path: "skills").path, isDirectory: &isDirectory) && isDirectory.boolValue
-        guard hasCatalog || hasSkills else { throw SkillboxError.invalidSkill("repozytorium nie zawiera biblioteki Agentbox (brak catalog.json i katalogu skills)") }
-        if hasCatalog { _ = try decoder.decode(Catalog.self, from: Data(contentsOf: clone.appending(path: "catalog.json"))) }
-        if fm.fileExists(atPath: clone.appending(path: "mcp.json").path) {
-            _ = try decoder.decode(MCPConfiguration.self, from: Data(contentsOf: clone.appending(path: "mcp.json")))
-        }
-        if fm.fileExists(atPath: clone.appending(path: "docs.json").path) {
-            _ = try decoder.decode(DocsConfiguration.self, from: Data(contentsOf: clone.appending(path: "docs.json")))
-        }
-        let rollbackRoot = root.appending(path: "backups/restore-rollbacks")
-        let rollback = rollbackRoot.appending(path: UUID().uuidString)
-        try fm.createDirectory(at: rollback, withIntermediateDirectories: true)
-        for name in names {
-            let current = root.appending(path: name)
-            if fm.fileExists(atPath: current.path) { try fm.copyItem(at: current, to: rollback.appending(path: name)) }
-        }
-        do {
-            for name in names {
-                let target = root.appending(path: name), source = clone.appending(path: name)
-                if fm.fileExists(atPath: target.path) { try fm.removeItem(at: target) }
-                if fm.fileExists(atPath: source.path) { try fm.copyItem(at: source, to: target) }
-            }
-            try fm.createDirectory(at: skillsDirectory, withIntermediateDirectories: true)
-        } catch {
-            for name in names {
-                let target = root.appending(path: name), saved = rollback.appending(path: name)
-                try? fm.removeItem(at: target)
-                if fm.fileExists(atPath: saved.path) { try? fm.copyItem(at: saved, to: target) }
-            }
-            throw error
-        }
-        try pruneFullRestoreBackups(at: rollbackRoot, keeping: 3)
-    }
-
     public func deleteFullBackup(named name: String) throws {
         guard name == URL(fileURLWithPath: name).lastPathComponent, !name.contains("..") else { throw SkillboxError.unsafePath(name) }
         let target = root.appending(path: "backups/full/\(name)").standardizedFileURL
@@ -337,7 +271,11 @@ public actor SkillboxStore {
     }
 
     private func snapshotLibrary() throws {
-        let sources = [catalogURL, localURL, mcpURL, docsURL].filter { fm.fileExists(atPath: $0.path) }
+        // `selections.json` belongs here as much as the rest: since attachments moved out of
+        // `projects.local.json` it is the only file saying which skills, servers, documents and
+        // plugins a project uses. Leaving it out made every restore a silent half-restore — the
+        // catalog came back while the assignments stayed as the mistake had left them.
+        let sources = [catalogURL, localURL, selectionsURL, mcpURL, docsURL].filter { fm.fileExists(atPath: $0.path) }
         guard !sources.isEmpty else { return }
         let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let name = formatter.string(from: .now).replacingOccurrences(of: ":", with: "-") + "-" + UUID().uuidString

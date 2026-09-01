@@ -173,11 +173,6 @@ extension SkillboxService {
         return (server, fields, secrets)
     }
 
-    private static func looksSecret(_ value: String) -> Bool {
-        let normalized = value.lowercased().replacingOccurrences(of: "-", with: "_")
-        return ["password", "token", "api_key", "apikey", "cookie", "secret", "authorization", "bearer"].contains { normalized.contains($0) }
-    }
-
     private static func environmentReference(_ value: String) -> String? {
         guard value.hasPrefix("${"), value.hasSuffix("}"), value.count > 3 else { return nil }
         return String(value.dropFirst(2).dropLast())

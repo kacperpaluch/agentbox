@@ -28,53 +28,6 @@ final class BackupTests: AgentboxTestCase {
         XCTAssertEqual(summary.servers.first(where: { $0.name == "context7" })?.literalHeaders?["CONTEXT7_API_KEY"], "secret-three")
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appending(path: "mcp-secrets.json").path))
     }
-    func disabled_testBackupWorksOnEmptyLibrary() async throws {
-        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-        let service = try SkillboxService(root: root)
-        let result = try await service.backup(push: false)
-        XCTAssertEqual(result, "Utworzono lokalny commit")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appending(path: ".gitignore").path))
-    }
-    func disabled_testBackupTwiceReportsNoChangesAndIgnoresLocalFiles() async throws {
-        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-        let source = root.appending(path: "source/demo")
-        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
-        try "---\nname: demo\ndescription: Demo\n---\n".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
-        let data = root.appending(path: "data")
-        let service = try SkillboxService(root: data)
-        _ = try await service.addLocal(path: source.path)
-        _ = try await service.backup()
-        let secondBackup = try await service.backup()
-        XCTAssertEqual(secondBackup, "Brak zmian")
-        let ignore = try String(contentsOf: data.appending(path: ".gitignore"), encoding: .utf8)
-        XCTAssertTrue(ignore.contains("projects.local.json") && ignore.contains("mcp-secrets.json"))
-    }
-    func disabled_testBackupCanRequireConfiguredRemote() async throws {
-        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-        let service = try SkillboxService(root: root.appending(path: "data"))
-        do {
-            _ = try await service.backup(push: true, requireRemote: true)
-            XCTFail("Backup wymagający remote powinien zakończyć się błędem")
-        } catch {
-            XCTAssertTrue(error.localizedDescription.contains("zdalnego repozytorium Git"))
-        }
-    }
-    func disabled_testAutomaticBackupRequiresInitializationAndCommitsOnlyNewChanges() async throws {
-        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-        let source = root.appending(path: "source/demo")
-        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
-        try "---\nname: demo\ndescription: Demo\n---\n".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
-        let service = try SkillboxService(root: root.appending(path: "data"))
-        _ = try await service.addLocal(path: source.path)
-        let beforeInitialization = try await service.automaticBackup(push: false)
-        XCTAssertNil(beforeInitialization)
-        _ = try await service.backup(push: false)
-        try await service.setTags(skillID: "demo", tags: ["changed"])
-        let changed = try await service.automaticBackup(push: false)
-        let unchanged = try await service.automaticBackup(push: false)
-        XCTAssertEqual(changed, "Utworzono lokalny commit")
-        XCTAssertEqual(unchanged, "Brak zmian")
-    }
     func testProcessRunnerDrainsLargeOutput() throws {
         let output = try ProcessRunner.run("/usr/bin/head", ["-c", "200000", "/dev/zero"])
         XCTAssertEqual(output.utf8.count, 200_000)
@@ -94,6 +47,35 @@ final class BackupTests: AgentboxTestCase {
         let snapshotsAfterRestore = try await service.librarySnapshots()
         XCTAssertEqual(restoredSkills.first?.tags, [])
         XCTAssertGreaterThanOrEqual(snapshotsAfterRestore.count, 1)
+    }
+    /// A snapshot has to carry `selections.json` too. It holds every attachment there is — which
+    /// skills, servers, documents and plugins a place uses — so a snapshot without it restored the
+    /// catalog while silently leaving the assignments as the mistake had left them.
+    func testLibrarySnapshotRestoresProjectSelectionsAndNotOnlyTheCatalog() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/demo")
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        try "demo".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        let project = try await service.addProject(name: "web", path: projectURL.path, tools: [.claude])
+        try await service.configureProject(id: project.id, skillIDs: ["demo"], tags: [])
+
+        // The next save is what snapshots the state above.
+        try await service.setTags(skillID: "demo", tags: ["changed"])
+        let snapshots = try await service.librarySnapshots()
+        let snapshot = try XCTUnwrap(snapshots.first)
+        XCTAssertTrue(snapshot.files.contains("selections.json"), "snapshot zawiera: \(snapshot.files)")
+
+        // The assignment is then wrecked and the snapshot restored.
+        try await service.configureProject(id: project.id, skillIDs: [], tags: [])
+        _ = try await service.restoreLibrarySnapshot(named: snapshot.name)
+
+        let restored = try await service.selection(for: .project(project.id))
+        XCTAssertEqual(restored.skillIDs, ["demo"])
+        XCTAssertEqual(restored.tools, [.claude])
     }
     func testFullLocalBackupRestoresSkillsProjectsMCPAndSecrets() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
@@ -149,53 +131,6 @@ final class BackupTests: AgentboxTestCase {
         for _ in 0..<16 { _ = try await service.createFullBackup(applicationVersion: "test") }
         let backups = try await service.fullBackups()
         XCTAssertEqual(backups.count, 14)
-    }
-    func disabled_testLibraryIsRestoredFromRemoteRepositoryWithoutTouchingLocalProjectsAndSecrets() async throws {
-        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-        let source = root.appending(path: "source/notes"); let projectURL = root.appending(path: "project")
-        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
-        try "zapasowy skill".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
-
-        // Library that plays the role of the backup repository.
-        let origin = try SkillboxService(root: root.appending(path: "origin"))
-        _ = try await origin.addLocal(path: source.path)
-        try await origin.saveMCPServer(MCPServer(name: "api", transport: .http, url: "https://example.test/mcp"))
-        _ = try await origin.backup(message: "kopia", push: false)
-
-        // A fresh Mac: its own project and secret must survive the restore.
-        let fresh = try SkillboxService(root: root.appending(path: "fresh"))
-        let project = try await fresh.addProject(name: "lokalny", path: projectURL.path, tools: [.claude])
-        try await fresh.saveMCPServer(MCPServer(name: "local", transport: .stdio, command: "echo"), managedFields: [
-            MCPManagedField(location: .environment, key: "TOKEN", value: "dummy-secret", classification: .secret)
-        ])
-
-        _ = try await fresh.restoreLibraryFromRemote(root.appending(path: "origin").absoluteURL.absoluteString, applicationVersion: "test")
-
-        let restoredSkills = try await fresh.listSkills().map(\.id)
-        let restoredServers = try await fresh.mcpConfiguration().servers.map(\.name)
-        let keptProjects = try await fresh.listProjects().map(\.id)
-        let backupCount = try await fresh.fullBackups().count
-        XCTAssertEqual(restoredSkills, ["notes"])
-        XCTAssertEqual(try String(contentsOf: root.appending(path: "fresh/skills/notes/SKILL.md"), encoding: .utf8), "zapasowy skill")
-        XCTAssertEqual(restoredServers, ["api"])
-        XCTAssertEqual(keptProjects, [project.id])
-        let secrets = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: root.appending(path: "fresh/mcp-secrets.json")))
-        XCTAssertTrue(secrets.values.contains("dummy-secret"))
-        XCTAssertEqual(backupCount, 1)
-    }
-    func disabled_testRestoreRejectsRepositoryThatIsNotAnAgentboxLibrary() async throws {
-        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-        let origin = root.appending(path: "origin")
-        try FileManager.default.createDirectory(at: origin, withIntermediateDirectories: true)
-        try "# zwykłe repo".write(to: origin.appending(path: "README.md"), atomically: true, encoding: .utf8)
-        try runGit(["init"], in: origin)
-        try runGit(["-c", "user.email=t@t.test", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init"], in: origin)
-        let service = try SkillboxService(root: root.appending(path: "data"))
-        _ = try await service.addProject(name: "zostaje", path: origin.path, tools: [.claude])
-        await XCTAssertThrowsErrorAsync(try await service.restoreLibraryFromRemote(origin.absoluteURL.absoluteString, applicationVersion: "test"))
-        let keptProjects = try await service.listProjects().map(\.name)
-        XCTAssertEqual(keptProjects, ["zostaje"])
     }
     func testProcessRunnerRunsGitWithoutInteractivePrompts() throws {
         let environment = ProcessRunner.nonInteractiveEnvironment()

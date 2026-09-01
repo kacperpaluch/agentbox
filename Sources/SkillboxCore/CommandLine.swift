@@ -286,14 +286,6 @@ public enum AgentboxCommand {
         return lines
     }
 
-    /// Git reports a push over several lines. The summary is a block of aligned one-liners, so the
-    /// raw output goes above and this keeps only its gist.
-    private static func compact(_ text: String, limit: Int = 88) -> String {
-        let joined = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " · ")
-        guard joined.count > limit else { return joined.isEmpty ? "bez zmian" : joined }
-        return String(joined.prefix(limit - 1)) + "…"
-    }
-
     private static func mcp(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
         guard let action = rest.first else { return [mcpUsage] }
         let config = try await service.mcpConfiguration()

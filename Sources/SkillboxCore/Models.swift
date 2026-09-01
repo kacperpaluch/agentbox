@@ -173,7 +173,6 @@ public struct LocalConfiguration: Codable, Sendable {
     public var projects: [Project] = []
     /// Parent folders added in a batch. What their projects inherit lives in `selections`.
     public var projectRoots: [ProjectRoot]?
-    public var backupRemote: String?
     /// Starting attachments for a newly created project. This is local to the Mac, just like the
     /// project list: it is a convenience template, not an assignment that existing projects inherit.
     public var projectDefaults = AttachmentSelection(tools: Tool.allCases)
@@ -183,13 +182,15 @@ public struct LocalConfiguration: Codable, Sendable {
     public var selections: [String: AttachmentSelection] = [:]
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case projects, projectRoots, backupRemote, projectDefaults }
+    // `backupRemote` used to live here, pointing at the library's Git backup. That feature is gone,
+    // so the key is simply no longer decoded; an older `projects.local.json` still carrying it reads
+    // fine and drops it on the next save.
+    enum CodingKeys: String, CodingKey { case projects, projectRoots, projectDefaults }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         projects = try values.decodeIfPresent([Project].self, forKey: .projects) ?? []
         projectRoots = try values.decodeIfPresent([ProjectRoot].self, forKey: .projectRoots)
-        backupRemote = try values.decodeIfPresent(String.self, forKey: .backupRemote)
         // MVP libraries have no template yet. They retain the historical new-project starting point:
         // all supported clients selected, with no attached content.
         projectDefaults = try values.decodeIfPresent(AttachmentSelection.self, forKey: .projectDefaults)
@@ -441,11 +442,6 @@ public struct ProjectStatus: Identifiable, Sendable, Equatable {
     public var id: UUID { projectID }
     public var projectID: UUID
     public var state: State
-
-    public var changeCount: Int {
-        if case .pending(let added, let outdated, let removed) = state { return added + outdated + removed }
-        return 0
-    }
 
     public init(projectID: UUID, state: State) { self.projectID = projectID; self.state = state }
 }

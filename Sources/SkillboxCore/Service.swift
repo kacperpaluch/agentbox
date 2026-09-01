@@ -473,14 +473,6 @@ public actor SkillboxService {
         return adopted
     }
 
-    public func backupStatus() async throws -> String {
-        let root = store.root
-        guard fm.fileExists(atPath: root.appending(path: ".git").path) else { return "Backup Git nie jest jeszcze skonfigurowany." }
-        let remote = (try? ProcessRunner.run("/usr/bin/git", ["remote", "get-url", "origin"], cwd: root)) ?? "brak zdalnego repozytorium"
-        let changes = try ProcessRunner.run("/usr/bin/git", ["status", "--short"], cwd: root)
-        return "Repozytorium: \(remote)\n\(changes.isEmpty ? "Wszystkie zmiany są zapisane." : changes)"
-    }
-
     public func copyLibrary(to destination: URL) async throws {
         let source = store.root.standardizedFileURL
         let target = destination.standardizedFileURL
@@ -641,57 +633,6 @@ public actor SkillboxService {
             }
         }
         return result
-    }
-
-    public func backup(remote: String? = nil, message: String = "Agentbox backup", push: Bool = true, requireRemote: Bool = false) async throws -> String {
-        let root = store.root
-        if !fm.fileExists(atPath: root.appending(path: ".git").path) { _ = try ProcessRunner.run("/usr/bin/git", ["init"], cwd: root) }
-        try ensureLibraryGitignore(root)
-        if let remote {
-            let existing = try? ProcessRunner.run("/usr/bin/git", ["remote", "get-url", "origin"], cwd: root)
-            _ = try ProcessRunner.run("/usr/bin/git", existing == nil ? ["remote", "add", "origin", remote] : ["remote", "set-url", "origin", remote], cwd: root)
-        }
-        let hasRemote = (try? ProcessRunner.run("/usr/bin/git", ["remote", "get-url", "origin"], cwd: root)) != nil
-        if requireRemote, !hasRemote { throw SkillboxError.commandFailed("brak zdalnego repozytorium Git; skonfiguruj origin lub podaj --remote") }
-        var tracked = [".gitignore", "skills"]
-        for name in ["catalog.json", "selections.json", "mcp.json", "docs.json"] where fm.fileExists(atPath: root.appending(path: name).path) { tracked.append(name) }
-        _ = try ProcessRunner.run("/usr/bin/git", ["add"] + tracked, cwd: root)
-        let staged = try ProcessRunner.run("/usr/bin/git", ["diff", "--cached", "--name-only"], cwd: root)
-        if !staged.isEmpty { _ = try ProcessRunner.run("/usr/bin/git", ["commit", "-m", message], cwd: root) }
-        if push, hasRemote { return try ProcessRunner.run("/usr/bin/git", ["push", "-u", "origin", "HEAD"], cwd: root) }
-        return staged.isEmpty ? "Brak zmian" : "Utworzono lokalny commit"
-    }
-
-    /// Restores skills, catalog and MCP configuration from a backup repository — the missing half
-    /// of `backup(remote:)`, used when setting up a new Mac. A full local backup is taken first, so
-    /// the previous contents of the library remain recoverable.
-    @discardableResult
-    public func restoreLibraryFromRemote(_ remote: String, applicationVersion: String) async throws -> String {
-        guard Self.isAllowedGitLocation(remote) else { throw SkillboxError.invalidSkill("dozwolone źródła Git: https, http, ssh, git, file lub składnia user@host:path") }
-        let temp = fm.temporaryDirectory.appending(path: "agentbox-restore-\(UUID().uuidString)")
-        defer { try? fm.removeItem(at: temp) }
-        _ = try await store.createFullBackup(applicationVersion: applicationVersion)
-        // A full clone, not --depth 1: the adopted .git must stay pushable.
-        _ = try ProcessRunner.run("/usr/bin/git", ["clone", "--", remote, temp.path], timeout: 600)
-        try await store.adoptLibrary(from: temp)
-        let count = try await store.catalog().skills.count
-        return "Przywrócono bibliotekę z \(remote): \(count) skilli. Projekty i sekrety na tym Macu pozostały bez zmian."
-    }
-
-    public func automaticBackup(push: Bool) async throws -> String? {
-        let root = store.root
-        guard fm.fileExists(atPath: root.appending(path: ".git").path) else { return nil }
-        return try await backup(message: "Agentbox automatic backup", push: push)
-    }
-
-    private func ensureLibraryGitignore(_ root: URL) throws {
-        let url = root.appending(path: ".gitignore")
-        var text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-        for entry in ["projects.local.json", "mcp-secrets.json", ".agentbox-snapshots/", "backups/"] where !text.split(whereSeparator: \.isNewline).contains(Substring(entry)) {
-            if !text.isEmpty && !text.hasSuffix("\n") { text += "\n" }
-            text += entry + "\n"
-        }
-        try text.write(to: url, atomically: true, encoding: .utf8)
     }
 
     private static func isAllowedGitLocation(_ value: String) -> Bool {

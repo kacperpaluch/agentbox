@@ -132,22 +132,22 @@ import SkillboxCore
         }
     }
     func loadMarkdown() async { guard let selection else { markdown = ""; return }; markdown = (try? await service?.skillMarkdown(skillID: selection)) ?? "" }
-    func addLocal(_ url: URL) async { await perform(autoBackup: true) { _ = try await self.service?.addLocal(path: url.path); self.message = "Dodano skill z dysku" } }
+    func addLocal(_ url: URL) async { await perform { _ = try await self.service?.addLocal(path: url.path); self.message = "Dodano skill z dysku" } }
     func createSkill(_ draft: NewSkillDraft) async {
-        await perform(autoBackup: true) {
+        await perform {
             let skill = try await self.service?.createSkill(id: draft.id, name: draft.name, description: draft.description, content: draft.content, tags: draft.tags)
             if let skill { self.selection = skill.id }
             self.message = "Utworzono skill \(draft.id)"
         }
     }
-    func addGit(_ url: String, subpath: String) async { await perform(autoBackup: true) {
+    func addGit(_ url: String, subpath: String) async { await perform {
         let urls = url.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         var count = 0; var skipped: [SkippedSkill] = []
         for item in urls { if let result = try await self.service?.addGitCollection(url: item, subpath: subpath.isEmpty ? nil : subpath) { count += result.imported.count; skipped += result.skipped } }
         self.message = skipped.isEmpty ? "Zaimportowano \(count) skilli" : "Zaimportowano \(count) skilli, pominięto \(skipped.count): " + skipped.map { "\($0.id) (\($0.reason))" }.joined(separator: "; ")
     } }
     func checkUpdates() async { isWorking = true; defer { isWorking = false }; do { updateAvailable = try await service?.checkUpdates() ?? []; hasCheckedUpdates = true; message = updateAvailable.isEmpty ? "Wszystkie skille są aktualne" : "Dostępne aktualizacje: \(updateAvailable.count)" } catch { message = error.localizedDescription } }
-    func update(_ id: String) async { await perform(autoBackup: true) { _ = try await self.service?.update(skillID: id); self.updateAvailable.remove(id); self.message = "Zaktualizowano \(id)" } }
+    func update(_ id: String) async { await perform { _ = try await self.service?.update(skillID: id); self.updateAvailable.remove(id); self.message = "Zaktualizowano \(id)" } }
     /// Mirrors `agentbox update --all` in the GUI. Updating one skill is intentionally independent
     /// of the next: a temporary problem with one repository must not prevent the remaining skills
     /// from receiving their available revisions.
@@ -173,21 +173,20 @@ import SkillboxCore
             ? "Zaktualizowano \(updated.count) skilli"
             : "Zaktualizowano \(updated.count) z \(ids.count) skilli. Nie udało się: \(failures.joined(separator: "; "))"
         record(failures.isEmpty ? .success : .error, message)
-        if !updated.isEmpty { scheduleAutomaticBackup() }
-    }
+            }
     func saveSkillMarkdown(_ id: String, content: String) async -> Bool {
         isWorking = true; defer { isWorking = false }
         do {
             try await service?.saveSkillMarkdown(skillID: id, content: content)
             message = "Zapisano \(id)"; record(.success, message)
-            await reload(); scheduleAutomaticBackup(); return true
+            await reload(); return true
         } catch { message = error.localizedDescription; record(.error, message); return false }
     }
-    func saveTags(_ id: String, text: String) async { await perform(autoBackup: true) { try await self.service?.setTags(skillID: id, tags: Self.csv(text)); self.message = "Zapisano tagi" } }
-    func addTags(_ ids: Set<String>, text: String) async { await perform(autoBackup: true) { try await self.service?.addTags(skillIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) skilli" } }
-    func deleteSkill(_ id: String) async { await perform(autoBackup: true) { try await self.service?.deleteSkill(skillID: id); if self.selection == id { self.selection = nil; self.markdown = "" }; self.updateAvailable.remove(id); self.message = "Usunięto skill \(id)" } }
+    func saveTags(_ id: String, text: String) async { await perform { try await self.service?.setTags(skillID: id, tags: Self.csv(text)); self.message = "Zapisano tagi" } }
+    func addTags(_ ids: Set<String>, text: String) async { await perform { try await self.service?.addTags(skillIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) skilli" } }
+    func deleteSkill(_ id: String) async { await perform { try await self.service?.deleteSkill(skillID: id); if self.selection == id { self.selection = nil; self.markdown = "" }; self.updateAvailable.remove(id); self.message = "Usunięto skill \(id)" } }
     func deleteSkills(_ ids: Set<String>) async {
-        await perform(autoBackup: true) {
+        await perform {
             try await self.service?.deleteSkills(skillIDs: Array(ids))
             if let selection = self.selection, ids.contains(selection) { self.selection = nil; self.markdown = "" }
             self.updateAvailable.subtract(ids)
@@ -198,9 +197,9 @@ import SkillboxCore
         guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
         return try await service.claudePlugins(projectPath: project.path)
     }
-    func addLibraryClaudePlugin(_ plugin: ClaudePluginDefinition) async -> Bool { await performing(autoBackup: true) { try await self.service?.addLibraryClaudePlugin(plugin); self.message = "Dodano plugin Claude do biblioteki" } }
-    func updateLibraryClaudePlugin(_ plugin: ClaudePluginDefinition) async -> Bool { await performing(autoBackup: true) { try await self.service?.updateLibraryClaudePlugin(plugin); self.message = "Zapisano plugin \(plugin.name)" } }
-    func deleteLibraryClaudePlugin(_ plugin: ClaudePluginDefinition) async { await perform(autoBackup: true) { try await self.service?.deleteLibraryClaudePlugin(id: plugin.id); self.message = "Usunięto plugin \(plugin.name) z biblioteki" } }
+    func addLibraryClaudePlugin(_ plugin: ClaudePluginDefinition) async -> Bool { await performing { try await self.service?.addLibraryClaudePlugin(plugin); self.message = "Dodano plugin Claude do biblioteki" } }
+    func updateLibraryClaudePlugin(_ plugin: ClaudePluginDefinition) async -> Bool { await performing { try await self.service?.updateLibraryClaudePlugin(plugin); self.message = "Zapisano plugin \(plugin.name)" } }
+    func deleteLibraryClaudePlugin(_ plugin: ClaudePluginDefinition) async { await perform { try await self.service?.deleteLibraryClaudePlugin(id: plugin.id); self.message = "Usunięto plugin \(plugin.name) z biblioteki" } }
     func selectedClaudePluginIDs(for project: Project) async throws -> [UUID] { try await service?.selectedClaudePluginIDs(projectID: project.id) ?? [] }
     func saveClaudePluginSelection(project: Project, ids: [UUID]) async { await perform { try await self.service?.setClaudePluginSelection(projectID: project.id, ids: ids); self.message = "Zapisano pluginy Claude dla \(project.name)" } }
     func installClaudePlugin(project: Project, marketplace: String?, plugin: String, scope: ClaudePluginScope) async {
@@ -283,25 +282,25 @@ import SkillboxCore
         isWorking = true; defer { isWorking = false }
         do {
             try await service?.saveMCPServer(server, managedFields: fields)
-            message = "Zapisano serwer MCP"; record(.success, message); await reload(); scheduleAutomaticBackup(); return true
+            message = "Zapisano serwer MCP"; record(.success, message); await reload(); return true
         } catch { message = error.localizedDescription; record(.error, message); await reload(); return false }
     }
     func duplicateMCPServer(_ server: MCPServer, name: String) async -> Bool {
         isWorking = true; defer { isWorking = false }
         do {
             _ = try await service?.duplicateMCPServer(id: server.id, name: name)
-            message = "Utworzono kopię serwera MCP"; record(.success, message); await reload(); scheduleAutomaticBackup(); return true
+            message = "Utworzono kopię serwera MCP"; record(.success, message); await reload(); return true
         } catch { message = error.localizedDescription; record(.error, message); await reload(); return false }
     }
-    func deleteMCPServer(_ id: UUID) async { await perform(autoBackup: true) { try await self.service?.deleteMCPServer(id: id); self.message = "Usunięto serwer MCP" } }
-    func addMCPServerTags(_ ids: Set<UUID>, text: String) async { await perform(autoBackup: true) { try await self.service?.addMCPServerTags(serverIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) serwerów MCP" } }
+    func deleteMCPServer(_ id: UUID) async { await perform { try await self.service?.deleteMCPServer(id: id); self.message = "Usunięto serwer MCP" } }
+    func addMCPServerTags(_ ids: Set<UUID>, text: String) async { await perform { try await self.service?.addMCPServerTags(serverIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) serwerów MCP" } }
     func exportMCPServerJSON(_ id: UUID) async -> String { (try? await service?.exportMCPServerJSON(id)) ?? "" }
     func exportMCPConfigurationJSON() async -> String { (try? await service?.exportMCPConfigurationJSON(mcp.servers)) ?? "" }
     func updateMCPServerJSON(_ id: UUID, name: String, json: String, enabled: Bool, tags: [String]) async -> Bool {
         isWorking = true; defer { isWorking = false }
         do {
             _ = try await service?.updateMCPServerJSON(id, name: name, json: json, enabled: enabled, tags: tags)
-            message = "Zapisano serwer MCP"; record(.success, message); await reload(); scheduleAutomaticBackup(); return true
+            message = "Zapisano serwer MCP"; record(.success, message); await reload(); return true
         } catch { message = error.localizedDescription; record(.error, message); await reload(); return false }
     }
     func createDoc(id: String, name: String, tags: [String], content: String) async -> Bool {
@@ -309,19 +308,19 @@ import SkillboxCore
         do {
             let doc = try await service?.createDoc(id: id, name: name, tags: tags, content: content)
             if let doc { selection = nil; message = "Utworzono dokument \(doc.id)" } else { message = "Utworzono dokument" }
-            record(.success, message); await reload(); scheduleAutomaticBackup(); return true
+            record(.success, message); await reload(); return true
         } catch { message = error.localizedDescription; record(.error, message); return false }
     }
     func saveDocContent(_ id: String, name: String, content: String) async -> Bool {
         isWorking = true; defer { isWorking = false }
         do {
             try await service?.saveDocContent(docID: id, name: name, content: content)
-            message = "Zapisano \(id)"; record(.success, message); await reload(); scheduleAutomaticBackup(); return true
+            message = "Zapisano \(id)"; record(.success, message); await reload(); return true
         } catch { message = error.localizedDescription; record(.error, message); return false }
     }
-    func saveDocTags(_ id: String, text: String) async { await perform(autoBackup: true) { try await self.service?.setDocTags(docID: id, tags: Self.csv(text)); self.message = "Zapisano tagi" } }
-    func addDocTags(_ ids: Set<String>, text: String) async { await perform(autoBackup: true) { try await self.service?.addDocTags(docIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) dokumentów" } }
-    func deleteDoc(_ id: String) async { await perform(autoBackup: true) { try await self.service?.deleteDoc(id: id); self.message = "Usunięto dokument \(id)" } }
+    func saveDocTags(_ id: String, text: String) async { await perform { try await self.service?.setDocTags(docID: id, tags: Self.csv(text)); self.message = "Zapisano tagi" } }
+    func addDocTags(_ ids: Set<String>, text: String) async { await perform { try await self.service?.addDocTags(docIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) dokumentów" } }
+    func deleteDoc(_ id: String) async { await perform { try await self.service?.deleteDoc(id: id); self.message = "Usunięto dokument \(id)" } }
     func previewMCP(_ project: Project) async throws -> [MCPPreview] { try await service?.previewMCP(projectID: project.id) ?? [] }
     /// Server names Codex/Claude Code declare globally, straight from disk — the same source
     /// `GlobalMCPServersView` reads, but unfiltered by any one project's assignments, for the
@@ -541,10 +540,10 @@ import SkillboxCore
     func previewGlobalSync() async throws -> [SkillSyncPreview] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewGlobalSync() }
     func analyzeMCP(_ text: String, singleServerName: String? = nil) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.analyzeMCPJSON(text, singleServerName: singleServerName) }
     func generateMCP(_ instructions: String, apiKey: String, model: String) async throws -> String { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.generateMCPConfiguration(instructions: instructions, apiKey: apiKey, model: model) }
-    func importMCP(_ text: String, serverNames: Set<String>, classifications: [String: MCPValueClassification], singleServerName: String? = nil) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text, serverNames: serverNames, classifications: classifications, singleServerName: singleServerName); await reload(); scheduleAutomaticBackup(); message = "Zaimportowano \(result.servers.count) serwerów MCP"; record(.success, message); return result }
+    func importMCP(_ text: String, serverNames: Set<String>, classifications: [String: MCPValueClassification], singleServerName: String? = nil) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text, serverNames: serverNames, classifications: classifications, singleServerName: singleServerName); await reload(); message = "Zaimportowano \(result.servers.count) serwerów MCP"; record(.success, message); return result }
     /// Applies every server the JSON describes — no selection step, because this text is a re-edit
     /// of the library's own configuration rather than something pasted in from elsewhere.
-    func importMCPJSONAll(_ text: String) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text); await reload(); scheduleAutomaticBackup(); message = "Zapisano \(result.servers.count) serwerów MCP"; record(.success, message); return result }
+    func importMCPJSONAll(_ text: String) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text); await reload(); message = "Zapisano \(result.servers.count) serwerów MCP"; record(.success, message); return result }
     func moveLibrary(to url: URL) async {
         isWorking = true; defer { isWorking = false }
         do {
@@ -567,21 +566,17 @@ import SkillboxCore
         }
         catch { message = error.localizedDescription }
     }
-    private func perform(autoBackup: Bool = false, _ action: @escaping @MainActor () async throws -> Void) async { isWorking = true; defer { isWorking = false }; do { try await action(); await reload(); if !message.isEmpty { record(.success, message) }; if autoBackup { scheduleAutomaticBackup() } } catch { await reload(); message = error.localizedDescription; record(.error, message) } }
+    private func perform(_ action: @escaping @MainActor () async throws -> Void) async { isWorking = true; defer { isWorking = false }; do { try await action(); await reload(); if !message.isEmpty { record(.success, message) } } catch { await reload(); message = error.localizedDescription; record(.error, message) } }
     /// `perform` for an action a sheet stays open for. The result says whether it succeeded, so a
     /// form can show the reason next to the field that caused it instead of dismissing and leaving
     /// the message to the status bar.
     @discardableResult
-    private func performing(autoBackup: Bool = false, _ action: @escaping @MainActor () async throws -> Void) async -> Bool {
+    private func performing(_ action: @escaping @MainActor () async throws -> Void) async -> Bool {
         isWorking = true; defer { isWorking = false }
-        do { try await action(); await reload(); if !message.isEmpty { record(.success, message) }; if autoBackup { scheduleAutomaticBackup() }; return true }
+        do { try await action(); await reload(); if !message.isEmpty { record(.success, message) }; return true }
         catch { await reload(); message = error.localizedDescription; record(.error, message); return false }
     }
     private func record(_ kind: OperationLogEntry.Kind, _ text: String) { operationLog.insert(OperationLogEntry(kind: kind, text: text), at: 0); if operationLog.count > 100 { operationLog.removeLast(operationLog.count - 100) } }
     func reportError(_ error: Error) { message = error.localizedDescription; record(.error, message) }
-    private func scheduleAutomaticBackup() {
-        // Full local backups are created at most once a day when the app becomes active.
-        // Per-edit Git commits are intentionally gone.
-    }
     static func csv(_ text: String) -> [String] { text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty } }
 }

@@ -91,6 +91,9 @@ extension SkillboxService {
         var targets = tools.map { projectURL.appending(path: $0.projectSkillsPath) }
         let mcpPreviews = try await previewMCPRemovingEverything(project: project)
         targets += mcpPreviews.map { URL(fileURLWithPath: $0.file) }
+        // `apply` rewrites Claude Code's opt-out file too, so cleaning up must be able to put it
+        // back — same reason as in `syncProjectTransaction`.
+        targets += mcpPreviews.compactMap { $0.disabledGlobalFile.map(URL.init(fileURLWithPath:)) }
         let docPreviews = try DocsRenderer.preview(project: projectURL, doc: nil)
         targets += docPreviews.map { URL(fileURLWithPath: $0.file) }
         // Only the manifests — backing up the whole .skillbox directory would copy the backup
@@ -294,6 +297,10 @@ extension SkillboxService {
         var targets = preview.skills.map { URL(fileURLWithPath: $0.target) }
         targets += preview.mcp.map { URL(fileURLWithPath: $0.file) }
         targets += preview.mcp.compactMap { $0.staleFile.map(URL.init(fileURLWithPath:)) }
+        // Claude Code's opt-out is a second managed file, not part of `content`. Without it here a
+        // failure in docs or plugins rolled `mcp-manifest.json` back but left the opt-out written in
+        // the project, so the next sync no longer recognised that name as ours and never cleaned it.
+        targets += preview.mcp.compactMap { $0.disabledGlobalFile.map(URL.init(fileURLWithPath:)) }
         targets.append(projectURL.appending(path: ".skillbox/mcp-manifest.json"))
         targets += preview.docs.map { URL(fileURLWithPath: $0.file) }
         targets.append(projectURL.appending(path: ".skillbox/docs-manifest.json"))
@@ -338,11 +345,6 @@ extension SkillboxService {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(metadata).write(to: backup.appending(path: "metadata.json"), options: .atomic)
         return (backup, metadata)
-    }
-
-    private static func readMetadata(_ backup: URL) throws -> SyncBackupMetadata {
-        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(SyncBackupMetadata.self, from: Data(contentsOf: backup.appending(path: "metadata.json")))
     }
 
     private static func applySyncBackup(project: URL, backup: URL, metadata: SyncBackupMetadata) throws {

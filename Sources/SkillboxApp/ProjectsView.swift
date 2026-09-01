@@ -13,7 +13,6 @@ struct ProjectsView: View {
     @State private var deleting: Project?
     @State private var adopting: Project?
     @State private var managingPlugins: Project?
-    @State private var deleteFiles = false
     @State private var collapsedGroups = Set<String>()
     @State private var editingRoot: ProjectRoot?
     @State private var deletingRoot: ProjectRoot?

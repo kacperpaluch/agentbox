@@ -6,6 +6,19 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-09-01
+
+### Naprawiono
+
+- Snapshot biblioteki nie zawierał `selections.json`, więc przywrócenie snapshotu odtwarzało katalog skilli, ale zostawiało przypisania (skille, serwery MCP, dokumenty, pluginy i narzędzia) w stanie sprzed przywracania. Snapshot obejmuje teraz ten plik, a lista plików snapshotu przestała obiecywać coś, czego w nim nie było. Starsze snapshoty, powstałe bez tego pliku, wciąż przywracają się poprawnie.
+- Nieudana synchronizacja projektu nie cofała zmian w `.claude/settings.local.json`. Jeśli zapis MCP się powiódł, a późniejszy etap (dokumenty lub pluginy) zawiódł, `mcp-manifest.json` wracał do poprzedniego stanu, ale wyłączenie globalnego serwera Claude Code zostawało w projekcie — i przy kolejnej synchronizacji nie było już rozpoznawane jako zarządzane przez Agentbox. To samo dotyczyło `Usuń i posprzątaj pliki`.
+
+### Usunięto
+
+- Pozostałości po wycofanym backupie Git biblioteki: commit i push biblioteki, przywracanie ze zdalnego repozytorium, status backupu Git oraz generowanie `.gitignore` biblioteki. Nic z tego nie było już dostępne z aplikacji ani z CLI. Import i aktualizacja skilli z Git działają bez zmian.
+- Pole `backupRemote` w `projects.local.json` — przechowywało adres zdalnego repozytorium dla usuniętego backupu. Starsze pliki nadal wczytują się poprawnie; pole jest pomijane przy najbliższym zapisie.
+- Nieużywane wykrywanie sekretów przy imporcie MCP oraz zapis `mcp-secrets.json`. Odczyt starego pliku pozostaje, więc biblioteki z wcześniejszymi wartościami sekretów działają dalej.
+
 ## [0.20.0] - 2026-08-31
 
 ### Dodano
