@@ -308,9 +308,12 @@ public struct MCPImportSummary: Sendable {
     public init(servers: [MCPServer], secretCount: Int, stdioCount: Int, httpCount: Int, fields: [MCPImportField] = [], isSingleServerInput: Bool = false) { self.servers = servers; self.secretCount = secretCount; self.stdioCount = stdioCount; self.httpCount = httpCount; self.fields = fields; self.isSingleServerInput = isSingleServerInput }
 }
 
-public enum MCPValueClassification: String, Codable, CaseIterable, Sendable {
+/// How one MCP value is written down: as a reference to a system environment variable, or as the
+/// value itself. This is a display type only — it is never persisted, so it carries no third
+/// "secret" case any more. Older versions had one, back when values could live in a separate
+/// `mcp-secrets.json`; nothing writes that file today.
+public enum MCPValueClassification: String, CaseIterable, Sendable {
     case environment = "Zmienna systemowa"
-    case secret = "Wartość lokalna (legacy)"
     case literal = "Wartość lokalna"
 }
 

@@ -154,7 +154,6 @@ extension SkillboxService {
             fields.append(field)
             switch field.classification {
             case .environment: environmentRefs[key] = environmentReference(val) ?? key
-            case .secret: break
             case .literal: literalEnv[key] = val
             }
         }
@@ -165,7 +164,6 @@ extension SkillboxService {
             fields.append(field)
             switch field.classification {
             case .environment: headerRefs[key] = environmentReference(withoutBearer) ?? key
-            case .secret: break
             case .literal: literalHeaders[key] = rawValue
             }
         }

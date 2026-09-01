@@ -41,14 +41,28 @@ extension SkillboxService {
 
     /// Every MCP value lives in the local library configuration. `${NAME}` is the only special
     /// form: it forwards a system environment variable instead of storing a literal value.
+    ///
+    /// Values an older version put in `mcp-secrets.json` are listed here too, resolved to what they
+    /// actually are. Without that the editor showed a legacy server with no fields at all, and
+    /// saving it — which rebuilds the server from exactly these fields — dropped the reference
+    /// along with the header or variable it stood for. Listing them migrates the value into
+    /// `mcp.json` on the next save, which is where every value lives now.
     public func managedFields(serverID: UUID) async throws -> [MCPManagedField] {
         let config = try await store.mcpConfiguration()
         guard let server = config.servers.first(where: { $0.id == serverID }) else { throw SkillboxError.mcpConflict("serwer MCP nie istnieje") }
+        let secrets = try await store.secrets()
         var fields: [MCPManagedField] = []
         fields += server.environment.map { MCPManagedField(location: .environment, key: $0.key, value: "${\($0.value)}", classification: .literal) }
         fields += (server.literalEnvironment ?? [:]).map { MCPManagedField(location: .environment, key: $0.key, value: $0.value, classification: .literal) }
+        fields += (server.secretEnvironment ?? [:]).map { MCPManagedField(location: .environment, key: $0.key, value: secrets[$0.value] ?? "", classification: .literal) }
         fields += server.headers.map { MCPManagedField(location: .header, key: $0.key, value: $0.key.lowercased() == "authorization" ? "Bearer ${\($0.value)}" : "${\($0.value)}", classification: .literal) }
         fields += (server.literalHeaders ?? [:]).map { MCPManagedField(location: .header, key: $0.key, value: $0.value, classification: .literal) }
+        // `jsonServer` renders a legacy Authorization secret as `Bearer <token>`, so it is shown the
+        // same way here — what the editor displays is what the project file will contain.
+        fields += (server.secretHeaders ?? [:]).map { key, account in
+            let raw = secrets[account] ?? ""
+            return MCPManagedField(location: .header, key: key, value: key.lowercased() == "authorization" ? "Bearer \(raw)" : raw, classification: .literal)
+        }
         return fields.sorted { $0.location.rawValue == $1.location.rawValue ? $0.key < $1.key : $0.location.rawValue < $1.location.rawValue }
     }
 

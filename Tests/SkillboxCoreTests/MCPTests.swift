@@ -236,21 +236,56 @@ final class MCPTests: AgentboxTestCase {
         XCTAssertTrue(preview.content.contains("\"n8n\""))
         XCTAssertTrue(preview.content.contains("\"n8n-tailscale\""))
     }
+    /// A library written before values moved into `mcp.json` still references them by account name
+    /// in `mcp-secrets.json`. The editor rebuilds a server from exactly the fields it lists, so a
+    /// reference it does not list is a value the next save deletes — silently, together with the
+    /// header it authenticated. Listing them migrates the value instead, without changing a byte of
+    /// what the project file ends up containing.
+    func testLegacySecretReferenceIsShownAndMigratedInsteadOfBeingDropped() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        try await service.store.replaceSecrets(["api:header:Authorization": "dummy-secret"])
+        let server = MCPServer(name: "api", transport: .http, url: "https://example.test/mcp",
+                               secretHeaders: ["Authorization": "api:header:Authorization"])
+        try await service.saveMCPServer(server)
+        let project = try await service.addProject(name: "web", path: projectURL.path, tools: [.claude])
+        try await service.setMCPServers(projectID: project.id, serverIDs: [server.id], tags: [])
+        let previewBefore = try await service.previewMCP(projectID: project.id)
+        let before = try XCTUnwrap(previewBefore.first).content
+
+        // The editor has to show the value, otherwise saving cannot preserve it.
+        let fields = try await service.managedFields(serverID: server.id)
+        XCTAssertEqual(fields.map(\.key), ["Authorization"])
+        XCTAssertEqual(fields.first?.value, "Bearer dummy-secret")
+
+        try await service.saveMCPServer(server, managedFields: fields)
+        let servers = try await service.mcpConfiguration().servers
+        let stored = try XCTUnwrap(servers.first)
+        XCTAssertNil(stored.secretHeaders?["Authorization"], "referencja powinna zostać zmigrowana, nie zachowana")
+        XCTAssertEqual(stored.literalHeaders?["Authorization"], "Bearer dummy-secret")
+
+        // The whole point: the project file is byte-for-byte what it was before the migration.
+        let previewAfter = try await service.previewMCP(projectID: project.id)
+        let after = try XCTUnwrap(previewAfter.first).content
+        XCTAssertEqual(after, before)
+        XCTAssertTrue(after.contains("Bearer dummy-secret"), after)
+    }
     func testExistingMCPFieldShowsRealSecretValueAndKeepsItWhenReclassified() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let service = try SkillboxService(root: root)
         let server = MCPServer(name: "api", transport: .http, url: "https://example.test/mcp", literalHeaders: ["Authorization": "initial"])
         try await service.saveMCPServer(server)
         var fields = try await service.managedFields(serverID: server.id)
-        fields[0].classification = .secret
         fields[0].value = "dummy-secret"
         try await service.saveMCPServer(server, managedFields: fields)
-        // The editor shows the secret's real value — nothing is masked in this local, single-user app.
+        // The editor shows the real value — nothing is masked in this local, single-user app.
         let managed = try await service.managedFields(serverID: server.id)
         var secretField = try XCTUnwrap(managed.first)
         XCTAssertEqual(secretField.value, "dummy-secret")
-        // Switching its type to "literal" carries the same visible value forward — it now goes
-        // into the Git-backed backup, which is the point of the classification.
+        // Saving again carries the same visible value forward. What decides where it lands is the
+        // syntax alone: anything that is not `${VAR}` is stored as the value itself.
         secretField.classification = .literal
         try await service.saveMCPServer(server, managedFields: [secretField])
         let config = try await service.mcpConfiguration()
@@ -263,7 +298,7 @@ final class MCPTests: AgentboxTestCase {
         let server = MCPServer(name: "api", transport: .stdio, command: "npx", arguments: ["-y", "pkg"], environment: ["TOKEN": "MY_TOKEN"], enabled: true, tags: ["seo"])
         try await service.saveMCPServer(server)
         var fields = try await service.managedFields(serverID: server.id)
-        fields.append(MCPManagedField(location: .environment, key: "API_KEY", value: "sk-secret", classification: .secret))
+        fields.append(MCPManagedField(location: .environment, key: "API_KEY", value: "sk-secret", classification: .literal))
         try await service.saveMCPServer(server, managedFields: fields)
 
         // The exported JSON shows every value as it really is, secrets included.

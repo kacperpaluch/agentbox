@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.20.3] - 2026-09-01
+
+### Naprawiono
+
+- Serwer MCP z wartościami zapisanymi przez starszą wersję w `mcp-secrets.json` otwierał się w edytorze bez żadnych pól, a zapis kasował nagłówek lub zmienną, którą taka wartość obsługiwała — bez ostrzeżenia. Edytor pokazuje je teraz jak każdą inną wartość lokalną, a zapis przenosi je do `mcp.json`. Treść wynikowych plików projektu nie zmienia się ani o bajt.
+
 ## [0.20.2] - 2026-09-01
 
 ### Naprawiono

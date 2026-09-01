@@ -24,9 +24,12 @@ public actor SkillboxStore {
     }
 
     public func catalog() throws -> Catalog { try read(catalogURL, fallback: Catalog()) }
-    /// `projects.local.json` and `selections.json` are read as one value. They are separate files
-    /// because only the first is local to this Mac — the second is part of the Git backup — but
-    /// nothing above this line has any reason to know that.
+    /// `projects.local.json` and `selections.json` are read as one value.
+    ///
+    /// They are separate files because they answer different questions: the first is this Mac's own
+    /// record — where each project lives on disk — while the second says only what is attached
+    /// where, in bare ids that mean nothing outside the library. Nothing above this line has any
+    /// reason to know they are two files; every `save` overload writes both together.
     public func configuration() throws -> LocalConfiguration {
         var config: LocalConfiguration = try read(localURL, fallback: LocalConfiguration())
         config.selections = try read(selectionsURL, fallback: SelectionsConfiguration()).selections
