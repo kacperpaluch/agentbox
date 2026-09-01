@@ -77,6 +77,42 @@ final class BackupTests: AgentboxTestCase {
         XCTAssertEqual(restored.skillIDs, ["demo"])
         XCTAssertEqual(restored.tools, [.claude])
     }
+    /// A restore that fails partway must leave the library exactly as it found it. Files it had
+    /// already overwritten are put back — and a file the library did not have at all is removed
+    /// again, instead of surviving as the one piece of a restore that never happened.
+    func testFailedSnapshotRestoreRemovesFilesItCreatedAndPutsTheRestBack() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/demo")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try "demo".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let library = root.appending(path: "data")
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        let service = try SkillboxService(root: library)
+        _ = try await service.addLocal(path: source.path)
+        _ = try await service.createDoc(id: "standard", name: "Standard", tags: [], content: "tekst")
+        _ = try await service.addProject(name: "web", path: projectURL.path, tools: [.claude])
+        try await service.saveMCPServer(MCPServer(name: "api", transport: .http, url: "https://example.test/mcp"))
+        try await service.setTags(skillID: "demo", tags: ["changed"])
+
+        let snapshots = try await service.librarySnapshots()
+        let snapshot = try XCTUnwrap(snapshots.first)
+        XCTAssertTrue(snapshot.files.contains("docs.json"), "snapshot zawiera: \(snapshot.files)")
+
+        // The library loses docs.json, so restoring it would *create* the file rather than
+        // overwrite one. `selections.json` becomes a non-empty directory, which no atomic write can
+        // replace — and it sorts last, so the restore fails only after docs.json was written.
+        try FileManager.default.removeItem(at: library.appending(path: "docs.json"))
+        try FileManager.default.removeItem(at: library.appending(path: "selections.json"))
+        try FileManager.default.createDirectory(at: library.appending(path: "selections.json/blokada"), withIntermediateDirectories: true)
+
+        await XCTAssertThrowsErrorAsync(try await service.restoreLibrarySnapshot(named: snapshot.name))
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: library.appending(path: "docs.json").path),
+                       "docs.json powstał tylko w nieudanym przywracaniu i powinien zniknąć razem z nim")
+        let tagsAfterRollback = try await service.listSkills().first?.tags
+        XCTAssertEqual(tagsAfterRollback, ["changed"], "catalog.json powinien wrócić do stanu sprzed przywracania")
+    }
     func testFullLocalBackupRestoresSkillsProjectsMCPAndSecrets() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let source = root.appending(path: "source/demo"); let projectURL = root.appending(path: "project")
@@ -139,6 +175,28 @@ final class BackupTests: AgentboxTestCase {
         XCTAssertNil(environment["GIT_ASKPASS"])
         XCTAssertTrue(environment["GIT_SSH_COMMAND"]?.contains("BatchMode=yes") == true)
         XCTAssertEqual(try ProcessRunner.run("/bin/sh", ["-c", "printf %s \"$GIT_TERMINAL_PROMPT\""]), "0")
+    }
+    /// A failing command's output becomes the error message, which lands in the operation history
+    /// and in whatever the user copies out of it. Git echoes the remote it failed on, so a token in
+    /// the remote's userinfo would travel with it.
+    func testFailedCommandOutputHasUrlCredentialsMasked() throws {
+        XCTAssertThrowsError(try ProcessRunner.run("/bin/sh", ["-c", "echo 'fatal: https://kacper:ghp_dummy@github.com/a/b.git not found'; exit 1"])) { error in
+            let message = error.localizedDescription
+            XCTAssertFalse(message.contains("ghp_dummy"), message)
+            XCTAssertTrue(message.contains("https://kacper:***@github.com/a/b.git"), message)
+        }
+        // The same for the timeout message, which repeats the arguments it was given.
+        XCTAssertThrowsError(try ProcessRunner.run("/bin/sh", ["-c", "sleep 30", "https://ghp_dummy@github.com/a/b.git"], timeout: 1)) { error in
+            let message = error.localizedDescription
+            XCTAssertFalse(message.contains("ghp_dummy"), message)
+            XCTAssertTrue(message.contains("https://***@github.com/a/b.git"), message)
+        }
+    }
+    /// An ssh remote carries no secret in the URL, so masking it would only make the error harder
+    /// to act on. `git@host:path` has no `://` and must survive untouched.
+    func testRedactionLeavesRemotesThatCarryNoSecretAlone() {
+        XCTAssertEqual(ProcessRunner.redacted("git@github.com:kacperpaluch/agentbox.git"), "git@github.com:kacperpaluch/agentbox.git")
+        XCTAssertEqual(ProcessRunner.redacted("fatal: repository https://github.com/a/b.git not found"), "fatal: repository https://github.com/a/b.git not found")
     }
     func testProcessRunnerStopsAProcessThatNeverFinishes() throws {
         let started = Date()

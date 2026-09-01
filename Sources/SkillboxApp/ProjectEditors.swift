@@ -172,6 +172,7 @@ struct BatchProjectRequest {
 struct BatchProjectView: View {
     @Environment(\.dismiss) private var dismiss
     let skills: [Skill]; let servers: [MCPServer]; let docs: [AgentDoc]; let existingProjects: [Project]; let existingRoots: [ProjectRoot]
+    let claudePlugins: [ClaudePluginDefinition]
     let initialSelection: AttachmentSelection
     let onSave: (BatchProjectRequest) -> Void
     @State private var root = ""; @State private var folders: [URL] = []; @State private var selectedFolders = Set<String>()
@@ -204,7 +205,7 @@ struct BatchProjectView: View {
             if folders.isEmpty { Text("Wybierz folder, aby znaleźć projekty.").foregroundStyle(.secondary) }
             else { HStack { Button("Zaznacz dostępne") { selectedFolders = Set(availableFolders.map(\.path)) }; Button("Wyczyść") { selectedFolders.removeAll() }; Spacer(); Text("Wybrano \(selectedFolders.count)").foregroundStyle(.secondary) }; ForEach(folders, id: \.path) { folder in let exists = existingPaths.contains(folder.standardizedFileURL.path); Toggle(isOn: folderBinding(folder)) { HStack { Image(systemName: "folder"); Text(folder.lastPathComponent); Spacer(); if exists { Text("już dodany").font(.caption).foregroundStyle(.secondary) } } }.toggleStyle(.checkbox).disabled(exists) } }
         }.padding(6) }.frame(maxHeight: 230)
-        AttachmentPicker(skills: skills, servers: servers, docs: docs, selection: $selection, manageGitignore: $manageGitignore)
+        AttachmentPicker(skills: skills, servers: servers, docs: docs, claudePlugins: claudePlugins, selection: $selection, manageGitignore: $manageGitignore)
     }.padding(24) }
     // Pinned below the scrolling form, so the action stays reachable on any display.
     SheetFooter {
@@ -285,7 +286,7 @@ struct GroupRootSetupView: View {
                          : "Agentbox zapyta także o podfoldery, które już tam leżą i nie są projektami.")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(6) }
-                AttachmentPicker(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, selection: $selection, manageGitignore: $manageGitignore)
+                AttachmentPicker(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, claudePlugins: model.claudePluginLibrary, selection: $selection, manageGitignore: $manageGitignore)
             }.padding(24) }
             SheetFooter {
                 Button("Anuluj") { dismiss() }

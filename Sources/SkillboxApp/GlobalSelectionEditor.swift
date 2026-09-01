@@ -15,7 +15,7 @@ struct ProjectDefaultsEditor: View {
                     Text("Domyślne dla nowych projektów").font(.title2.bold())
                     Text("Ten zestaw pojawi się w formularzu przy tworzeniu pojedynczego projektu lub grupy projektów. Możesz go wtedy dowolnie zmienić; zapis tutaj nie wpływa na istniejące projekty.")
                         .foregroundStyle(.secondary)
-                    AttachmentPicker(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, selection: $selection)
+                    AttachmentPicker(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, claudePlugins: model.claudePluginLibrary, selection: $selection)
                 }
                 .padding(24)
             }
@@ -65,6 +65,9 @@ struct GlobalSelectionEditor: View {
                     if selection.tools.isEmpty { Text("Nie wybrano żadnego narzędzia.").font(.caption).foregroundStyle(.secondary) }
                 }.padding(6) }
 
+                // No plugin picker here, unlike every project and folder editor: Claude Code installs
+                // a plugin into a project folder, and this target has none. Offering the choice would
+                // mean saving a selection no synchronization can ever act on.
                 AttachmentPicker(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, selection: $selection, includesServersAndDocs: false)
 
                 if !error.isEmpty {

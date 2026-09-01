@@ -6,6 +6,14 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.20.2] - 2026-09-01
+
+### Naprawiono
+
+- Sekcja `Pluginy Claude` była dostępna tylko w edytorze pojedynczego projektu i w ustawieniach istniejącego folderu nadrzędnego. Brakowało jej w `Domyślne dla nowych projektów`, w `Dodaj wiele` oraz przy zakładaniu folderu nadrzędnego z istniejących projektów — mimo że wszystkie trzy zapisują wybór, który synchronizacja i tak czyta. Edytor globalny („Skille we wszystkich sesjach") świadomie nie pokazuje pluginów: Claude Code instaluje je w folderze projektu, którego ten cel nie ma.
+- Błąd polecenia zewnętrznego nie ujawnia już hasła ani tokenu z adresu repozytorium. Git powtarza w komunikacie remote, na którym się wywrócił, a ten trafiał w całości do historii operacji; teraz `https://user:token@host` jest maskowany do `https://user:***@host`. Adresy bez poświadczeń, w tym `git@host:ścieżka`, pozostają czytelne.
+- Nieudane przywracanie snapshotu biblioteki cofa się w całości: pliki, których biblioteka wcześniej nie miała, są usuwane zamiast zostawać jako jedyny ślad po nieudanej operacji. Zapis idzie teraz w ustalonej kolejności, więc przerwane przywracanie zostawia za każdym razem ten sam stan, a nie losowy.
+
 ## [0.20.1] - 2026-09-01
 
 ### Naprawiono

@@ -46,7 +46,12 @@ struct SettingsView: View {
     }
     private func chooseFolder() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true; panel.prompt = "Wybierz"; if panel.runModal() == .OK, let url = panel.url { Task { await model.moveLibrary(to: url) } } }
 }
-func setBinding<T: Hashable>(_ value: T, in set: Binding<Set<T>>) -> Binding<Bool> {
+/// A checkbox binding onto one member of a selection set.
+///
+/// `T` is `Sendable` because `Binding`'s accessors are `@Sendable` under Swift 6: without it the
+/// captured value, the set and even `T.Type` each drew a concurrency warning here. Every caller
+/// already passes `String`, `UUID` or `Tool`, so this constrains nothing in practice.
+func setBinding<T: Hashable & Sendable>(_ value: T, in set: Binding<Set<T>>) -> Binding<Bool> {
     Binding(get: { set.wrappedValue.contains(value) }, set: { enabled in if enabled { set.wrappedValue.insert(value) } else { set.wrappedValue.remove(value) } })
 }
 /// Titled grid of "pick a skill" checkboxes — the same visual language everywhere skills are

@@ -238,6 +238,36 @@ final class ClaudePluginTests: AgentboxTestCase {
 
     // MARK: Rollback
 
+    /// The paths behind "Domyślne dla nowych projektów" and "Dodaj wiele" have to carry a plugin
+    /// choice, because both editors now offer one. `pruned` rewrites most of a selection on save, so
+    /// this pins down that it leaves the plugin ids alone on the way through.
+    func testPluginChoiceSurvivesProjectDefaultsAndBatchAddedFolders() async throws {
+        let (service, root) = try makeService()
+        let folder = root.appending(path: "grupa")
+        try makeFolder(folder.appending(path: "alpha"))
+        let plugin = ClaudePluginDefinition(name: "Formatter", marketplace: "vendor", plugin: "formatter")
+        try await service.addLibraryClaudePlugin(plugin)
+        let stored = try await service.libraryClaudePlugins()
+        let id = try XCTUnwrap(stored.first).id
+
+        try await service.setProjectDefaults(AttachmentSelection(tools: [.claude], claudePluginIDs: [id]))
+        let defaults = try await service.projectDefaults()
+        XCTAssertEqual(defaults.claudePluginIDs, [id], "szablon nowych projektów gubi wybór pluginów")
+
+        // A folder added with those defaults keeps them, so its projects inherit the plugin.
+        let created = try await service.addProjectRoot(
+            ProjectRoot(name: "grupa", path: folder.path),
+            folders: [folder.appending(path: "alpha").path],
+            selection: defaults
+        )
+        let folderSelection = try await service.storedSelection(for: .root(created.id))
+        XCTAssertEqual(folderSelection.claudePluginIDs, [id], "folder nadrzędny gubi wybór pluginów")
+
+        let projects = try await service.listProjects()
+        let project = try XCTUnwrap(projects.first)
+        let inherited = try await service.selectedClaudePluginIDs(projectID: project.id)
+        XCTAssertEqual(inherited, [id])
+    }
     func testAFailedPluginInstallRestoresClaudesSettingsFiles() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let project = root.appending(path: "project")

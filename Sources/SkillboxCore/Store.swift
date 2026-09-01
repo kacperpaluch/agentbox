@@ -138,12 +138,23 @@ public actor SkillboxStore {
             replacements[target] = data
         }
         guard !replacements.isEmpty else { throw SkillboxError.invalidSkill("snapshot nie zawiera danych do przywrócenia") }
-        let originals = Dictionary(uniqueKeysWithValues: replacements.keys.compactMap { target in (try? Data(contentsOf: target)).map { (target, $0) } })
+        // Written in a fixed order. Dictionary order is arbitrary, so a restore that failed halfway
+        // used to leave a different set of files behind on every run — impossible to reason about
+        // from a bug report, and impossible to test.
+        let ordered = replacements.sorted { $0.key.lastPathComponent < $1.key.lastPathComponent }
+        let originals = Dictionary(uniqueKeysWithValues: ordered.compactMap { target, _ in (try? Data(contentsOf: target)).map { (target, $0) } })
         try snapshotLibrary()
+        var written: [URL] = []
         do {
-            for (target, data) in replacements { try data.write(to: target, options: .atomic) }
+            for (target, data) in ordered { try data.write(to: target, options: .atomic); written.append(target) }
         } catch {
-            for (target, data) in originals { try? data.write(to: target, options: .atomic) }
+            // Only what this attempt actually wrote, newest first. A file the library did not have
+            // before is removed rather than left behind: creating it is as much a change as
+            // overwriting one, and a half-restored library must not keep a file nobody restored.
+            for target in written.reversed() {
+                if let data = originals[target] { try? data.write(to: target, options: .atomic) }
+                else { try? fm.removeItem(at: target) }
+            }
             throw error
         }
         return replacements.keys.map(\.lastPathComponent).sorted()
