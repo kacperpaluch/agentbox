@@ -181,7 +181,12 @@ struct ProjectsView: View {
                 Button("Zwiń wszystko") { collapsedGroups = Set(groups.map(\.path)) }
             } label: { Label("Więcej", systemImage: "ellipsis") }
             Spacer()
-            if model.isCheckingStatuses { ProgressView().controlSize(.small) }
+            if model.isCheckingStatuses {
+                ProgressView().controlSize(.small)
+                if let progress = model.progress, progress.total > 1 {
+                    Text("\(progress.done)/\(progress.total)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                }
+            }
         }
     }
 

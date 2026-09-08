@@ -190,7 +190,7 @@ Agentbox zastępuje wyłącznie katalogi skilli wymienione w swoim manifeście `
 
 Pliki konfiguracyjne i manifesty powstają tylko wtedy, gdy projekt ma co synchronizować. Projekt bez wybranych skilli i serwerów MCP pozostaje nietknięty, a puste szkielety (`.mcp.json` z pustym `mcpServers`, `config.toml` z samymi znacznikami) pozostawione przez starsze wersje znikają przy najbliższej synchronizacji. Odznaczenie narzędzia w projekcie również sprząta jego pliki przy kolejnej synchronizacji, zamiast zostawiać je osierocone.
 
-`Synchronizuj wszystkie projekty` liczy plan dla wszystkich projektów przed pierwszym zapisem, a po zakończeniu pokazuje wynik dla każdego projektu osobno: zsynchronizowany, cofnięty po błędzie albo pominięty.
+`Synchronizuj wszystkie projekty` liczy plan dla wszystkich projektów przed pierwszym zapisem, a po zakończeniu pokazuje wynik dla każdego projektu osobno: zsynchronizowany, cofnięty po błędzie albo pominięty. W trakcie okno pokazuje pasek postępu z licznikiem `3/30` i nazwą projektu, którym akurat się zajmuje — najpierw dla fazy sprawdzania planu, potem dla zapisu. `Sprawdź stan` liczy się tak samo, licznikiem obok listy projektów.
 
 ### Skille globalne
 

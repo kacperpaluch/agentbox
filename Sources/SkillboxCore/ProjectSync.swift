@@ -12,10 +12,11 @@ private struct SyncBackupEntry: Codable {
 }
 
 extension SkillboxService {
-    public func previewAllProjectsSync() async throws -> [ProjectSyncPlan] {
+    public func previewAllProjectsSync(progress: SyncProgressHandler? = nil) async throws -> [ProjectSyncPlan] {
         let projects = try await listProjects()
         var plans: [ProjectSyncPlan] = []
         for project in projects {
+            await progress?(SyncProgress(done: plans.count, total: projects.count, label: "Sprawdzam \(project.name)"))
             plans.append(ProjectSyncPlan(project: project, preview: try await previewProjectSync(projectID: project.id)))
         }
         return plans
@@ -26,12 +27,13 @@ extension SkillboxService {
     /// run, so the caller always learns exactly which projects were written, which was rolled back,
     /// and which were never attempted.
     @discardableResult
-    public func syncAllProjectsTransactions() async throws -> [ProjectSyncOutcome] {
-        let plans = try await previewAllProjectsSync()
+    public func syncAllProjectsTransactions(progress: SyncProgressHandler? = nil) async throws -> [ProjectSyncOutcome] {
+        let plans = try await previewAllProjectsSync(progress: progress)
         var outcomes: [ProjectSyncOutcome] = []
         var failed = false
         for plan in plans {
             guard !failed else { outcomes.append(ProjectSyncOutcome(plan: plan, state: .skipped)); continue }
+            await progress?(SyncProgress(done: outcomes.count, total: plans.count, label: "Synchronizuję \(plan.project.name)"))
             do {
                 let selected = SkillboxService.selectedSkills(in: try await store.catalog(), for: plan.project)
                 // `isUpToDate` answers about files only, because that is what decides whether a
@@ -45,15 +47,18 @@ extension SkillboxService {
                 failed = true
             }
         }
+        await progress?(SyncProgress(done: outcomes.count, total: plans.count, label: "Gotowe"))
         return outcomes
     }
 
     /// One row per project answering "does this project still match the library?" without making
     /// the user open every preview. A blocked project is reported, not thrown, so one bad project
     /// never hides the state of the others.
-    public func projectStatuses() async throws -> [ProjectStatus] {
+    public func projectStatuses(progress: SyncProgressHandler? = nil) async throws -> [ProjectStatus] {
         var statuses: [ProjectStatus] = []
-        for project in try await listProjects() {
+        let projects = try await listProjects()
+        for project in projects {
+            await progress?(SyncProgress(done: statuses.count, total: projects.count, label: "Sprawdzam \(project.name)"))
             var isDirectory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else {
                 statuses.append(ProjectStatus(projectID: project.id, state: .missing)); continue

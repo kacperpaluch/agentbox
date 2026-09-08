@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-09-08
+
+### Dodano
+
+- Synchronizacja wszystkich projektów, `Odśwież bibliotekę i zsynchronizuj projekty` oraz `Sprawdź stan` pokazują postęp zamiast samego kręcącego się wskaźnika: pasek, licznik `3/30` i nazwa projektu, którym operacja akurat się zajmuje. Licznik rozróżnia fazę liczenia planu (`Sprawdzam <projekt>`) od zapisu (`Synchronizuję <projekt>`), a `Sprawdź stan` pokazuje swój licznik obok listy projektów, bez przesłaniania okna. Sama synchronizacja, kolejność zapisu i transakcyjność nie zmieniają się ani o krok.
+
 ## [0.20.3] - 2026-09-01
 
 ### Naprawiono

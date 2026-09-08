@@ -234,6 +234,30 @@ final class ProjectTests: AgentboxTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.appending(path: "projects/a-first/.claude/skills/notes/SKILL.md").path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appending(path: "projects/c-third/.claude/skills/notes").path))
     }
+    /// The bar must count every project exactly once and finish full, otherwise "3/30" lies.
+    func testSyncAllReportsProgressForEveryProject() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/notes")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try "wersja 1".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        for name in ["a-first", "b-second", "c-third"] {
+            let url = root.appending(path: "projects/\(name)")
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            let project = try await service.addProject(name: name, path: url.path, tools: [.claude])
+            try await service.configureProject(id: project.id, skillIDs: ["notes"], tags: [])
+        }
+
+        let collected = Collector()
+        _ = try await service.syncAllProjectsTransactions(progress: { await collected.append($0) })
+        let steps = await collected.steps
+
+        XCTAssertTrue(steps.allSatisfy { $0.total == 3 })
+        XCTAssertEqual(steps.filter { $0.label.hasPrefix("Sprawdzam") }.map(\.done), [0, 1, 2])
+        XCTAssertEqual(steps.filter { $0.label.hasPrefix("Synchronizuję") }.map(\.done), [0, 1, 2])
+        XCTAssertEqual(steps.last?.done, 3)
+    }
     func testProjectStatusReportsSyncedOutdatedBlockedAndMissing() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let source = root.appending(path: "source/notes")
@@ -926,4 +950,9 @@ final class ProjectTests: AgentboxTestCase {
         let asked = try await service.scanProjectRoots()
         XCTAssertEqual(asked.map(\.name), ["stare"])
     }
+}
+
+private actor Collector {
+    var steps: [SyncProgress] = []
+    func append(_ step: SyncProgress) { steps.append(step) }
 }

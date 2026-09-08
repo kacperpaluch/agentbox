@@ -94,7 +94,7 @@ struct ContentView: View {
         }
         .overlay(alignment: .bottom) { if !model.message.isEmpty { StatusToast(text: model.message) { model.message = "" } } }
         .task(id: model.message) { let current = model.message; guard !current.isEmpty else { return }; try? await Task.sleep(for: .seconds(4)); guard !Task.isCancelled, model.message == current else { return }; withAnimation { model.message = "" } }
-        .overlay { if model.isWorking { ProgressView().controlSize(.large).padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
+        .overlay { if model.isWorking { WorkingOverlay(progress: model.progress) } }
         .sheet(isPresented: $showGit) { AddGitView { url, path in Task { await model.addGit(url, subpath: path) } } }
         .sheet(isPresented: $showProject) {
             ProjectEditor(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, claudePlugins: model.claudePluginLibrary, project: nil, initialSelection: model.projectDefaults) { project, selection in
@@ -122,5 +122,30 @@ struct OperationHistoryView: View {
     let entries: [OperationLogEntry]
     private let formatter: DateFormatter = { let value = DateFormatter(); value.dateStyle = .short; value.timeStyle = .medium; return value }()
     var body: some View { VStack(alignment: .leading, spacing: 14) { HStack { Text("Historia operacji").font(.title2.bold()); Spacer(); Button("Zamknij") { dismiss() } }; if entries.isEmpty { ContentUnavailableView("Brak operacji", systemImage: "clock", description: Text("Sukcesy i błędy z tej sesji pojawią się tutaj.")) } else { List(entries) { entry in HStack(alignment: .top) { Image(systemName: entry.kind == .error ? "xmark.octagon.fill" : entry.kind == .success ? "checkmark.circle.fill" : "info.circle.fill").foregroundStyle(entry.kind == .error ? .red : entry.kind == .success ? .green : .blue); VStack(alignment: .leading) { Text(entry.text).textSelection(.enabled); Text(formatter.string(from: entry.date)).font(.caption).foregroundStyle(.secondary) } } } } }.padding(20).sheetFrame(width: 680, height: 520) }
+}
+/// The spinner shown over the whole window while something long runs. With countable work it
+/// becomes a real bar with "3/30" and the name of the project being written, because "kręci się od
+/// minuty" and "kręci się, zostało 27 projektów" are very different things to look at.
+struct WorkingOverlay: View {
+    let progress: SyncProgress?
+    var body: some View {
+        VStack(spacing: 10) {
+            if let progress, progress.total > 1 {
+                ProgressView(value: Double(progress.done), total: Double(progress.total))
+                    .frame(width: 260)
+                HStack {
+                    Text(progress.label).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 12)
+                    Text("\(progress.done)/\(progress.total)").monospacedDigit().foregroundStyle(.secondary)
+                }
+                .font(.callout)
+                .frame(width: 260)
+            } else {
+                ProgressView().controlSize(.large)
+            }
+        }
+        .padding(24)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
 }
 struct StatusToast: View { let text: String; let onClose: () -> Void; var body: some View { HStack(spacing: 10) { Label(text, systemImage: "info.circle.fill"); Button(action: onClose) { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain).help("Zamknij") }.font(.callout).padding(.horizontal, 16).padding(.vertical, 10).background(.regularMaterial, in: Capsule()).shadow(radius: 8).padding(.bottom, 14) } }

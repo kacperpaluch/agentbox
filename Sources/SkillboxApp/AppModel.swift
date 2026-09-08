@@ -10,6 +10,12 @@ import SkillboxCore
     @Published var markdown = ""
     @Published var message = ""
     @Published var isWorking = false
+    /// Set while a run that walks project by project is going, so the overlay can say "3/30
+    /// Synchronizuję agentbox" instead of spinning anonymously. `nil` means "no countable work".
+    @Published var progress: SyncProgress?
+    /// Handed to the service so each project it finishes moves the bar. Every hop lands on the main
+    /// actor in order, so the label can never show a step the run has already passed.
+    private var progressHandler: SyncProgressHandler { { value in await MainActor.run { self.progress = value } } }
     @Published var updateAvailable = Set<String>()
     @Published var hasCheckedUpdates = false
     @Published var rootPath: String
@@ -256,9 +262,9 @@ import SkillboxCore
         }
     }
     func loadStatuses() async {
-        isCheckingStatuses = true; defer { isCheckingStatuses = false }
+        isCheckingStatuses = true; defer { isCheckingStatuses = false; progress = nil }
         guard let service else { return }
-        do { statuses = Dictionary(uniqueKeysWithValues: try await service.projectStatuses().map { ($0.projectID, $0) }) }
+        do { statuses = Dictionary(uniqueKeysWithValues: try await service.projectStatuses(progress: progressHandler).map { ($0.projectID, $0) }) }
         catch { reportError(error) }
     }
     func unsyncProject(_ project: Project) async {
@@ -465,10 +471,10 @@ import SkillboxCore
     func previewAllProjectsSync() async throws -> [ProjectSyncPlan] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewAllProjectsSync() }
     func syncAllProjects() async -> [ProjectSyncOutcome] {
         isWorking = true
-        defer { isWorking = false }
+        defer { isWorking = false; progress = nil }
         do {
             guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
-            let outcomes = try await service.syncAllProjectsTransactions()
+            let outcomes = try await service.syncAllProjectsTransactions(progress: progressHandler)
             let synced = outcomes.filter { $0.state == .synced }.count
             let upToDate = outcomes.filter { $0.state == .upToDate }.count
             if synced + upToDate == outcomes.count {
@@ -493,7 +499,7 @@ import SkillboxCore
     /// the already transactional all-project synchronization.
     func refresh() async {
         isWorking = true
-        defer { isWorking = false }
+        defer { isWorking = false; progress = nil }
         do {
             guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
             let updates = try await service.checkUpdates().sorted()
@@ -501,7 +507,7 @@ import SkillboxCore
             updateAvailable.subtract(updates)
 
             let localBackup = try await service.createFullBackup(applicationVersion: AppVersion.short)
-            let outcomes = try await service.syncAllProjectsTransactions()
+            let outcomes = try await service.syncAllProjectsTransactions(progress: progressHandler)
 
             let synced = outcomes.filter { $0.state == .synced }.count
             let unchanged = outcomes.filter { $0.state == .upToDate }.count

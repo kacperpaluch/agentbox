@@ -522,3 +522,16 @@ public enum SkillboxError: LocalizedError {
         }
     }
 }
+
+/// One step of a long run reported to the UI, so "synchronizuję" can say *which* project and how
+/// many are left instead of spinning anonymously.
+public struct SyncProgress: Sendable, Equatable {
+    public var done: Int
+    public var total: Int
+    /// What is happening right now, ready to show ("Synchronizuję agentbox").
+    public var label: String
+    public init(done: Int, total: Int, label: String) { self.done = done; self.total = total; self.label = label }
+    public var fraction: Double { total > 0 ? Double(done) / Double(total) : 0 }
+}
+
+public typealias SyncProgressHandler = @Sendable (SyncProgress) async -> Void
