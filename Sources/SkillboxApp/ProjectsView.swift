@@ -416,7 +416,11 @@ struct AllProjectsSyncPreviewView: View {
                     }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || plans == nil || model.isWorking)
                 }
             }
-        }.padding(24).sheetFrame(width: 820, height: 700).task { do { plans = try await model.previewAllProjectsSync() } catch { self.error = error.localizedDescription; model.reportError(error) } }
+        }
+        .padding(24).sheetFrame(width: 820, height: 700)
+        // Okno arkusza zasłania overlay z App.swift, więc postęp musi być rysowany też tutaj.
+        .overlay { if model.isWorking { WorkingOverlay(progress: model.progress) } }
+        .task { do { plans = try await model.previewAllProjectsSync() } catch { self.error = error.localizedDescription; model.reportError(error) } }
     }
 }
 private struct ProjectSyncOutcomeRow: View {

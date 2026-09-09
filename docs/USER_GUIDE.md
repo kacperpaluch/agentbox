@@ -117,7 +117,7 @@ Agentbox usuwa i zastępuje wyłącznie katalogi wymienione w swoim manifeście 
 
 `Synchronizuj wszystkie projekty` najpierw liczy plan dla wszystkich projektów i dopiero potem zapisuje. Każdy projekt jest zapisywany transakcyjnie, z własnym backupem. Pierwszy błąd zatrzymuje serię, a okno pokazuje wynik dla każdego projektu osobno: zsynchronizowany, cofnięty do stanu sprzed zmiany albo pominięty. Dzięki temu po błędzie zawsze wiadomo, które projekty zostały zmienione.
 
-Przy dłuższej serii nie trzeba zgadywać, ile jeszcze zostało: w trakcie operacji okno pokazuje pasek postępu z licznikiem `3/30` i nazwą projektu, na którym Agentbox właśnie pracuje. Licznik przechodzi dwie fazy — `Sprawdzam <projekt>`, czyli liczenie planu, a potem `Synchronizuję <projekt>`, czyli zapis — więc widać też, na którym etapie serii jest operacja. To samo dotyczy `Odśwież bibliotekę i zsynchronizuj projekty`. `Sprawdź stan` pokazuje swój licznik obok listy projektów, bez przesłaniania okna.
+Przy dłuższej serii nie trzeba zgadywać, ile jeszcze zostało: w trakcie operacji okno pokazuje pasek postępu z licznikiem `3/30` i nazwą projektu, na którym Agentbox właśnie pracuje. Licznik przechodzi dwie fazy — `Sprawdzam <projekt>`, czyli liczenie planu, a potem `Synchronizuję <projekt>`, czyli zapis — więc widać też, na którym etapie serii jest operacja. To samo dotyczy `Odśwież bibliotekę i zsynchronizuj projekty`. `Sprawdź stan` pokazuje swój licznik obok listy projektów, bez przesłaniania okna. Gdy serię uruchamiasz z okna `Synchronizacja wszystkich projektów`, pasek widać w tym oknie — nie trzeba go zamykać, żeby zobaczyć postęp.
 
 ### Wybór MCP w projekcie
 

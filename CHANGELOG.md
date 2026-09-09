@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-09-09
+
+### Naprawiono
+
+- Pasek postępu synchronizacji wszystkich projektów był rysowany w oknie głównym, więc arkusz `Synchronizacja wszystkich projektów` całkowicie go zasłaniał — licznik `4/45` pojawiał się dopiero po zamknięciu okna. Arkusz pokazuje teraz ten sam pasek u siebie, w trakcie trwania operacji. Sama synchronizacja nie zmienia się ani o krok.
+
 ## [0.21.0] - 2026-09-08
 
 ### Dodano
