@@ -25,13 +25,16 @@ agentbox tag nazwa-skilla seo audit
 agentbox update nazwa-skilla
 agentbox update --all
 agentbox delete nazwa-skilla
+agentbox usage nazwa-skilla
 ```
 
 `new` tworzy skill prosto w bibliotece z podanej treści. `--file` wskazuje plik, a `--file -` czyta standardowe wejście, więc skill można podać potokiem. Bez `--file` powstaje krótki szkic do uzupełnienia. Treść zaczynająca się od bloku `---` jest zapisywana bez zmian; w pozostałych przypadkach Agentbox dopisuje nagłówek YAML z `--name` i `--description`.
 
 `add` kopiuje lokalny skill albo importuje wszystkie znalezione `SKILL.md` z Git. `tag` zastępuje listę tagów wskazanego skilla. `update` działa dla skilli pochodzących z Git. `delete` usuwa skill z biblioteki i jego bezpośrednie przypisania do projektów — tak samo jak `Usuń` w szczegółach skilla; nie rusza katalogu źródłowego ani repozytorium.
 
-`agentbox update --all` najpierw sprawdza zdalne rewizje wszystkich skilli Git, a następnie pobiera wyłącznie dostępne aktualizacje. Skille lokalne są pomijane. Aktualizacja biblioteki nie zmienia automatycznie plików projektów — po niej uruchom `agentbox sync project <nazwa>` dla projektów, które mają otrzymać nowe wersje.
+`agentbox update --all` najpierw sprawdza zdalne rewizje wszystkich skilli Git, a następnie pobiera wyłącznie dostępne aktualizacje. Skille lokalne są pomijane. Każde repozytorium jest klonowane raz, niezależnie od tego, ile skilli z niego pochodzi, a cała aktualizacja to jeden zapis biblioteki. Repozytorium, do którego nie da się dotrzeć, przerywa wyłącznie swoje skille — pozostałe i tak dostają nowe rewizje, a nieudane są wypisane z powodem (`✗ id — powód`). Aktualizacja biblioteki nie zmienia automatycznie plików projektów — po niej uruchom `agentbox sync project <nazwa>` dla projektów, które mają otrzymać nowe wersje.
+
+`usage` odpowiada, gdzie skill faktycznie trafia: wypisuje liczbę projektów, foldery nadrzędne i ten Mac, a pod spodem nazwy projektów. Liczone są także projekty, które biorą skill przez tag albo przez folder nadrzędny, i pomijane te, które go wykluczają — czyli dokładnie to, co zobaczy synchronizacja. Warto uruchomić przed `delete`.
 
 ## Projekty
 
@@ -47,14 +50,18 @@ agentbox project set sklep --skills seo-audit,docx --tags seo
 agentbox project status
 agentbox project adopt sklep
 agentbox project adopt sklep --yes
+agentbox project adopt-changes sklep
+agentbox project adopt-changes sklep --yes
 agentbox project unsync sklep
 agentbox project remove sklep
 agentbox project remove sklep --clean
 ```
 
-`project status` pokazuje jednym rzutem, które projekty odstają od biblioteki: `✓` aktualny, `●` z liczbą zmian, `✗` zablokowany przez niezarządzany katalog lub wpis, `?` brak folderu projektu.
+`project status` pokazuje jednym rzutem, które projekty odstają od biblioteki: `✓` aktualny, `●` z liczbą zmian, `✗` zablokowany przez niezarządzany katalog lub wpis, `?` brak folderu projektu. Licznik `~` obejmuje nie tylko skille z nowszą wersją w bibliotece, ale też wszystko, co zmieniło treść bez zmiany nazwy: poprawioną komendę serwera MCP, przepisany dokument i skill zmieniony wprost w folderze biblioteki. Stan porównuje zawartość plików projektu z tym, co zapisałaby synchronizacja.
 
 `project adopt` wypisuje katalogi ze `SKILL.md`, które leżą w projekcie, nie są zarządzane przez Agentbox i nie mają odpowiednika w bibliotece. Bez `--yes` tylko je wylicza; z `--yes` kopiuje je do biblioteki jako skille lokalne.
+
+`project adopt-changes` to druga połowa przejmowania: zarządzane skille, które zmieniły się w folderze projektu po ostatniej synchronizacji. Bez `--yes` tylko je wylicza, z `--yes` zastępuje kopie w bibliotece wersjami z projektu — po czym pozostałe projekty dostaną tę poprawkę przy swojej synchronizacji. Wypisywane są wyłącznie przypadki jednoznaczne: jeśli kopia w bibliotece też się zmieniła, jest to zwykła nieaktualność projektu. Skille z Git są oznaczone i pomijane przy `--yes`, bo `update` i tak zastąpiłby kopię biblioteczną zawartością repozytorium. Dwa projekty, które zmieniły ten sam skill inaczej, przerywają operację z nazwami obu — wybierz jeden.
 
 `project unsync` usuwa z folderu projektu wyłącznie to, co Agentbox ma w swoich manifestach. Ręcznie dodane skille i serwery MCP zostają nietknięte, a przed zmianą powstaje backup.
 
@@ -92,7 +99,7 @@ agentbox sync global --skills seo-audit,docx --tags seo --tools claude,opencode
 agentbox sync global --dry-run
 ```
 
-`sync project` i `sync all` synchronizują skille i MCP razem, tą samą ścieżką transakcyjną co GUI: przed zapisem powstaje backup projektu, a błąd cofa zmiany. `sync all` zatrzymuje serię na pierwszym błędzie i wypisuje wynik dla każdego projektu — `✓` zsynchronizowany, `✗` cofnięty, `–` pominięty.
+`sync project` i `sync all` synchronizują razem skille, MCP, dokumenty i pluginy Claude Code wybrane dla projektu, tą samą ścieżką transakcyjną co GUI: przed zapisem powstaje backup projektu, a błąd cofa zmiany. Plugin jest instalowany tylko wtedy, gdy projekt jeszcze go nie deklaruje — ten już zainstalowany nie kosztuje wywołania CLI Claude Code. `sync all` zatrzymuje serię na pierwszym błędzie i wypisuje wynik dla każdego projektu — `✓` zsynchronizowany, `✗` cofnięty, `–` pominięty.
 
 `sync global` zapisuje wybór skilli, tagów i narzędzi, a następnie kopiuje je do katalogów użytkownika (`~/.claude/skills`, `~/.codex/skills`, `~/.config/opencode/skills`). Wywołany bez `--skills` i `--tags` używa wyboru zapisanego wcześniej w aplikacji.
 
@@ -106,7 +113,7 @@ Synchronizacja zatrzymuje się, jeśli w katalogu docelowym istnieje katalog ski
 agentbox refresh
 ```
 
-`refresh` wykonuje kolejno: sprawdzenie i pobranie aktualizacji skilli Git, pełny backup lokalny oraz transakcyjną synchronizację skilli i MCP we wszystkich projektach. Błąd zatrzymuje workflow, a synchronizacja aktualnie przetwarzanego projektu korzysta z automatycznego rollbacku. Projekty zakończone wcześniej pozostają zsynchronizowane.
+`refresh` wykonuje kolejno: sprawdzenie i pobranie aktualizacji skilli Git, pełny backup lokalny oraz transakcyjną synchronizację skilli, MCP, dokumentów i pluginów we wszystkich projektach. Repozytorium, do którego nie da się dotrzeć, przerywa tylko swoje skille i jest wypisane z powodem — reszta workflow idzie dalej. Błąd synchronizacji zatrzymuje serię, a projekt, który go zgłosił, korzysta z automatycznego rollbacku. Projekty zakończone wcześniej pozostają zsynchronizowane.
 
 Przebieg kończy blok `PODSUMOWANIE` z bilansem całości:
 
@@ -196,6 +203,15 @@ Zsynchronizowany dokument ląduje jako `AGENTS.md` (pełna treść) i `CLAUDE.md
 ## Pełny backup lokalny
 
 `agentbox refresh` tworzy pełną, lokalną kopię biblioteki przed synchronizacją. Zawiera ona skille, projekty, konfigurację MCP oraz wszystkie zapisane wartości. Kopie nie są szyfrowane — chroń folder biblioteki jak plik z hasłami.
+
+## Czego CLI nie ma
+
+Kilka rzeczy jest wyłącznie w aplikacji, bo wymagają wyboru albo okna:
+
+- **pluginy Claude Code** — definicje w bibliotece i wybór dla projektu ustawia się w GUI; `sync` i `refresh` instalują to, co jest wybrane, ale CLI nie ma poleceń do zarządzania samymi definicjami;
+- **podgląd różnicy pliku** — `--dry-run` wypisuje, ile wpisów się zmieni; porównanie linia po linii pokazuje okno podglądu synchronizacji;
+- **pełne backupy i przywracanie** — `refresh` tworzy backup, ale wybór kopii do przywrócenia jest w `Kopie zapasowe`;
+- **obserwacja folderu biblioteki** — dotyczy okna aplikacji, nie procesu jednorazowego.
 
 ## Kody zakończenia i błędy
 
