@@ -86,4 +86,63 @@ final class SkillTests: AgentboxTestCase {
         let unchanged = try await service.skillMarkdown(skillID: "repo-skill")
         XCTAssertEqual(unchanged, "z repozytorium")
     }
+
+    /// Forty skills coming from eight repositories used to mean forty clones and forty catalog
+    /// saves, because every caller looped over `update(skillID:)` — and ten recovery snapshots is
+    /// all the library keeps, so one "update everything" wiped the whole history.
+    func testUpdatingSeveralSkillsFromOneRepositoryTakesOneSnapshot() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let repo = root.appending(path: "repo")
+        for name in ["one", "two"] {
+            let folder = repo.appending(path: "skills/\(name)")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try "---\nname: \(name)\ndescription: Demo\n---\n".write(to: folder.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        }
+        try runGit(["init"], in: repo); try runGit(["add", "."], in: repo)
+        try runGit(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"], in: repo)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let imported = try await service.addGitCollection(url: repo.absoluteURL.absoluteString, subpath: "skills")
+        XCTAssertEqual(imported.imported.count, 2)
+        for name in ["one", "two"] {
+            try "---\nname: \(name)\ndescription: Nowa treść\n---\n".write(to: repo.appending(path: "skills/\(name)/SKILL.md"), atomically: true, encoding: .utf8)
+        }
+        try runGit(["add", "."], in: repo)
+        try runGit(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "second"], in: repo)
+        let snapshotsBefore = try await service.librarySnapshots().count
+
+        let result = try await service.updateSkills(ids: ["one", "two"])
+
+        XCTAssertEqual(result.updated.map(\.id), ["one", "two"])
+        XCTAssertTrue(result.failed.isEmpty)
+        let snapshotsAfter = try await service.librarySnapshots().count
+        XCTAssertEqual(snapshotsAfter, snapshotsBefore + 1, "obie aktualizacje muszą być jednym zapisem katalogu")
+        for name in ["one", "two"] {
+            let text = try await service.skillMarkdown(skillID: name)
+            XCTAssertTrue(text.contains("Nowa treść"))
+        }
+    }
+
+    /// A repository nobody can reach must fail only its own skills — the GUI already promised that
+    /// "one temporary problem does not stop the rest", and now one call has to keep the promise.
+    func testUnreachableRepositoryFailsOnlyItsOwnSkills() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let local = root.appending(path: "local/keeper")
+        try FileManager.default.createDirectory(at: local, withIntermediateDirectories: true)
+        try "---\nname: keeper\ndescription: Demo\n---\n".write(to: local.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let repo = root.appending(path: "gone")
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try "---\nname: gone\ndescription: Demo\n---\n".write(to: repo.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        try runGit(["init"], in: repo); try runGit(["add", "."], in: repo)
+        try runGit(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"], in: repo)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: local.path)
+        _ = try await service.addGitCollection(url: repo.absoluteURL.absoluteString)
+        try FileManager.default.removeItem(at: repo)
+
+        let result = try await service.updateSkills(ids: ["keeper", "gone"])
+
+        XCTAssertEqual(result.updated.map(\.id), ["keeper"])
+        XCTAssertEqual(result.failed.map(\.id), ["gone"])
+    }
+
 }

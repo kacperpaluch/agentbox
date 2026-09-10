@@ -6,6 +6,21 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.21.2] - 2026-09-10
+
+### Naprawiono
+
+- Zmiana serwera MCP, dokumentu albo skilla nie odznaczała projektów jako wymagających synchronizacji. Stan projektu liczył wyłącznie *nazwy*: identyfikator skilla, nazwę serwera, identyfikator dokumentu. Poprawiona komenda serwera, przepisana treść dokumentu i skill zmieniony wprost w folderze biblioteki nie zmieniają żadnej nazwy, więc projekt dalej pokazywał `Aktualny`, choć jego pliki były nieaktualne. Stan porównuje teraz również zawartość plików — dokładnie tak, jak robi to sama synchronizacja przy decyzji o zapisie.
+- Synchronizacja wszystkich projektów prosiła Claude Code o instalację każdego wybranego pluginu w każdym projekcie, przy każdym uruchomieniu — także wtedy, gdy plugin był już zainstalowany. Jedno wywołanie CLI trwa około 3,5 s, więc biblioteka z 53 projektami i trzema pluginami spędzała na tym kilka minut za każdym razem. Agentbox sprawdza teraz `settings.json` projektu (tę samą odpowiedź pokazuje podgląd) i uruchamia CLI tylko dla pluginu, którego naprawdę brakuje.
+- Zapis serwerów MCP do `opencode.jsonc` kasował wszystkie komentarze użytkownika i przestawiał kolejność kluczy, bo cały plik był serializowany od nowa. Teraz podmieniany jest wyłącznie zarządzany klucz `mcp`, a reszta pliku zostaje bajt w bajt.
+- Nieudana instalacja pluginu (na przykład przy chwilowym braku sieci) cofała poprawnie zapisane już skille, MCP i dokumenty tego projektu i zatrzymywała cały przebieg. Pluginy instalują się teraz przed zapisem plików: nieudana instalacja zostawia pliki projektu nietknięte.
+- `Odśwież bibliotekę` i `agentbox update --all` klonowały repozytorium raz na skill, a nie raz na repozytorium — 40 skilli z 8 repozytoriów oznaczało 40 klonów — i zapisywały katalog po każdym skillu, przez co jedna aktualizacja zużywała całą dziesięcioelementową historię snapshotów. Aktualizacja jest teraz jedną operacją: jeden klon na repozytorium i jeden zapis. Repozytorium, do którego nie da się dotrzeć, przerywa tylko swoje skille.
+- Aplikacja uruchomiona z Findera nie znajdowała Claude Code zainstalowanego w `~/.claude/local` ani `~/.local/bin`, bo dziedziczy z Findera okrojony `PATH`. Te lokalizacje są teraz sprawdzane wprost.
+
+### Zmieniono
+
+- Synchronizacja wszystkich projektów liczy podgląd każdego projektu raz, zamiast trzech razy, i raz porównuje pliki z biblioteką zamiast dwóch razy. Kolejność zapisu, transakcyjność i zawartość plików wynikowych nie zmieniają się ani o bajt.
+
 ## [0.21.1] - 2026-09-09
 
 ### Naprawiono

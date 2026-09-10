@@ -165,6 +165,35 @@ final class MCPTests: AgentboxTestCase {
         var renamed = two; renamed.name = "one"
         do { try await service.saveMCPServer(renamed); XCTFail("Oczekiwano konfliktu nazwy") } catch {}
     }
+    /// A JSONC file exists to carry comments. Rewriting the whole document through
+    /// `JSONSerialization` deleted every one of them without a word — the user's own notes, gone on
+    /// the first synchronization that touched an MCP server.
+    func testSyncKeepsCommentsAndFormattingInOpencodeJSONC() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        let original = "{\n  // wybrany model\n  \"model\": \"opus\",\n  \"theme\": \"dark\"\n}\n"
+        let file = projectURL.appending(path: "opencode.jsonc")
+        try original.write(to: file, atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let project = try await service.addProject(name: "mcp", path: projectURL.path, tools: [.opencode])
+        let server = MCPServer(name: "context7", transport: .stdio, command: "npx", arguments: ["-y", "context7"])
+        try await service.saveMCPServer(server)
+        try await service.setMCPServers(projectID: project.id, serverIDs: [server.id], tags: [])
+
+        _ = try await service.syncMCP(projectID: project.id)
+        let written = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertTrue(written.contains("// wybrany model"), "komentarz użytkownika zniknął: \(written)")
+        XCTAssertTrue(written.contains("\"context7\""))
+        XCTAssertTrue(written.contains("\"theme\": \"dark\""))
+
+        try await service.setMCPServers(projectID: project.id, serverIDs: [], tags: [])
+        _ = try await service.syncMCP(projectID: project.id)
+        let cleaned = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertTrue(cleaned.contains("// wybrany model"), "komentarz zniknął przy usuwaniu serwera: \(cleaned)")
+        XCTAssertFalse(cleaned.contains("context7"))
+    }
+
     func testDirectMCPAssignmentPreviewAndThreeToolSync() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let projectURL = root.appending(path: "project")

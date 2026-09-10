@@ -155,8 +155,12 @@ extension SkillboxService {
         return previews
     }
 
-    public func syncMCP(projectID: UUID) async throws -> [MCPPreview] {
-        let previews = try await previewMCP(projectID: projectID)
+    /// `previews` is the preview a caller has already computed for this project. It is only ever
+    /// the one from the same synchronization, so passing it changes nothing except how often the
+    /// library and the project's files are read.
+    public func syncMCP(projectID: UUID, previews suppliedPreviews: [MCPPreview]? = nil) async throws -> [MCPPreview] {
+        let previews: [MCPPreview]
+        if let suppliedPreviews { previews = suppliedPreviews } else { previews = try await previewMCP(projectID: projectID) }
         let local = try await store.configuration()
         guard let project = local.projects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
         try MCPRenderer.apply(previews: previews, project: URL(fileURLWithPath: project.path))
@@ -438,8 +442,10 @@ enum MCPRenderer {
 
     private static func jsonMerged(file: URL, path: [String], servers: [MCPServer], tool: Tool, previouslyManaged: Set<String>, secrets: [String: String]) throws -> String {
         var root: [String: Any] = [:]
+        var original: String?
         if FileManager.default.fileExists(atPath: file.path) {
             let raw = try String(contentsOf: file, encoding: .utf8)
+            original = raw
             let parseable = file.pathExtension == "jsonc" ? stripJSONComments(raw) : raw
             guard let data = parseable.data(using: .utf8), let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw SkillboxError.mcpConflict("\(file.lastPathComponent) nie jest poprawnym JSON/JSONC") }
             root = object
@@ -461,8 +467,123 @@ enum MCPRenderer {
             root = current
         }
         guard !root.isEmpty else { return "" }
+        // A JSONC file exists precisely to carry comments, and re-serializing the whole document
+        // deletes every one of them without a word. Only the managed key is spliced into the
+        // original text; everything the user wrote around it — comments, key order, formatting —
+        // stays byte for byte. Anything the splice cannot place safely falls through to the plain
+        // re-serialization below, which is still correct, just less considerate.
+        if file.pathExtension == "jsonc", let original, path.count == 1,
+           let spliced = splicedTopLevelKey(original, key: path[0], value: root[path[0]]) {
+            return spliced
+        }
         let data = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         return String(decoding: data, as: UTF8.self) + "\n"
+    }
+
+    /// `text` with one top-level key replaced, inserted, or (for `value == nil`) removed, leaving
+    /// every other byte of the document untouched. `nil` when the document is not a plain object or
+    /// the key sits somewhere this simple splice cannot reason about.
+    static func splicedTopLevelKey(_ text: String, key: String, value: Any?) -> String? {
+        let chars = Array(text)
+        guard let open = firstStructural(chars, from: 0), chars[open] == "{" else { return nil }
+        let rendered: String?
+        if let value {
+            guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) else { return nil }
+            // Indented one level, so a spliced object lines up with the keys already in the file.
+            rendered = String(decoding: data, as: UTF8.self).split(separator: "\n", omittingEmptySubsequences: false).joined(separator: "\n  ")
+        } else {
+            rendered = nil
+        }
+        if let found = topLevelPair(chars, key: key) {
+            guard let rendered else {
+                // The pair goes, and with it the comma that only existed to separate it. Removing
+                // the *last* pair leaves the comma in front of it behind as a trailing one, which
+                // JSONC allows and `stripJSONComments` already normalizes away before parsing —
+                // cheaper than a backwards scan that has to reason about comment lines.
+                var end = found.end
+                if let next = firstStructural(chars, from: end), chars[next] == "," { end = next + 1 }
+                return String(chars[0..<found.start]) + String(chars[end...])
+            }
+            return String(chars[0..<found.start]) + "\"\(key)\": " + rendered + String(chars[found.end...])
+        }
+        guard let rendered else { return text }
+        // A key the file does not have yet goes in first, so it is visible rather than buried.
+        let empty = firstStructural(chars, from: open + 1).map { chars[$0] == "}" } ?? false
+        let entry = "\n  \"\(key)\": " + rendered + (empty ? "\n" : ",")
+        return String(chars[0...open]) + entry + String(chars[(open + 1)...])
+    }
+
+    /// Offset of the first character that is neither whitespace nor a comment, at or after `from`.
+    private static func firstStructural(_ chars: [Character], from: Int) -> Int? {
+        var index = from
+        while index < chars.count {
+            let char = chars[index]
+            if char.isWhitespace { index += 1; continue }
+            if char == "/", index + 1 < chars.count, chars[index + 1] == "/" {
+                index += 2; while index < chars.count && chars[index] != "\n" { index += 1 }; continue
+            }
+            if char == "/", index + 1 < chars.count, chars[index + 1] == "*" {
+                index += 2
+                while index + 1 < chars.count && !(chars[index] == "*" && chars[index + 1] == "/") { index += 1 }
+                index = min(index + 2, chars.count); continue
+            }
+            return index
+        }
+        return nil
+    }
+
+    /// Offsets of one `"key": value` pair directly inside the root object: from the key's opening
+    /// quote to just past the end of its value.
+    private static func topLevelPair(_ chars: [Character], key: String) -> (start: Int, end: Int)? {
+        guard let open = firstStructural(chars, from: 0), chars[open] == "{" else { return nil }
+        var index = open + 1
+        while let position = firstStructural(chars, from: index) {
+            if chars[position] == "}" { return nil }
+            guard chars[position] == "\"", let keyEnd = endOfString(chars, from: position) else { return nil }
+            let name = String(chars[(position + 1)..<(keyEnd - 1)])
+            guard let colon = firstStructural(chars, from: keyEnd), chars[colon] == ":" else { return nil }
+            guard let valueStart = firstStructural(chars, from: colon + 1), let valueEnd = endOfValue(chars, from: valueStart) else { return nil }
+            if name == key { return (position, valueEnd) }
+            guard let next = firstStructural(chars, from: valueEnd) else { return nil }
+            if chars[next] == "," { index = next + 1 } else if chars[next] == "}" { return nil } else { return nil }
+        }
+        return nil
+    }
+
+    /// Offset just past the closing quote of the string starting at `from`.
+    private static func endOfString(_ chars: [Character], from: Int) -> Int? {
+        var index = from + 1
+        while index < chars.count {
+            if chars[index] == "\\" { index += 2; continue }
+            if chars[index] == "\"" { return index + 1 }
+            index += 1
+        }
+        return nil
+    }
+
+    /// Offset just past the end of the value starting at `from`.
+    private static func endOfValue(_ chars: [Character], from: Int) -> Int? {
+        switch chars[from] {
+        case "\"": return endOfString(chars, from: from)
+        case "{", "[":
+            var depth = 0, index = from
+            while index < chars.count {
+                let char = chars[index]
+                if char == "\"" { guard let after = endOfString(chars, from: index) else { return nil }; index = after; continue }
+                if char == "/", index + 1 < chars.count, chars[index + 1] == "/" || chars[index + 1] == "*" {
+                    guard let after = firstStructural(chars, from: index) else { return nil }
+                    index = after; continue
+                }
+                if char == "{" || char == "[" { depth += 1 }
+                if char == "}" || char == "]" { depth -= 1; if depth == 0 { return index + 1 } }
+                index += 1
+            }
+            return nil
+        default:
+            var index = from
+            while index < chars.count, !",}]".contains(chars[index]), !chars[index].isWhitespace { index += 1 }
+            return index
+        }
     }
 
     private static func mergeJSONEntries(_ entries: inout [String: Any], servers: [MCPServer], tool: Tool, previouslyManaged: Set<String>, secrets: [String: String]) throws {

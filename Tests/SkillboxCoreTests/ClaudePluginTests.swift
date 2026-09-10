@@ -54,6 +54,28 @@ final class ClaudePluginTests: AgentboxTestCase {
         XCTAssertTrue(selectedForTwo.isEmpty)
     }
 
+    // MARK: Installation
+
+    /// Claude Code's CLI costs about 3.5 s per plugin whether or not the plugin is already there,
+    /// and synchronization runs it for every project. A plugin the project already declares must
+    /// therefore never reach the CLI — here the identifier is deliberately one no marketplace has,
+    /// so touching the CLI at all (or failing to find it) would fail the test.
+    func testAlreadyDeclaredPluginIsNotReinstalled() async throws {
+        let (service, root) = try makeService()
+        let projectURL = root.appending(path: "project")
+        try makeFolder(projectURL.appending(path: ".claude"))
+        let settings = projectURL.appending(path: ".claude/settings.json")
+        try #"{"enabledPlugins":{"ghost@nowhere":true}}"#.write(to: settings, atomically: true, encoding: .utf8)
+        let project = try await service.addProject(name: "project", path: projectURL.path, tools: [.claude])
+        let definition = ClaudePluginDefinition(name: "ghost", marketplace: "", plugin: "ghost@nowhere")
+        try await service.addLibraryClaudePlugin(definition)
+        try await service.setClaudePluginSelection(projectID: project.id, ids: [definition.id])
+
+        try await service.installLibraryClaudePlugins(projectPath: projectURL.path, ids: [definition.id])
+
+        XCTAssertEqual(try String(contentsOf: settings, encoding: .utf8), #"{"enabledPlugins":{"ghost@nowhere":true}}"#)
+    }
+
     // MARK: Removal
 
     func testRemovingAPluginAlsoDropsItFromTheSelectionSoSyncDoesNotReinstallIt() async throws {

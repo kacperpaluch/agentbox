@@ -35,12 +35,13 @@ extension SkillboxService {
             guard !failed else { outcomes.append(ProjectSyncOutcome(plan: plan, state: .skipped)); continue }
             await progress?(SyncProgress(done: outcomes.count, total: plans.count, label: "Synchronizuję \(plan.project.name)"))
             do {
-                let selected = SkillboxService.selectedSkills(in: try await store.catalog(), for: plan.project)
-                // `isUpToDate` answers about files only, because that is what decides whether a
+                // The plan's preview is handed straight to the write, instead of every project being
+                // previewed a second time here and a third time inside the transaction.
+                let result = try await applySync(projectID: plan.project.id, preview: plan.preview)
+                // `wasUpToDate` answers about files only, because that is what decides whether a
                 // backup is worth taking. A missing plugin is still work done, so the reported
                 // outcome asks about it separately instead of claiming the project was untouched.
-                let upToDate = await isUpToDate(plan.preview, skills: selected) && plan.preview.missingPlugins.isEmpty
-                _ = try await syncProjectTransaction(projectID: plan.project.id)
+                let upToDate = result.wasUpToDate && plan.preview.missingPlugins.isEmpty
                 outcomes.append(ProjectSyncOutcome(plan: plan, state: upToDate ? .upToDate : .synced))
             } catch {
                 outcomes.append(ProjectSyncOutcome(plan: plan, state: .failed(error.localizedDescription)))
@@ -57,6 +58,7 @@ extension SkillboxService {
     public func projectStatuses(progress: SyncProgressHandler? = nil) async throws -> [ProjectStatus] {
         var statuses: [ProjectStatus] = []
         let projects = try await listProjects()
+        let catalog = try await store.catalog()
         for project in projects {
             await progress?(SyncProgress(done: statuses.count, total: projects.count, label: "Sprawdzam \(project.name)"))
             var isDirectory: ObjCBool = false
@@ -68,7 +70,13 @@ extension SkillboxService {
                 // A plugin Claude Code has not been asked for yet is as pending as a missing skill:
                 // without it here a project stayed `synchronized` while its selection was not applied.
                 let added = preview.skills.reduce(0) { $0 + $1.added.count } + preview.mcp.reduce(0) { $0 + $1.added.count } + (preview.docs.first?.added.count ?? 0) + preview.missingPlugins.count
-                let outdated = preview.skills.reduce(0) { $0 + $1.updated.count }
+                // Everything above counts *names*: a skill id, a server name, a document id. A
+                // server whose command was corrected, a document rewritten in place or a skill
+                // edited straight in the library folder all keep their name, so the project kept
+                // reporting itself as synchronized while its files no longer matched the library.
+                let selected = SkillboxService.selectedSkills(in: catalog, for: project)
+                let drifted = await driftedTargets(preview, skills: selected)
+                let outdated = preview.skills.reduce(0) { $0 + $1.updated.count } + drifted
                 let removed = preview.skills.reduce(0) { $0 + $1.removed.count } + preview.mcp.reduce(0) { $0 + $1.removed.count } + (preview.docs.first?.removed.count ?? 0)
                 let stale = preview.mcp.contains { $0.staleFile != nil } ? 1 : 0
                 statuses.append(ProjectStatus(
@@ -224,22 +232,38 @@ extension SkillboxService {
     /// much as the copy it avoids, and saves a full backup on top of that.
     func isUpToDate(_ preview: ProjectSyncPreview, skills: [Skill]) async -> Bool {
         guard preview.skills.allSatisfy({ $0.added.isEmpty && $0.removed.isEmpty }) else { return false }
+        guard preview.mcp.allSatisfy({ $0.staleFile == nil }) else { return false }
+        return await driftedTargets(preview, skills: skills, includingRenamed: true) == 0
+    }
+
+    /// How many managed targets hold bytes other than the ones a synchronization would write.
+    ///
+    /// This is the question the project status has to ask. Its own `added`/`removed` lists only say
+    /// which *names* appeared or disappeared, and a corrected MCP command, an edited document or a
+    /// skill changed straight in the library folder keeps every name exactly as it was.
+    ///
+    /// By default a target whose name lists already report the change is not counted again, so the
+    /// status does not show the same server as both added and outdated. `isUpToDate` passes
+    /// `includingRenamed` because it needs one plain yes-or-no about the files.
+    func driftedTargets(_ preview: ProjectSyncPreview, skills: [Skill], includingRenamed: Bool = false) async -> Int {
         let library = await store.skillsDirectory
-        for item in preview.skills {
+        var count = 0
+        // `updated` counts too: a skill the manifest already reports as outdated must not be
+        // counted a second time here as drift.
+        for item in preview.skills where includingRenamed || (item.added.isEmpty && item.removed.isEmpty && item.updated.isEmpty) {
             let target = URL(fileURLWithPath: item.target)
-            for skill in skills where !Self.directoryMatches(library.appending(path: skill.id), target.appending(path: skill.id)) { return false }
+            if skills.contains(where: { !Self.directoryMatches(library.appending(path: $0.id), target.appending(path: $0.id)) }) { count += 1 }
         }
-        let mcpUpToDate = preview.mcp.allSatisfy { item in
-            guard item.staleFile == nil else { return false }
-            let existing = try? String(contentsOf: URL(fileURLWithPath: item.file), encoding: .utf8)
-            // Empty content means "this file should not exist", so a missing file is up to date.
-            return item.content.isEmpty ? existing == nil : existing == item.content
-        }
-        guard mcpUpToDate else { return false }
-        return preview.docs.allSatisfy { item in
-            let existing = try? String(contentsOf: URL(fileURLWithPath: item.file), encoding: .utf8)
-            return item.content.isEmpty ? existing == nil : existing == item.content
-        }
+        count += preview.mcp.filter { (includingRenamed || ($0.added.isEmpty && $0.removed.isEmpty)) && !Self.fileMatches($0.file, content: $0.content) }.count
+        count += preview.docs.filter { (includingRenamed || ($0.added.isEmpty && $0.removed.isEmpty)) && !Self.fileMatches($0.file, content: $0.content) }.count
+        return count
+    }
+
+    /// True when the file already holds exactly `content`. Empty content means "this file should not
+    /// exist", so a missing file matches it.
+    static func fileMatches(_ path: String, content: String) -> Bool {
+        let existing = try? String(contentsOf: URL(fileURLWithPath: path), encoding: .utf8)
+        return content.isEmpty ? existing == nil : existing == content
     }
 
     /// Recursive byte comparison of two skill directories. `.DS_Store` files are ignored: Finder
@@ -270,7 +294,18 @@ extension SkillboxService {
 
     @discardableResult
     public func syncProjectTransaction(projectID: UUID) async throws -> ProjectSyncPreview {
-        let preview = try await previewProjectSync(projectID: projectID)
+        try await applySync(projectID: projectID, preview: nil).preview
+    }
+
+    /// The body of `syncProjectTransaction`, plus the one extra answer the all-projects run needs:
+    /// were the files already current? Working that out means comparing every managed skill
+    /// directory byte for byte, and the caller used to do it a second time on its own.
+    ///
+    /// `preview` is the plan already computed for this project. Passing it keeps the invariant —
+    /// the preview is still made before anything is written — without previewing the project again.
+    private func applySync(projectID: UUID, preview suppliedPreview: ProjectSyncPreview?) async throws -> (preview: ProjectSyncPreview, wasUpToDate: Bool) {
+        let preview: ProjectSyncPreview
+        if let suppliedPreview { preview = suppliedPreview } else { preview = try await previewProjectSync(projectID: projectID) }
         let config = try await store.configuration()
         guard let project = config.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
         let projectURL = URL(fileURLWithPath: project.path)
@@ -279,6 +314,12 @@ extension SkillboxService {
         // Independent of the sync content and idempotent, so it also runs for an unchanged project
         // whose owner has just switched the option on.
         if project.manageGitignore == true { try Self.updateProjectGitignore(projectURL, files: preview.mcp.map { URL(fileURLWithPath: $0.file) }) }
+        // A plugin is installed by Claude Code, outside Agentbox's managed file manifests, so this
+        // runs even when skills, MCP and docs are already current. It goes first because the CLI
+        // reaches the network: installing last meant a flaky install rolled back skills, MCP and
+        // docs that had just been written correctly, instead of leaving the project unsynchronized
+        // with its files untouched.
+        try await installLibraryClaudePlugins(projectPath: project.path, ids: pluginIDs)
         // Writing identical bytes would still produce a full backup of every managed directory.
         // One "synchronize everything" run then buried the recovery list under a dozen useless
         // snapshots taken in the same second.
@@ -294,10 +335,7 @@ extension SkillboxService {
                     try SkillboxService.writeSkillManifest(selected, to: projectURL.appending(path: tool.projectSkillsPath))
                 }
             }
-            // A plugin is installed by Claude Code, outside Agentbox's managed file manifests.
-            // It must therefore run even when skills, MCP and docs were already current.
-            try await installLibraryClaudePlugins(projectPath: project.path, ids: pluginIDs)
-            return preview
+            return (preview, true)
         }
         var targets = preview.skills.map { URL(fileURLWithPath: $0.target) }
         targets += preview.mcp.map { URL(fileURLWithPath: $0.file) }
@@ -321,10 +359,11 @@ extension SkillboxService {
 
         do {
             _ = try await syncProject(id: projectID)
-            _ = try await syncMCP(projectID: projectID)
-            _ = try await syncDocs(projectID: projectID)
-            try await installLibraryClaudePlugins(projectPath: project.path, ids: pluginIDs)
-            return preview
+            // The MCP and document previews were computed above; re-deriving them here read the
+            // whole library and every managed project file a second time for nothing.
+            _ = try await syncMCP(projectID: projectID, previews: preview.mcp)
+            _ = try await syncDocs(projectID: projectID, previews: preview.docs)
+            return (preview, false)
         } catch {
             try? Self.applySyncBackup(project: projectURL, backup: backup, metadata: metadata)
             throw error

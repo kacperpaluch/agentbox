@@ -32,7 +32,11 @@ public struct ClaudePluginPreview: Hashable, Sendable, Identifiable {
 extension SkillboxService {
     private static func claudeExecutable() throws -> String {
         let fm = FileManager.default
+        // An application launched from Finder inherits only /usr/bin:/bin:/usr/sbin:/sbin, so the
+        // per-user install locations are searched explicitly rather than through PATH.
+        let home = FileManager.default.homeDirectoryForCurrentUser
         var candidates = ["/opt/homebrew/bin/claude", "/usr/local/bin/claude", "/usr/bin/claude"]
+        candidates += ["\(home.path)/.claude/local/claude", "\(home.path)/.local/bin/claude", "\(home.path)/bin/claude"]
         if let path = ProcessInfo.processInfo.environment["PATH"] { candidates += path.split(separator: ":").map { "\($0)/claude" } }
         if let executable = candidates.first(where: { fm.isExecutableFile(atPath: $0) }) { return executable }
         throw SkillboxError.commandFailed("Nie znaleziono Claude Code. Zainstaluj go lub upewnij się, że istnieje /opt/homebrew/bin/claude albo /usr/local/bin/claude.")
@@ -109,10 +113,18 @@ extension SkillboxService {
         let catalog = try await store.catalog()
         let selected = (catalog.claudePlugins ?? []).filter { ids.contains($0.id) }
         guard !selected.isEmpty else { return }
+        // Claude Code's CLI needs about 3.5 s per plugin even when it is already installed, and this
+        // runs for every project on every synchronization. The project's own settings files already
+        // say what it declares — the same answer `previewClaudePlugins` gives — so only a plugin that
+        // is genuinely missing costs a process. Fifty projects sharing one plugin used to spend three
+        // minutes reinstalling what was already there.
+        let installed = (try? claudePlugins(projectPath: projectPath)) ?? []
+        let missing = selected.filter { !Self.isDeclared($0, among: installed) }
+        guard !missing.isEmpty else { return }
         let project = URL(fileURLWithPath: projectPath).standardizedFileURL
         let snapshot = Self.settingsSnapshot(project)
         do {
-            for item in selected {
+            for item in missing {
                 try installClaudePlugin(projectPath: projectPath, marketplace: item.marketplace, plugin: item.plugin, scope: item.scope)
             }
         } catch {

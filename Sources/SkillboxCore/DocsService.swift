@@ -98,8 +98,10 @@ extension SkillboxService {
         return try DocsRenderer.preview(project: URL(fileURLWithPath: project.path), doc: matches.first)
     }
 
-    public func syncDocs(projectID: UUID) async throws -> [DocPreview] {
-        let previews = try await previewDocs(projectID: projectID)
+    /// `previews` is the preview a caller has already computed for this project — see `syncMCP`.
+    public func syncDocs(projectID: UUID, previews suppliedPreviews: [DocPreview]? = nil) async throws -> [DocPreview] {
+        let previews: [DocPreview]
+        if let suppliedPreviews { previews = suppliedPreviews } else { previews = try await previewDocs(projectID: projectID) }
         let local = try await store.configuration()
         guard let project = local.projects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
         try DocsRenderer.apply(previews: previews, project: URL(fileURLWithPath: project.path))

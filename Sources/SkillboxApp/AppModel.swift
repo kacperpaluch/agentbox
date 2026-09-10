@@ -163,22 +163,13 @@ import SkillboxCore
 
         isWorking = true
         defer { isWorking = false }
-        var updated: [String] = []
-        var failures: [String] = []
-        for id in ids {
-            do {
-                _ = try await service?.update(skillID: id)
-                updated.append(id)
-                updateAvailable.remove(id)
-            } catch {
-                failures.append("\(id): \(error.localizedDescription)")
-            }
-        }
+        let result = (try? await service?.updateSkills(ids: ids)) ?? SkillUpdateResult(updated: [])
+        for skill in result.updated { updateAvailable.remove(skill.id) }
         await reload()
-        message = failures.isEmpty
-            ? "Zaktualizowano \(updated.count) skilli"
-            : "Zaktualizowano \(updated.count) z \(ids.count) skilli. Nie udało się: \(failures.joined(separator: "; "))"
-        record(failures.isEmpty ? .success : .error, message)
+        message = result.failed.isEmpty
+            ? "Zaktualizowano \(result.updated.count) skilli"
+            : "Zaktualizowano \(result.updated.count) z \(ids.count) skilli. Nie udało się: \(result.failed.map { "\($0.id): \($0.reason)" }.joined(separator: "; "))"
+        record(result.failed.isEmpty ? .success : .error, message)
             }
     func saveSkillMarkdown(_ id: String, content: String) async -> Bool {
         isWorking = true; defer { isWorking = false }
@@ -503,8 +494,8 @@ import SkillboxCore
         do {
             guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
             let updates = try await service.checkUpdates().sorted()
-            for id in updates { _ = try await service.update(skillID: id) }
-            updateAvailable.subtract(updates)
+            let updateResult = try await service.updateSkills(ids: updates)
+            updateAvailable.subtract(updateResult.updated.map(\.id))
 
             let localBackup = try await service.createFullBackup(applicationVersion: AppVersion.short)
             let outcomes = try await service.syncAllProjectsTransactions(progress: progressHandler)
@@ -516,7 +507,8 @@ import SkillboxCore
                 return false
             }
             let skipped = outcomes.filter { $0.state == .skipped }.count
-            message = "Odświeżono \(updates.count) skilli, utworzono backup \(localBackup.name), zsynchronizowano \(synced) projektów"
+            message = "Odświeżono \(updateResult.updated.count) skilli, utworzono backup \(localBackup.name), zsynchronizowano \(synced) projektów"
+            if !updateResult.failed.isEmpty { message += ", nie zaktualizowano \(updateResult.failed.count)" }
             if unchanged > 0 { message += ", bez zmian \(unchanged)" }
             if !failed.isEmpty || skipped > 0 { message += ", wymaga uwagi: \(failed.count) błędów, \(skipped) pominiętych" }
             record(failed.isEmpty && skipped == 0 ? .success : .error, message)

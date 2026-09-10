@@ -950,9 +950,68 @@ final class ProjectTests: AgentboxTestCase {
         let asked = try await service.scanProjectRoots()
         XCTAssertEqual(asked.map(\.name), ["stare"])
     }
+
+    /// The status counters used to be built from names alone: which skill id, server name or
+    /// document id appeared or disappeared. Correcting a server's command, rewriting a document or
+    /// editing a skill in the library folder changes no name at all, so the project sat there
+    /// claiming to be synchronized while its files were stale — with nothing in the app saying a
+    /// synchronization was needed.
+    func testEditedMCPServerDocumentAndSkillAllMarkTheProjectAsPending() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/demo")
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        try "---\nname: demo\ndescription: Demo\n---\nstara treść\n".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        let server = MCPServer(name: "context7", transport: .stdio, command: "npx", arguments: ["-y", "context7"])
+        try await service.saveMCPServer(server)
+        _ = try await service.createDoc(id: "zasady", name: "Zasady", content: "pierwsza wersja")
+        let project = try await service.addProject(
+            Project(name: "demo", path: projectURL.path),
+            selection: AttachmentSelection(tools: [.claude], skillIDs: ["demo"], serverIDs: [server.id], docIDs: ["zasady"])
+        )
+        func state() async throws -> ProjectStatus.State? {
+            try await service.projectStatuses().first { $0.projectID == project.id }?.state
+        }
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        var current = try await state()
+        XCTAssertEqual(current, .synced)
+
+        // 1. The server keeps its name, only its command changes.
+        var corrected = server
+        corrected.arguments = ["-y", "context7@latest"]
+        try await service.saveMCPServer(corrected)
+        current = try await state()
+        XCTAssertNotEqual(current, .synced, "poprawiony serwer MCP musi wymagać synchronizacji")
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        current = try await state()
+        XCTAssertEqual(current, .synced)
+
+        // 2. The document keeps its id, only its content changes.
+        try await service.saveDocContent(docID: "zasady", name: "Zasady", content: "druga wersja")
+        current = try await state()
+        XCTAssertNotEqual(current, .synced, "zmieniony dokument musi wymagać synchronizacji")
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        current = try await state()
+        XCTAssertEqual(current, .synced)
+
+        // 3. The skill is edited straight in the library folder, so `catalog.json` never learns of
+        // it and the manifest timestamps still agree.
+        try "---\nname: demo\ndescription: Demo\n---\nnowa treść\n".write(to: root.appending(path: "data/skills/demo/SKILL.md"), atomically: true, encoding: .utf8)
+        current = try await state()
+        XCTAssertNotEqual(current, .synced, "skill zmieniony w bibliotece musi wymagać synchronizacji")
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        current = try await state()
+        XCTAssertEqual(current, .synced)
+        let copied = try String(contentsOf: projectURL.appending(path: ".claude/skills/demo/SKILL.md"), encoding: .utf8)
+        XCTAssertTrue(copied.contains("nowa treść"))
+    }
 }
 
 private actor Collector {
     var steps: [SyncProgress] = []
     func append(_ step: SyncProgress) { steps.append(step) }
+
 }

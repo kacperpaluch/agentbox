@@ -275,27 +275,69 @@ public actor SkillboxService {
 
     @discardableResult
     public func update(skillID: String) async throws -> Skill {
-        var catalog = try await store.catalog()
-        guard let index = catalog.skills.firstIndex(where: { $0.id == skillID }) else { throw SkillboxError.skillNotFound(skillID) }
-        var skill = catalog.skills[index]
-        let destination = await store.skillsDirectory.appending(path: skill.id)
-        switch skill.source.kind {
-        case .local:
-            try copyReplacing(from: URL(fileURLWithPath: skill.source.location), to: destination)
-        case .git:
-            let temp = fm.temporaryDirectory.appending(path: "skillbox-\(UUID().uuidString)")
-            defer { try? fm.removeItem(at: temp) }
-            var args = ["clone", "--depth", "1"]
-            if let branch = skill.source.branch { args += ["--branch", branch] }
-            guard Self.isAllowedGitLocation(skill.source.location) else { throw SkillboxError.invalidSkill("niedozwolone źródło Git") }
-            args += ["--", skill.source.location, temp.path]
-            _ = try ProcessRunner.run("/usr/bin/git", args)
-            skill.source.revision = try ProcessRunner.run("/usr/bin/git", ["rev-parse", "HEAD"], cwd: temp)
-            let source = skill.source.subpath.map { temp.appending(path: $0) } ?? discoverSkills(in: temp).first ?? temp
-            try copyReplacing(from: source, to: destination)
-        }
-        skill.updatedAt = .now; catalog.skills[index] = skill; try await store.save(catalog)
+        let result = try await updateSkills(ids: [skillID])
+        if let failure = result.failed.first { throw SkillboxError.commandFailed(failure.reason) }
+        guard let skill = result.updated.first else { throw SkillboxError.skillNotFound(skillID) }
         return skill
+    }
+
+    /// Updates several skills as one operation.
+    ///
+    /// Each Git repository is cloned once, not once per skill: forty skills coming from eight
+    /// repositories used to mean forty clones, because every caller looped over `update(skillID:)`.
+    /// The catalog is saved once at the end for the same reason — a save per skill took a recovery
+    /// snapshot per skill, and ten of them are all the library keeps.
+    ///
+    /// A repository that cannot be reached fails only its own skills; the others still get their
+    /// revisions, which is what the GUI's "update everything" already promised its users.
+    @discardableResult
+    public func updateSkills(ids: [String]) async throws -> SkillUpdateResult {
+        var catalog = try await store.catalog()
+        if let missing = ids.first(where: { id in !catalog.skills.contains { $0.id == id } }) { throw SkillboxError.skillNotFound(missing) }
+        let targets = catalog.skills.filter { ids.contains($0.id) }
+        let skillsDirectory = await store.skillsDirectory
+        var updated: [Skill] = []
+        var failed: [SkippedSkill] = []
+
+        func record(_ skill: Skill, revision: String?, from source: URL) {
+            do {
+                try copyReplacing(from: source, to: skillsDirectory.appending(path: skill.id))
+                var value = skill
+                if let revision { value.source.revision = revision }
+                value.updatedAt = .now
+                if let index = catalog.skills.firstIndex(where: { $0.id == skill.id }) { catalog.skills[index] = value }
+                updated.append(value)
+            } catch { failed.append(SkippedSkill(id: skill.id, reason: error.localizedDescription)) }
+        }
+
+        for skill in targets where skill.source.kind == .local {
+            record(skill, revision: nil, from: URL(fileURLWithPath: skill.source.location))
+        }
+        // Grouped by the exact thing a clone is determined by, so two skills taken from different
+        // subpaths of one repository share a single checkout.
+        let groups = Dictionary(grouping: targets.filter { $0.source.kind == .git }) { "\($0.source.location)|\($0.source.branch ?? "")" }
+        for key in groups.keys.sorted() {
+            let group = groups[key] ?? []
+            guard let first = group.first else { continue }
+            do {
+                guard Self.isAllowedGitLocation(first.source.location) else { throw SkillboxError.invalidSkill("niedozwolone źródło Git") }
+                let temp = fm.temporaryDirectory.appending(path: "skillbox-\(UUID().uuidString)")
+                defer { try? fm.removeItem(at: temp) }
+                var args = ["clone", "--depth", "1"]
+                if let branch = first.source.branch { args += ["--branch", branch] }
+                args += ["--", first.source.location, temp.path]
+                _ = try ProcessRunner.run("/usr/bin/git", args)
+                let revision = try ProcessRunner.run("/usr/bin/git", ["rev-parse", "HEAD"], cwd: temp)
+                let discovered = discoverSkills(in: temp).first ?? temp
+                for skill in group {
+                    record(skill, revision: revision, from: skill.source.subpath.map { temp.appending(path: $0) } ?? discovered)
+                }
+            } catch {
+                for skill in group { failed.append(SkippedSkill(id: skill.id, reason: error.localizedDescription)) }
+            }
+        }
+        if !updated.isEmpty { try await store.save(catalog) }
+        return SkillUpdateResult(updated: updated.sorted { $0.id < $1.id }, failed: failed.sorted { $0.id < $1.id })
     }
 
     @discardableResult

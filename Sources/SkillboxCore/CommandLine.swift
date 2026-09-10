@@ -60,9 +60,8 @@ public enum AgentboxCommand {
             guard target == "--all" else { _ = try await service.update(skillID: target); return ["Zaktualizowano \(target)"] }
             let ids = try await service.checkUpdates().sorted()
             guard !ids.isEmpty else { return ["Wszystkie skille są aktualne"] }
-            var lines = ["Dostępne aktualizacje: \(ids.count)"]
-            for id in ids { _ = try await service.update(skillID: id); lines.append("Zaktualizowano \(id)") }
-            return lines
+            let result = try await service.updateSkills(ids: ids)
+            return ["Dostępne aktualizacje: \(ids.count)"] + updateLines(result)
         case "delete" where rest.count >= 1:
             try await service.deleteSkill(skillID: rest[0])
             return ["Usunięto skill \(rest[0])"]
@@ -235,13 +234,19 @@ public enum AgentboxCommand {
         }
     }
 
+    /// One line per skill, so a repository that could not be reached names its skills instead of
+    /// disappearing into a count.
+    private static func updateLines(_ result: SkillUpdateResult) -> [String] {
+        result.updated.map { "Zaktualizowano \($0.id)" } + result.failed.map { "✗ \($0.id) — \($0.reason)" }
+    }
+
     private static let syncUsage = "Użycie: agentbox sync project <nazwa> | global [--skills a,b] [--tags x] [--tools claude,codex] | all [--dry-run]"
 
     private static func refresh(service: SkillboxService) async throws -> [String] {
         var lines = ["1/3 Sprawdzanie aktualizacji skilli…"]
         let updates = try await service.checkUpdates().sorted()
         if updates.isEmpty { lines.append("Wszystkie skille są aktualne") }
-        else { for id in updates { _ = try await service.update(skillID: id); lines.append("Zaktualizowano \(id)") } }
+        else { lines += updateLines(try await service.updateSkills(ids: updates)) }
         lines.append("2/3 Tworzenie pełnego backupu lokalnego…")
         let backupName = try await service.createFullBackup(applicationVersion: "CLI").name
         lines.append("Utworzono \(backupName)")

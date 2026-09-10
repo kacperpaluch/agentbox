@@ -476,6 +476,14 @@ public struct GitImportResult: Sendable {
     public init(imported: [Skill], skipped: [SkippedSkill] = []) { self.imported = imported; self.skipped = skipped }
 }
 
+/// The outcome of updating a batch of skills. A repository that cannot be reached fails only its
+/// own skills, so `failed` names them instead of the whole run disappearing behind one error.
+public struct SkillUpdateResult: Sendable {
+    public var updated: [Skill]
+    public var failed: [SkippedSkill]
+    public init(updated: [Skill], failed: [SkippedSkill] = []) { self.updated = updated; self.failed = failed }
+}
+
 public struct ProjectSyncOutcome: Identifiable, Sendable {
     public enum State: Sendable, Equatable {
         case synced
