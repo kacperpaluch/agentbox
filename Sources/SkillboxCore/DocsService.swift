@@ -114,6 +114,8 @@ extension SkillboxService {
 /// to read the same instructions as other agents without duplicating the text. Both files always move
 /// together: there is no way to synchronize one without the other.
 enum DocsRenderer {
+    /// Scratch copies a failed rollback deliberately left behind — see `RollbackReport`.
+    nonisolated(unsafe) private static var keptBackups = Set<URL>()
     private struct ManifestFile: Codable { var docID: String? }
 
     private static func manifestURL(_ project: URL) -> URL { project.appending(path: ".skillbox/docs-manifest.json") }
@@ -135,9 +137,11 @@ enum DocsRenderer {
         let claudeDesired: String? = doc != nil ? "@AGENTS.md\n" : nil
         let added: [String] = (doc != nil && doc?.id != previousID) ? [doc!.id] : []
         let removed: [String] = (previousID != nil && previousID != doc?.id) ? [previousID!] : []
+        let agentsContent = try renderedFile(file: agents, desired: agentsDesired, previouslyManaged: managed)
+        let claudeContent = try renderedFile(file: claude, desired: claudeDesired, previouslyManaged: managed)
         return [
-            DocPreview(file: agents.path, content: try renderedFile(file: agents, desired: agentsDesired, previouslyManaged: managed), added: added, removed: removed),
-            DocPreview(file: claude.path, content: try renderedFile(file: claude, desired: claudeDesired, previouslyManaged: managed), added: added, removed: removed)
+            DocPreview(file: agents.path, content: agentsContent ?? "", added: added, removed: removed, leaveAsIs: agentsContent == nil),
+            DocPreview(file: claude.path, content: claudeContent ?? "", added: added, removed: removed, leaveAsIs: claudeContent == nil)
         ]
     }
 
@@ -150,12 +154,17 @@ enum DocsRenderer {
     ///
     /// A file that exists, is not yet managed, and holds something other than `desired` blocks the
     /// write — the same rule that already protects unmanaged skills and MCP entries.
-    private static func renderedFile(file: URL, desired: String?, previouslyManaged: Bool) throws -> String {
+    /// Returns `nil` when the file must be left exactly as it is — see `DocPreview.leaveAsIs`.
+    private static func renderedFile(file: URL, desired: String?, previouslyManaged: Bool) throws -> String? {
         let fm = FileManager.default
         guard let desired else {
             guard previouslyManaged else {
                 guard fm.fileExists(atPath: file.path) else { return "" }
-                return (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+                // Unreadable as text and not ours: the only honest answer is to keep our hands off
+                // it. Reading it as an empty string used to mean "this file should not exist", and
+                // the write that followed deleted a document the user had written themselves.
+                guard let existing = try? String(contentsOf: file, encoding: .utf8) else { return nil }
+                return existing
             }
             return ""
         }
@@ -172,11 +181,11 @@ enum DocsRenderer {
         let fm = FileManager.default
         // Scratch copies for this write only; removed whether it succeeds or fails.
         let backup = SkillboxService.scratchDirectory()
-        defer { try? fm.removeItem(at: backup) }
+        defer { if !keptBackups.contains(backup) { try? fm.removeItem(at: backup) } }
         var currentID = manifestDocID(project)
         var originals: [(file: URL, backup: URL?, existed: Bool)] = []
         do {
-            for preview in previews {
+            for preview in previews where !preview.leaveAsIs {
                 try writeManaged(preview.content, to: URL(fileURLWithPath: preview.file), backup: backup, originals: &originals)
             }
             if let added = previews.first?.added.first { currentID = added }
@@ -193,11 +202,15 @@ enum DocsRenderer {
                 }
             }
         } catch {
+            var report = RollbackReport()
             for original in originals.reversed() {
-                try? fm.removeItem(at: original.file)
-                if original.existed, let saved = original.backup { try? fm.copyItem(at: saved, to: original.file) }
+                report.attempt(original.file.lastPathComponent) {
+                    if fm.fileExists(atPath: original.file.path) { try fm.removeItem(at: original.file) }
+                    if original.existed, let saved = original.backup { try fm.copyItem(at: saved, to: original.file) }
+                }
             }
-            throw error
+            if !report.succeeded { keptBackups.insert(backup) }
+            throw report.error(after: error, keeping: report.succeeded ? nil : backup.path)
         }
     }
 

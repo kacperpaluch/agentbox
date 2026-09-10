@@ -186,6 +186,13 @@ extension SkillboxService {
         var config = try await store.configuration()
         guard config.roots.contains(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
         let inherited = config.storedSelection(for: .root(id))
+        // Opting out of a globally declared MCP server is not part of the selection — it lives in
+        // `mcp.json`, keyed by the same id. Copying the attachments without it meant every project
+        // that had been shielded from a user-scope server started inheriting it as active again on
+        // the next synchronization.
+        var mcp = try await store.mcpConfiguration()
+        var perSelection = mcp.projectDisabledGlobalServers ?? [:]
+        let inheritedOptOuts = perSelection[id.uuidString]
         for index in config.projects.indices where config.projects[index].rootID == id {
             let followed = config.inheritsRoot(config.projects[index])
             let gitignore = config.resolved(config.projects[index]).manageGitignore
@@ -194,11 +201,14 @@ extension SkillboxService {
             if followed {
                 config.projects[index].manageGitignore = gitignore
                 config.selections[config.projects[index].id.uuidString] = inherited
+                if let inheritedOptOuts { perSelection[config.projects[index].id.uuidString] = inheritedOptOuts }
             }
         }
         config.selections.removeValue(forKey: id.uuidString)
         config.projectRoots = config.roots.filter { $0.id != id }
-        try await store.save(config)
+        perSelection.removeValue(forKey: id.uuidString)
+        mcp.projectDisabledGlobalServers = perSelection.isEmpty ? nil : perSelection
+        try await store.save(config, mcp)
     }
 
     /// Subfolders that appeared in a watched parent folder after it was added. A folder whose disk

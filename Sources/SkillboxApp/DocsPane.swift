@@ -46,9 +46,9 @@ struct DocsPane: View {
                 }
             }
         }
-        .sheet(isPresented: $creatingDoc) { NewDocView(existingTags: existingTags, existingIDs: Set(model.docs.docs.map(\.id))) { draft in Task { _ = await model.createDoc(id: draft.id, name: draft.name, tags: draft.tags, content: draft.content) } } }
+        .sheet(isPresented: $creatingDoc) { NewDocView(existingTags: existingTags, existingIDs: Set(model.docs.docs.map(\.id))) { draft in await model.createDoc(id: draft.id, name: draft.name, tags: draft.tags, content: draft.content) } }
         .sheet(item: $editingDoc) { doc in DocEditorView(model: model, doc: doc, existingTags: existingTags) }
-        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: "dokumentów") { text in Task { await model.addDocTags(checked, text: text); checked.removeAll() } } }
+        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: "dokumentów") { text in let ok = await model.addDocTags(checked, text: text); if ok { checked.removeAll() }; return ok } }
         .confirmationDialog("Usunąć dokument \(docToDelete?.name ?? "")?", isPresented: Binding(get: { docToDelete != nil }, set: { if !$0 { docToDelete = nil } })) {
             Button("Usuń", role: .destructive) { if let docToDelete { Task { await model.deleteDoc(docToDelete.id) } }; docToDelete = nil }
             Button("Anuluj", role: .cancel) { docToDelete = nil }
@@ -112,7 +112,10 @@ struct NewDocView: View {
     @Environment(\.dismiss) private var dismiss
     let existingTags: [String]
     let existingIDs: Set<String>
-    let onCreate: (NewDocDraft) -> Void
+    /// Reports whether the document was created, so a rejected identifier does not take the
+    /// written content with it.
+    let onCreate: (NewDocDraft) async -> Bool
+    @State private var saving = false
     @State private var name = ""
     @State private var identifier = ""
     @State private var identifierEdited = false
@@ -133,7 +136,7 @@ struct NewDocView: View {
             if idTaken { Label("Dokument o tym identyfikatorze już jest w bibliotece.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }
             HStack { TextField("tagi, oddzielone przecinkami", text: $tags); ExistingTagMenu(tags: existingTags, text: $tags) }
             GroupBox("Treść AGENTS.md") { TextEditor(text: $content).font(.system(.body, design: .monospaced)).frame(minHeight: 320) }
-            HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Utwórz dokument") { onCreate(NewDocDraft(id: effectiveID, name: name, content: content, tags: AppModel.csv(tags))); dismiss() }.buttonStyle(.borderedProminent).disabled(!idValid || idTaken || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+            HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Utwórz dokument") { Task { saving = true; defer { saving = false }; if await onCreate(NewDocDraft(id: effectiveID, name: name, content: content, tags: AppModel.csv(tags))) { dismiss() } } }.buttonStyle(.borderedProminent).disabled(saving || !idValid || idTaken || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
         }
         .padding(24)
         .sheetFrame(width: 720, height: 640)

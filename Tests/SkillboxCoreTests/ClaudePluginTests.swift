@@ -297,13 +297,16 @@ final class ClaudePluginTests: AgentboxTestCase {
         let shared = project.appending(path: ".claude/settings.json")
         try #"{"enabledPlugins": {}}"#.write(to: shared, atomically: true, encoding: .utf8)
 
-        let snapshot = SkillboxService.settingsSnapshot(project)
+        let snapshot = try FileRollback(files: SkillboxService.claudeSettingsFiles(project))
         // What Claude Code would have written before a later plugin in the same run failed.
-        try #"{"enabledPlugins": {"seo@vendor": true}}"#.write(to: shared, atomically: true, encoding: .utf8)
-        try #"{"enabledPlugins": {"local@vendor": true}}"#.write(to: project.appending(path: ".claude/settings.local.json"), atomically: true, encoding: .utf8)
-        SkillboxService.restore(snapshot)
+        XCTAssertThrowsError(try snapshot.perform {
+            try #"{"enabledPlugins": {"seo@vendor": true}}"#.write(to: shared, atomically: true, encoding: .utf8)
+            try #"{"enabledPlugins": {"local@vendor": true}}"#.write(to: project.appending(path: ".claude/settings.local.json"), atomically: true, encoding: .utf8)
+            throw SkillboxError.commandFailed("test instalacji")
+        })
 
         XCTAssertEqual(try String(contentsOf: shared, encoding: .utf8), #"{"enabledPlugins": {}}"#)
         XCTAssertFalse(FileManager.default.fileExists(atPath: project.appending(path: ".claude/settings.local.json").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: snapshot.directory.path))
     }
 }

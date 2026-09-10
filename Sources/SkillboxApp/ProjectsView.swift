@@ -55,7 +55,7 @@ struct ProjectsView: View {
             projectList
         }
         .navigationTitle("Projekty")
-        .sheet(isPresented: $showBatch) { BatchProjectView(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, existingProjects: model.projects, existingRoots: model.projectRoots, claudePlugins: model.claudePluginLibrary, initialSelection: model.projectDefaults) { request in Task { await model.addBatch(request) } } }
+        .sheet(isPresented: $showBatch) { BatchProjectView(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, existingProjects: model.projects, existingRoots: model.projectRoots, claudePlugins: model.claudePluginLibrary, initialSelection: model.projectDefaults) { request in await model.addBatch(request) } }
         .sheet(isPresented: $showDetected) { DetectedFoldersView(model: model) }
         .sheet(isPresented: $showProjectDefaults) { ProjectDefaultsEditor(model: model) }
         .sheet(isPresented: $showGlobalSkills) { GlobalSelectionEditor(model: model) }
@@ -66,7 +66,7 @@ struct ProjectsView: View {
                 skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, claudePlugins: model.claudePluginLibrary, root: root,
                 followingProjects: model.storedProjects.filter { $0.rootID == root.id && $0.overridesRoot != true }.count,
                 initialSelection: model.selection(for: .root(root.id))
-            ) { updated, selection in Task { await model.saveRoot(updated, selection: selection) } }
+            ) { updated, selection in await model.saveRoot(updated, selection: selection) }
         }
         .sheet(item: $editing) { project in
             ProjectEditor(
@@ -77,7 +77,7 @@ struct ProjectsView: View {
                 // Resolved on purpose: a project following its folder opens showing what it actually
                 // gets, so switching to own settings starts from today's state, not an empty form.
                 initialSelection: model.selection(for: .project(project.id), resolvingInheritance: true)
-            ) { updated, selection in Task { await model.updateProject(updated, selection: selection) } }
+            ) { updated, selection in await model.updateProject(updated, selection: selection) }
         }
         .sheet(item: $previewProject) { project in MCPPreviewView(model: model, project: project) }
         .sheet(isPresented: $showAllSync) { AllProjectsSyncPreviewView(model: model) }

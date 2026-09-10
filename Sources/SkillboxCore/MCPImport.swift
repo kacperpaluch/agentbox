@@ -3,7 +3,7 @@ import Foundation
 extension SkillboxService {
     public func analyzeMCPJSON(_ text: String, singleServerName: String? = nil) throws -> MCPImportSummary { try parseMCPJSON(text, singleServerName: singleServerName).summary }
 
-    public func importMCPJSON(_ text: String, serverNames: Set<String>? = nil, classifications _: [String: MCPValueClassification] = [:], singleServerName: String? = nil) async throws -> MCPImportSummary {
+    public func importMCPJSON(_ text: String, serverNames: Set<String>? = nil, singleServerName: String? = nil) async throws -> MCPImportSummary {
         let parsed = try parseMCPJSON(text, singleServerName: singleServerName)
         let chosen = serverNames ?? Set(parsed.summary.servers.map(\.name))
         let servers = parsed.summary.servers.filter { chosen.contains($0.name) }
@@ -15,7 +15,15 @@ extension SkillboxService {
         for server in servers {
             if let index = config.servers.firstIndex(where: { $0.name == server.name }) {
                 let replaced = config.servers[index]
-                var updated = server; updated.id = replaced.id; config.servers[index] = updated
+                // The `mcpServers` shape has nowhere to put a tag or an `enabled` flag, so importing
+                // an export of the whole configuration used to strip the tags a project assigns by
+                // and switch a deliberately disabled server back on. What the format cannot carry is
+                // kept from the server being replaced.
+                var updated = server
+                updated.id = replaced.id
+                updated.tags = replaced.tags
+                updated.enabled = replaced.enabled
+                config.servers[index] = updated
             }
             else { config.servers.append(server) }
         }
@@ -32,15 +40,18 @@ extension SkillboxService {
     public func exportMCPServerJSON(_ id: UUID) async throws -> String {
         let config = try await store.mcpConfiguration()
         guard let server = config.servers.first(where: { $0.id == id }) else { throw SkillboxError.mcpConflict("serwer MCP nie istnieje") }
-        let data = try JSONSerialization.data(withJSONObject: Self.fullEntry(server, secrets: [:]), options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        // With an empty secrets map a value stored in the legacy `mcp-secrets.json` was rendered as
+        // `""`, and saving that JSON back replaced a working configuration with a blank token.
+        let data = try JSONSerialization.data(withJSONObject: Self.fullEntry(server, secrets: try await store.secrets()), options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         return String(decoding: data, as: UTF8.self)
     }
 
     /// The whole `mcpServers` configuration as hand-editable JSON — same full-fidelity shape as
     /// `exportMCPServerJSON`, wrapped so it can be pasted back into "Importuj lub użyj AI" as is.
     public func exportMCPConfigurationJSON(_ servers: [MCPServer]) async throws -> String {
+        let secrets = try await store.secrets()
         var entries: [String: Any] = [:]
-        for server in servers { entries[server.name] = Self.fullEntry(server, secrets: [:]) }
+        for server in servers { entries[server.name] = Self.fullEntry(server, secrets: secrets) }
         let data = try JSONSerialization.data(withJSONObject: ["mcpServers": entries], options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         return String(decoding: data, as: UTF8.self)
     }
@@ -48,9 +59,9 @@ extension SkillboxService {
     /// Applies hand-edited JSON to one existing server, matched by `id` rather than by name so a
     /// rename in the JSON still lands on the right server. The JSON fully replaces command/args/url/
     /// env/headers — whatever it does not mention is gone, same as editing the fields directly. Every
-    /// value is reclassified from scratch by the same heuristic `importMCPJSON` uses (a key that
-    /// looks like a token or password stays local-only), so a secret typed here is protected
-    /// automatically without a manual "mark as secret" step.
+    /// value is reclassified from scratch exactly as `importMCPJSON` does it: `${VAR}` becomes a
+    /// reference to a system variable, everything else is stored as a local value in `mcp.json`.
+    /// Tags and the enabled flag are passed alongside the JSON because the format cannot hold them.
     public func updateMCPServerJSON(_ id: UUID, name: String, json: String, enabled: Bool, tags: [String]) async throws -> MCPServer {
         guard name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil else { throw SkillboxError.invalidSkill("nazwa MCP może zawierać litery, cyfry, _ i -") }
         guard let value = Self.jsonObject(from: json) else { throw SkillboxError.invalidSkill("konfiguracja serwera nie jest poprawnym JSON") }

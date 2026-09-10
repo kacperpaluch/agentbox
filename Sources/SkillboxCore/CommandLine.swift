@@ -455,7 +455,10 @@ public enum AgentboxCommand {
             return ["Przypisano dokumenty"]
         case "preview" where rest.count >= 2:
             let project = try await resolve(rest[1], service: service)
-            return try await service.previewDocs(projectID: project.id).flatMap { ["--- \($0.file)", $0.content.isEmpty ? "(plik nie zostanie utworzony)" : $0.content] }
+            return try await service.previewDocs(projectID: project.id).flatMap { preview -> [String] in
+                if preview.leaveAsIs { return ["--- \(preview.file)", "(plik nie jest zarządzany przez Agentbox i nie da się go odczytać jako tekst — zostanie bez zmian)"] }
+                return ["--- \(preview.file)", preview.content.isEmpty ? "(plik nie zostanie utworzony)" : preview.content]
+            }
         case "sync" where rest.count >= 2:
             let project = try await resolve(rest[1], service: service)
             _ = try await service.syncDocs(projectID: project.id)

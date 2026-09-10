@@ -279,6 +279,8 @@ extension SkillboxService {
 }
 
 enum MCPRenderer {
+    /// Scratch copies a failed rollback deliberately left behind — see `RollbackReport`.
+    nonisolated(unsafe) private static var keptBackups = Set<URL>()
     private static let start = "# >>> skillbox managed MCP >>>"
     private static let end = "# <<< skillbox managed MCP <<<"
 
@@ -367,7 +369,7 @@ enum MCPRenderer {
         let fm = FileManager.default
         // Scratch copies for this write only; removed whether it succeeds or fails.
         let backup = SkillboxService.scratchDirectory()
-        defer { try? fm.removeItem(at: backup) }
+        defer { if !keptBackups.contains(backup) { try? fm.removeItem(at: backup) } }
         var state = try manifest(project)
         var originals: [(file: URL, backup: URL?, existed: Bool)] = []
         try protectGeneratedFiles(project, previews: previews)
@@ -402,11 +404,17 @@ enum MCPRenderer {
                 try data.write(to: manifestURL, options: .atomic)
             }
         } catch {
+            var report = RollbackReport()
             for original in originals.reversed() {
-                try? fm.removeItem(at: original.file)
-                if original.existed, let saved = original.backup { try? fm.copyItem(at: saved, to: original.file) }
+                report.attempt(original.file.lastPathComponent) {
+                    if fm.fileExists(atPath: original.file.path) { try fm.removeItem(at: original.file) }
+                    if original.existed, let saved = original.backup { try fm.copyItem(at: saved, to: original.file) }
+                }
             }
-            throw error
+            // The scratch copy is normally dropped by `defer`; a rollback that failed is the one
+            // case where it has to outlive the call, so the path in the message points at it.
+            if !report.succeeded { keptBackups.insert(backup) }
+            throw report.error(after: error, keeping: report.succeeded ? nil : backup.path)
         }
     }
 
@@ -630,7 +638,7 @@ enum MCPRenderer {
     }
 
     private static func codexMerged(file: URL, servers: [MCPServer], disabledGlobalNames: [String], previouslyManaged: Set<String>, secrets: [String: String]) throws -> String {
-        var existing = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+        var existing = try SkillboxService.existingText(at: file)
         existing = strippedManagedBlock(existing)
         let ownedNames = Set(servers.map(\.name)).union(disabledGlobalNames)
         for name in ownedNames where !previouslyManaged.contains(name) && declaresCodexServer(existing, name: name) { throw SkillboxError.mcpConflict("\(name) istnieje w config.toml poza blokiem Skillbox") }
@@ -708,6 +716,41 @@ enum MCPRenderer {
         return String(decoding: data, as: UTF8.self) + "\n"
     }
 
+    /// Where this repository keeps `info/exclude`, or `nil` when the project is not a repository.
+    ///
+    /// In a linked worktree — and in a submodule — `.git` is a *file* holding `gitdir: <path>`, not
+    /// a directory. Checking for `.git/info` therefore found nothing and the function returned
+    /// quietly, leaving generated MCP files (which may hold resolved secrets) unprotected while the
+    /// interface promised otherwise. A repository whose exclude directory cannot be located is an
+    /// error rather than a silent skip, for the same reason.
+    static func gitInfoDirectory(_ project: URL) throws -> URL? {
+        let fm = FileManager.default
+        let dotGit = project.appending(path: ".git")
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: dotGit.path, isDirectory: &isDirectory) else { return nil }
+        if isDirectory.boolValue { return dotGit.appending(path: "info") }
+        guard let text = try? String(contentsOf: dotGit, encoding: .utf8),
+              let line = text.split(whereSeparator: \.isNewline).first(where: { $0.hasPrefix("gitdir:") }) else {
+            throw SkillboxError.unsafePath("nie można ustalić katalogu Git dla \(project.path) — wygenerowane pliki MCP nie zostałyby wykluczone z repozytorium")
+        }
+        let path = line.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespaces)
+        let gitDirectory = path.hasPrefix("/") ? URL(fileURLWithPath: path) : project.appending(path: path).standardizedFileURL
+        guard fm.fileExists(atPath: gitDirectory.path) else {
+            throw SkillboxError.unsafePath("katalog Git \(gitDirectory.path) wskazany przez \(dotGit.path) nie istnieje")
+        }
+        // `info/exclude` is one file for the whole repository, kept in the *common* directory —
+        // `git rev-parse --git-path info/exclude` resolves to it. A linked worktree's own directory
+        // has an `info/` too, and writing there produced a file Git never reads: the exclusion
+        // looked applied while `git check-ignore` still said the generated file was tracked-able.
+        // `commondir` is how Git itself finds its way back, so it is what is followed here.
+        guard let commonPath = try? String(contentsOf: gitDirectory.appending(path: "commondir"), encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines), !commonPath.isEmpty else {
+            return gitDirectory.appending(path: "info")
+        }
+        let common = commonPath.hasPrefix("/") ? URL(fileURLWithPath: commonPath) : gitDirectory.appending(path: commonPath).standardizedFileURL
+        return common.appending(path: "info")
+    }
+
     /// Matches `[mcp_servers.name]` and `[mcp_servers."name"]`, with or without surrounding spaces.
     /// A literal string search missed the quoted form and produced a duplicate table that Codex
     /// then refused to parse.
@@ -717,7 +760,25 @@ enum MCPRenderer {
         return text.range(of: pattern, options: .regularExpression) != nil
     }
 
-    private static func toml(_ value: String) -> String { "\"" + value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\"" }
+    /// A TOML basic string. Control characters have to be escaped rather than written raw: a
+    /// multi-line argument or an environment value with a tab produced a `config.toml` that Codex
+    /// could no longer parse — and it was Agentbox's own managed block that broke it.
+    private static func toml(_ value: String) -> String {
+        var out = "\""
+        for scalar in value.unicodeScalars {
+            switch scalar {
+            case "\\": out += "\\\\"
+            case "\"": out += "\\\""
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            case "\t": out += "\\t"
+            default:
+                if scalar.value < 0x20 || scalar.value == 0x7F { out += String(format: "\\u%04X", scalar.value) }
+                else { out.unicodeScalars.append(scalar) }
+            }
+        }
+        return out + "\""
+    }
     private static func tomlKey(_ value: String) -> String { value.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil ? value : toml(value) }
 
     private static func resolved(_ literals: [String: String]?, secretRefs: [String: String]?, secrets: [String: String], server: String) throws -> [String: String] {
@@ -736,10 +797,10 @@ enum MCPRenderer {
     /// its `disabledMcpServers`. It is therefore excluded only once the project actually has such an
     /// opt-out, instead of being listed in every repository that merely has Claude Code ticked.
     private static func protectGeneratedFiles(_ project: URL, previews: [MCPPreview]) throws {
-        let info = project.appending(path: ".git/info")
-        guard FileManager.default.fileExists(atPath: info.path) else { return }
+        guard let info = try gitInfoDirectory(project) else { return }
+        try FileManager.default.createDirectory(at: info, withIntermediateDirectories: true)
         let url = info.appending(path: "exclude")
-        var text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        var text = try SkillboxService.existingText(at: url)
         var groups: [(marker: String, entries: [String])] = [
             ("# Skillbox MCP configs (mogą zawierać lokalne sekrety)", [".mcp.json", ".codex/config.toml", "opencode.json", "opencode.jsonc", ".skillbox/"])
         ]

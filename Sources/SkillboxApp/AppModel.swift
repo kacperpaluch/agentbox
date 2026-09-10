@@ -131,8 +131,9 @@ import SkillboxCore
     func root(for project: Project) -> ProjectRoot? { project.rootID.flatMap { id in projectRoots.first { $0.id == id } } }
     func inheritsRoot(_ project: Project) -> Bool { project.overridesRoot != true && root(for: project) != nil }
     func storedProject(id: UUID) -> Project? { storedProjects.first { $0.id == id } }
-    func addBatch(_ request: BatchProjectRequest) async {
-        await perform {
+    @discardableResult
+    func addBatch(_ request: BatchProjectRequest) async -> Bool {
+        await performing {
             if let root = request.root {
                 _ = try await self.service?.addProjectRoot(root, folders: request.folders, selection: request.selection, treatingExistingAsKnown: request.treatingExistingAsKnown)
                 self.message = "Dodano folder \(root.name) i \(request.folders.count) projektów"
@@ -142,10 +143,13 @@ import SkillboxCore
             }
         }
     }
-    func adoptGroupIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], selection: AttachmentSelection, treatingExistingAsKnown: Bool) {
-        Task { await perform { _ = try await self.service?.adoptProjectsIntoRoot(root, following: following, keepingOwnSettings: keepingOwnSettings, selection: selection, treatingExistingAsKnown: treatingExistingAsKnown); self.message = "Utworzono folder \(root.name); wspólnych ustawień używa \(following.count) projektów" } }
+    @discardableResult
+    func adoptGroupIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], selection: AttachmentSelection, treatingExistingAsKnown: Bool) async -> Bool {
+        await performing { _ = try await self.service?.adoptProjectsIntoRoot(root, following: following, keepingOwnSettings: keepingOwnSettings, selection: selection, treatingExistingAsKnown: treatingExistingAsKnown); self.message = "Utworzono folder \(root.name); wspólnych ustawień używa \(following.count) projektów" }
     }
-    func saveRoot(_ root: ProjectRoot, selection: AttachmentSelection) async { await perform { try await self.service?.updateProjectRoot(root, selection: selection); self.message = "Zapisano ustawienia folderu \(root.name)" } }
+
+    @discardableResult
+    func saveRoot(_ root: ProjectRoot, selection: AttachmentSelection) async -> Bool { await performing { try await self.service?.updateProjectRoot(root, selection: selection); self.message = "Zapisano ustawienia folderu \(root.name)" } }
     func deleteRoot(_ root: ProjectRoot) async { await perform { try await self.service?.deleteProjectRoot(id: root.id); self.message = "Usunięto ustawienia folderu \(root.name); projekty zachowały to, co dziedziczyły" } }
     func clearIgnoredFolders(_ root: ProjectRoot) async { await perform { try await self.service?.clearIgnoredFolders(rootID: root.id); self.message = "Wyczyszczono pominięte podfoldery w \(root.name)" } }
     func ignoreDetected(_ folders: [DetectedProjectFolder]) async { await perform { try await self.service?.ignoreDetectedFolders(folders); self.message = "Pominięto \(folders.count) podfolderów" } }
@@ -168,14 +172,16 @@ import SkillboxCore
     }
     func loadMarkdown() async { guard let selection else { markdown = ""; return }; markdown = (try? await service?.skillMarkdown(skillID: selection)) ?? "" }
     func addLocal(_ url: URL) async { await perform { _ = try await self.service?.addLocal(path: url.path); self.message = "Dodano skill z dysku" } }
-    func createSkill(_ draft: NewSkillDraft) async {
-        await perform {
+    @discardableResult
+    func createSkill(_ draft: NewSkillDraft) async -> Bool {
+        await performing {
             let skill = try await self.service?.createSkill(id: draft.id, name: draft.name, description: draft.description, content: draft.content, tags: draft.tags)
             if let skill { self.selection = skill.id }
             self.message = "Utworzono skill \(draft.id)"
         }
     }
-    func addGit(_ url: String, subpath: String) async { await perform {
+    @discardableResult
+    func addGit(_ url: String, subpath: String) async -> Bool { await performing {
         let urls = url.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         var count = 0; var skipped: [SkippedSkill] = []
         for item in urls { if let result = try await self.service?.addGitCollection(url: item, subpath: subpath.isEmpty ? nil : subpath) { count += result.imported.count; skipped += result.skipped } }
@@ -192,7 +198,16 @@ import SkillboxCore
 
         isWorking = true
         defer { isWorking = false }
-        let result = (try? await service?.updateSkills(ids: ids)) ?? SkillUpdateResult(updated: [])
+        // `try?` here turned a failed update into a green "Zaktualizowano 0 skilli" in the operation
+        // log — the exact pattern this code exists to avoid.
+        let result: SkillUpdateResult
+        do { result = try await service?.updateSkills(ids: ids) ?? SkillUpdateResult(updated: []) }
+        catch {
+            await reload()
+            message = "Nie udało się zaktualizować skilli: \(error.localizedDescription)"
+            record(.error, message)
+            return
+        }
         for skill in result.updated { updateAvailable.remove(skill.id) }
         await reload()
         message = result.failed.isEmpty
@@ -209,7 +224,8 @@ import SkillboxCore
         } catch { message = error.localizedDescription; record(.error, message); return false }
     }
     func saveTags(_ id: String, text: String) async { await perform { try await self.service?.setTags(skillID: id, tags: Self.csv(text)); self.message = "Zapisano tagi" } }
-    func addTags(_ ids: Set<String>, text: String) async { await perform { try await self.service?.addTags(skillIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) skilli" } }
+    @discardableResult
+    func addTags(_ ids: Set<String>, text: String) async -> Bool { await performing { try await self.service?.addTags(skillIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) skilli" } }
     func deleteSkill(_ id: String) async { await perform { try await self.service?.deleteSkill(skillID: id); if self.selection == id { self.selection = nil; self.markdown = "" }; self.updateAvailable.remove(id); self.message = "Usunięto skill \(id)" } }
     func deleteSkills(_ ids: Set<String>) async {
         await perform {
@@ -242,8 +258,10 @@ import SkillboxCore
                 : "Usunięto plugin \(plugin.id)"
         }
     }
-    func addProject(_ project: Project, selection: AttachmentSelection) async { await perform { _ = try await self.service?.addProject(project, selection: selection); self.message = "Dodano projekt" } }
-    func updateProject(_ project: Project, selection: AttachmentSelection) async { await perform { try await self.service?.updateProject(project, selection: selection); self.message = "Zapisano projekt" } }
+    @discardableResult
+    func addProject(_ project: Project, selection: AttachmentSelection) async -> Bool { await performing { _ = try await self.service?.addProject(project, selection: selection); self.message = "Dodano projekt" } }
+    @discardableResult
+    func updateProject(_ project: Project, selection: AttachmentSelection) async -> Bool { await performing { try await self.service?.updateProject(project, selection: selection); self.message = "Zapisano projekt" } }
     /// The state already loaded here, in the shape the core expects. Rebuilding it costs nothing and
     /// lets the whole app answer "what is attached to this place" through the very same code a sync
     /// runs, instead of six accessors that each reimplemented the inheritance rule.
@@ -349,7 +367,8 @@ import SkillboxCore
         } catch { message = error.localizedDescription; record(.error, message); await reload(); return false }
     }
     func deleteMCPServer(_ id: UUID) async { await perform { try await self.service?.deleteMCPServer(id: id); self.message = "Usunięto serwer MCP" } }
-    func addMCPServerTags(_ ids: Set<UUID>, text: String) async { await perform { try await self.service?.addMCPServerTags(serverIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) serwerów MCP" } }
+    @discardableResult
+    func addMCPServerTags(_ ids: Set<UUID>, text: String) async -> Bool { await performing { try await self.service?.addMCPServerTags(serverIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) serwerów MCP" } }
     func exportMCPServerJSON(_ id: UUID) async -> String { (try? await service?.exportMCPServerJSON(id)) ?? "" }
     func exportMCPConfigurationJSON() async -> String { (try? await service?.exportMCPConfigurationJSON(mcp.servers)) ?? "" }
     func updateMCPServerJSON(_ id: UUID, name: String, json: String, enabled: Bool, tags: [String]) async -> Bool {
@@ -375,7 +394,8 @@ import SkillboxCore
         } catch { message = error.localizedDescription; record(.error, message); return false }
     }
     func saveDocTags(_ id: String, text: String) async { await perform { try await self.service?.setDocTags(docID: id, tags: Self.csv(text)); self.message = "Zapisano tagi" } }
-    func addDocTags(_ ids: Set<String>, text: String) async { await perform { try await self.service?.addDocTags(docIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) dokumentów" } }
+    @discardableResult
+    func addDocTags(_ ids: Set<String>, text: String) async -> Bool { await performing { try await self.service?.addDocTags(docIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) dokumentów" } }
     func deleteDoc(_ id: String) async { await perform { try await self.service?.deleteDoc(id: id); self.message = "Usunięto dokument \(id)" } }
     func previewMCP(_ project: Project) async throws -> [MCPPreview] { try await service?.previewMCP(projectID: project.id) ?? [] }
     /// Server names Codex/Claude Code declare globally, straight from disk — the same source
@@ -597,7 +617,10 @@ import SkillboxCore
     func previewGlobalSync() async throws -> [SkillSyncPreview] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewGlobalSync() }
     func analyzeMCP(_ text: String, singleServerName: String? = nil) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.analyzeMCPJSON(text, singleServerName: singleServerName) }
     func generateMCP(_ instructions: String, apiKey: String, model: String) async throws -> String { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.generateMCPConfiguration(instructions: instructions, apiKey: apiKey, model: model) }
-    func importMCP(_ text: String, serverNames: Set<String>, classifications: [String: MCPValueClassification], singleServerName: String? = nil) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text, serverNames: serverNames, classifications: classifications, singleServerName: singleServerName); await reload(); message = "Zaimportowano \(result.servers.count) serwerów MCP"; record(.success, message); return result }
+    /// `classifications` is what the import sheet shows the user; the store keeps a `${VAR}`
+    /// reference as a reference and everything else as a local value, which is the same decision,
+    /// so it is not passed on rather than being accepted and ignored.
+    func importMCP(_ text: String, serverNames: Set<String>, classifications _: [String: MCPValueClassification], singleServerName: String? = nil) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text, serverNames: serverNames, singleServerName: singleServerName); await reload(); message = "Zaimportowano \(result.servers.count) serwerów MCP"; record(.success, message); return result }
     /// Applies every server the JSON describes — no selection step, because this text is a re-edit
     /// of the library's own configuration rather than something pasted in from elsewhere.
     func importMCPJSONAll(_ text: String) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text); await reload(); message = "Zapisano \(result.servers.count) serwerów MCP"; record(.success, message); return result }

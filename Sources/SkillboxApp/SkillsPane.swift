@@ -58,8 +58,8 @@ struct SkillsPane: View {
                 ContentUnavailableView("Wybierz skill", systemImage: "text.book.closed")
             }
         }
-        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: tags) { text in Task { await model.addTags(checked, text: text); checked.removeAll() } } }
-        .sheet(isPresented: $showNewSkill) { NewSkillView(existingTags: tags, existingIDs: Set(model.skills.map(\.id))) { draft in Task { await model.createSkill(draft) } } }
+        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: tags) { text in let ok = await model.addTags(checked, text: text); if ok { checked.removeAll() }; return ok } }
+        .sheet(isPresented: $showNewSkill) { NewSkillView(existingTags: tags, existingIDs: Set(model.skills.map(\.id))) { draft in await model.createSkill(draft) } }
         .confirmationDialog("Usunąć \(checked.count) skilli?", isPresented: $confirmBatchDelete) {
             Button("Usuń \(checked.count) skilli", role: .destructive) {
                 let ids = checked

@@ -50,7 +50,7 @@ W `Biblioteka → MCP → Dodaj serwer` wybierz zakładkę `AI`, wklej fragment 
 - `Zmienna systemowa` — Agentbox zapisuje nazwę zmiennej, a wartość ma dostarczyć środowisko procesu klienta AI.
 - Każda zwykła wartość, w tym hasło lub token, trafia jawnie do lokalnego `mcp.json` oraz pełnego backupu lokalnego.
 
-Automatyczne rozpoznawanie jest tylko sugestią. Agentbox uznaje za podejrzane nazwy lub wartości zawierające między innymi `token`, `password`, `api_key`, `cookie`, `secret`, `authorization` lub `bearer`. Nietypowo nazwany sekret może zostać błędnie uznany za zwykłą wartość, dlatego klasyfikację należy sprawdzić.
+Agentbox nie zgaduje, co jest sekretem: wartość w postaci `${NAZWA}` staje się odwołaniem do zmiennej systemowej, a każda inna jest wartością lokalną. Jeśli token ma nie trafić jawnie do `mcp.json`, ustaw go jako zmienną systemową — sam `mcp.json` jest plikiem czytelnym wyłącznie dla właściciela konta (0600), tak samo jak jego kopie w snapshotach i backupach, ale pozostaje nieszyfrowany.
 
 Wartość z `mcp.json` może zostać zapisana jawnie w wynikowym pliku MCP projektu, jeśli format klienta tego wymaga. Przed synchronizacją Agentbox pokazuje pełną treść wynikowych konfiguracji. Preferuj zmienne systemowe, jeśli klient je obsługuje.
 
@@ -227,7 +227,7 @@ Podgląd projektu pokazuje osobno dla Claude, Codex i OpenCode:
 - `Co się zmieni w pliku` — różnicę między tym, co leży na dysku, a tym, co zostanie zapisane, linia po linii; niezmieniona część długiego pliku jest zwinięta, a plik o już właściwej treści mówi wprost, że nic nie zostanie zapisane;
 - `Cała treść po zapisie` — pełną wynikową treść pliku.
 
-Synchronizacja skilli i MCP jest jedną operacją. Przed zapisem Agentbox tworzy backup zarządzanych katalogów i plików w bibliotece, w `backups/projects/<id-projektu>/`. Jeśli którykolwiek etap zakończy się błędem, wcześniejsze zmiany tej operacji są automatycznie wycofywane. Zachowywanych jest 10 ostatnich backupów.
+Synchronizacja skilli i MCP jest jedną operacją. Przed zapisem Agentbox tworzy tymczasową kopię zarządzanych katalogów i plików. Jeśli którykolwiek etap zakończy się błędem, wcześniejsze zmiany tej operacji są wycofywane. Po sukcesie lub udanym cofnięciu kopia jest usuwana; jeśli samo cofnięcie zawiedzie, kopia pozostaje, a komunikat wskazuje jej ścieżkę. Nie jest to historia backupów projektów.
 
 Obce skille i ręczne wpisy MCP nie są przejmowane przez Agentbox. Konflikt nazwy z ręcznym wpisem zatrzymuje operację przed zapisem.
 
@@ -255,6 +255,10 @@ Przed zmianą plików danych Agentbox zachowuje rotacyjne snapshoty w:
 Snapshot zawiera bieżące wersje `catalog.json`, `selections.json`, `projects.local.json`, `mcp.json` i `docs.json`. Zachowywanych jest 10 ostatnich snapshotów.
 
 W `Ustawienia → Backup i odzyskiwanie → Snapshoty biblioteki` można wybrać kopię na podstawie daty i przywrócić zapisane w niej pliki. Katalog `skills/` nie jest zmieniany. Przed przywróceniem Agentbox tworzy snapshot aktualnego stanu.
+
+Przywrócony `mcp.json` ma uprawnienia 0600, również jeśli wcześniej go brakowało. Nieudane cofnięcie przywracania lub zapisu ustawień pluginów zgłasza oba błędy i pozostawia prywatną kopię ratunkową pod ścieżką wskazaną w komunikacie. W kopiach tego zapisu plik `restore.json` przyporządkowuje pliki kopii do oryginalnych ścieżek; puste pole `copy` oznacza, że plik wcześniej nie istniał. Kopie nie są szyfrowane i mogą zawierać sekrety — nie publikuj ich.
+
+Przy otwieraniu starej biblioteki Agentbox odzyskuje przypisania skilli, MCP i dokumentów. Zapis definicji MCP lub dokumentu utrwala także te przypisania. Wartości zapisane już w `selections.json`, w tym świadomie puste listy, mają pierwszeństwo przed starym formatem.
 
 ### Gdzie leżą kopie
 

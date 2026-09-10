@@ -67,12 +67,27 @@ Do not commit `.build/` or generated `dist/` artifacts. DMG files belong in GitH
 
 ## Secrets and MCP safety
 
-- `mcp-secrets.json` is local and intentionally excluded from Git, but it is not encrypted yet. Do not describe it as encrypted or Keychain-backed.
-- Never log, commit, snapshot, or include actual API keys and MCP tokens in fixtures, errors, documentation, or release notes.
-- Keep user-controlled classification for imported MCP values: environment reference, local secret, or literal value.
+- `mcp-secrets.json` (written by versions up to 0.18.0) and `mcp.json` are local and excluded from Git, but neither is encrypted. Do not describe either as encrypted or Keychain-backed.
+- Never log, commit, or include actual API keys and MCP tokens in fixtures, errors, documentation, or release notes.
+- Snapshots and full backups *do* copy `mcp.json`, which since 0.18.0 can hold a token — that is deliberate, because a recovery that dropped the MCP configuration would be no recovery at all. The rule those copies must satisfy is the one above them: 0600 on every copy, 0700 on the directories, and nothing leaves this Mac. Do not write "sekrety nigdy nie trafiają do snapshotów"; it is not true, and pretending otherwise is how the protection stopped being applied in the first place.
+- Imported MCP values are classified two ways today: a `${VAR}` value becomes a reference to a system variable, everything else is stored as a local value **inside `mcp.json`**. The separate "local secret" class was dropped in 0.18.0. Do not describe a third option that no longer exists, and do not move values into `mcp-secrets.json` automatically — an automatic decision about what is a secret is exactly what the removed classification existed to avoid.
+- Because `mcp.json` can therefore hold a token, it is treated as secret-bearing wherever it is written or copied: 0600 on the file, 0700 on `.agentbox-snapshots/` and `backups/`, and the same on every copy inside them. `Store.restrictIfSensitive` is the single place that decides this; new files that can hold user values belong on its list.
 - Treat automatic secret detection as a suggestion, not an authoritative decision.
 - Preserve manual MCP entries in project files. A naming conflict with an unmanaged entry must stop synchronization instead of overwriting it.
 - Generated project configurations may contain resolved secrets. Maintain `.git/info/exclude` protection and visible warnings, while remembering that already tracked files are not protected by exclude rules.
+
+## Failure handling
+
+These rules exist because a review of 0.24.0 found the same mistake in a dozen places: the codebase has the right rules and applies them unevenly.
+
+- A value read from disk that cannot be parsed is an error, never an empty value. `(try? String(contentsOf:)) ?? ""` turned an unreadable `AGENTS.md` into "this file should not exist" and deleted it.
+- Identifiers that arrive from a file — a manifest, an imported configuration — are input, not data Agentbox wrote. Validate them before they reach a path, and refuse the whole operation instead of silently ignoring the bad entry.
+- Read and validate everything an operation needs *before* the first destructive step, so a failure halfway leaves nothing behind.
+- A failed rollback must be reported together with the error that caused it, and must keep whatever copy it was restoring from. `RollbackReport` is the one implementation of that rule — a new place that undoes a half-finished write uses it rather than its own `try?`.
+- Reading one of the user's files in order to rewrite it goes through `SkillboxService.existingText`, which refuses a file it cannot decode. Anything else silently replaces content Agentbox did not understand.
+- Paths built from data on disk are checked after symlinks are resolved, not by their spelling. A validated name inside a symlinked directory still lands outside the project.
+- A test proves the effect, not the implementation. Asking the same helper that produced the value whether the value is right is how a broken exclude path passed its own test; ask Git, the file system, or the public operation instead.
+- `try?` on the app side must never turn a thrown error into a successful-looking result. A UI action that a sheet waits on returns whether it succeeded (`performing`), and the sheet closes only then.
 
 ## Synchronization invariants
 

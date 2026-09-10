@@ -69,7 +69,7 @@ extension SkillboxService {
                 let preview = try await previewProjectSync(projectID: project.id)
                 // A plugin Claude Code has not been asked for yet is as pending as a missing skill:
                 // without it here a project stayed `synchronized` while its selection was not applied.
-                let added = preview.skills.reduce(0) { $0 + $1.added.count } + preview.mcp.reduce(0) { $0 + $1.added.count } + (preview.docs.first?.added.count ?? 0) + preview.missingPlugins.count
+                let added = preview.skills.reduce(0) { $0 + $1.added.count } + preview.mcp.reduce(0) { $0 + $1.added.count + $1.disabledGlobalAdded.count } + (preview.docs.first?.added.count ?? 0) + preview.missingPlugins.count
                 // Everything above counts *names*: a skill id, a server name, a document id. A
                 // server whose command was corrected, a document rewritten in place or a skill
                 // edited straight in the library folder all keep their name, so the project kept
@@ -77,7 +77,7 @@ extension SkillboxService {
                 let selected = SkillboxService.selectedSkills(in: catalog, for: project)
                 let drifted = await driftedTargets(preview, skills: selected)
                 let outdated = preview.skills.reduce(0) { $0 + $1.updated.count } + drifted
-                let removed = preview.skills.reduce(0) { $0 + $1.removed.count } + preview.mcp.reduce(0) { $0 + $1.removed.count } + (preview.docs.first?.removed.count ?? 0)
+                let removed = preview.skills.reduce(0) { $0 + $1.removed.count } + preview.mcp.reduce(0) { $0 + $1.removed.count + $1.disabledGlobalRemoved.count } + (preview.docs.first?.removed.count ?? 0)
                 let stale = preview.mcp.contains { $0.staleFile != nil } ? 1 : 0
                 statuses.append(ProjectStatus(
                     projectID: project.id,
@@ -101,7 +101,7 @@ extension SkillboxService {
         let fm = FileManager.default
         // Including tools the project no longer lists, so their manifests are cleaned up too.
         let tools = project.tools + Self.abandonedTools(project: project)
-        var targets = tools.map { projectURL.appending(path: $0.projectSkillsPath) }
+        var targets = try tools.map { try SkillboxService.managedTarget(project: projectURL, tool: $0) }
         let mcpPreviews = try await previewMCPRemovingEverything(project: project)
         targets += mcpPreviews.map { URL(fileURLWithPath: $0.file) }
         // `apply` rewrites Claude Code's opt-out file too, so cleaning up must be able to put it
@@ -116,12 +116,13 @@ extension SkillboxService {
         var unique: [URL] = []
         for target in targets where !unique.contains(target) { unique.append(target) }
         let scratch = Self.scratchDirectory()
-        defer { try? FileManager.default.removeItem(at: scratch) }
+        defer { if !Self.shouldKeepScratch(scratch) { try? FileManager.default.removeItem(at: scratch) } }
         let (backup, metadata) = try Self.makeSyncBackup(project: projectURL, targets: unique, in: scratch)
         var removed: [String] = []
         do {
             for tool in tools {
-                let target = projectURL.appending(path: tool.projectSkillsPath)
+                let target = try SkillboxService.managedTarget(project: projectURL, tool: tool)
+                try SkillboxService.assertSafeSkillManifest(at: target)
                 for skillID in SkillboxService.managedSkillIDs(at: target).sorted() {
                     let directory = target.appending(path: skillID)
                     if fm.fileExists(atPath: directory.path) { try fm.removeItem(at: directory) }
@@ -147,8 +148,7 @@ extension SkillboxService {
                 try? fm.removeItem(at: skillboxDirectory)
             }
         } catch {
-            try? Self.applySyncBackup(project: projectURL, backup: backup, metadata: metadata)
-            throw error
+            throw Self.rollingBack(error, project: projectURL, backup: backup, metadata: metadata, scratch: scratch)
         }
         return removed
     }
@@ -164,7 +164,7 @@ extension SkillboxService {
             return path.hasPrefix(root + "/") ? String(path.dropFirst(root.count + 1)) : file.lastPathComponent
         }
         entries.append(".skillbox/")
-        var text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        var text = try SkillboxService.existingText(at: url)
         let present = Set(text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) })
         let missing = entries.filter { !present.contains($0) }.sorted()
         guard !missing.isEmpty else { return }
@@ -216,7 +216,7 @@ extension SkillboxService {
         let library = await store.skillsDirectory
         let perTool: [(Tool, [Skill])] = project.tools.map { ($0, selected) } + Self.abandonedTools(project: project).map { ($0, []) }
         let skills = try perTool.map { tool, current in
-            try SkillboxService.skillPreview(tool: tool, target: URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath), current: current, library: library)
+            try SkillboxService.skillPreview(tool: tool, target: try SkillboxService.managedTarget(project: URL(fileURLWithPath: project.path), tool: tool), current: current, library: library)
         }
         let ids = config.selections[config.selectionID(for: project).uuidString]?.claudePluginIDs ?? []
         let plugins = try await previewClaudePlugins(projectPath: project.path, ids: ids)
@@ -255,7 +255,16 @@ extension SkillboxService {
             if skills.contains(where: { !Self.directoryMatches(library.appending(path: $0.id), target.appending(path: $0.id)) }) { count += 1 }
         }
         count += preview.mcp.filter { (includingRenamed || ($0.added.isEmpty && $0.removed.isEmpty)) && !Self.fileMatches($0.file, content: $0.content) }.count
-        count += preview.docs.filter { (includingRenamed || ($0.added.isEmpty && $0.removed.isEmpty)) && !Self.fileMatches($0.file, content: $0.content) }.count
+        // Claude Code's opt-out lives in its own file, outside `content`. Leaving it out of the
+        // comparison meant a project whose only pending change was "przestań widzieć ten globalny
+        // serwer" counted as up to date: the synchronization skipped every write and reported
+        // success, and the status agreed with it.
+        count += preview.mcp.filter { item in
+            guard let file = item.disabledGlobalFile, let content = item.disabledGlobalContent else { return false }
+            guard includingRenamed || (item.disabledGlobalAdded.isEmpty && item.disabledGlobalRemoved.isEmpty) else { return false }
+            return !Self.fileMatches(file, content: content)
+        }.count
+        count += preview.docs.filter { !$0.leaveAsIs && (includingRenamed || ($0.added.isEmpty && $0.removed.isEmpty)) && !Self.fileMatches($0.file, content: $0.content) }.count
         return count
     }
 
@@ -354,7 +363,7 @@ extension SkillboxService {
         // owns, and `unsyncProject` removes it all cleanly. Keeping it around only produced
         // directories of stale copies.
         let scratch = Self.scratchDirectory()
-        defer { try? FileManager.default.removeItem(at: scratch) }
+        defer { if !Self.shouldKeepScratch(scratch) { try? FileManager.default.removeItem(at: scratch) } }
         let (backup, metadata) = try Self.makeSyncBackup(project: projectURL, targets: unique, in: scratch)
 
         do {
@@ -365,10 +374,39 @@ extension SkillboxService {
             _ = try await syncDocs(projectID: projectID, previews: preview.docs)
             return (preview, false)
         } catch {
-            try? Self.applySyncBackup(project: projectURL, backup: backup, metadata: metadata)
-            throw error
+            throw Self.rollingBack(error, project: projectURL, backup: backup, metadata: metadata, scratch: scratch)
         }
     }
+
+    /// Puts the project back and returns the error to report.
+    ///
+    /// A rollback that itself fails used to be swallowed by `try?`, after which `defer` deleted the
+    /// only copy of the original files: the user was told the operation had been undone while the
+    /// project sat half-written and the rescue copy was gone. Now both failures are named, and the
+    /// backup directory is deliberately leaked so its path in the message points at something that
+    /// still exists.
+    private static func rollingBack(_ error: Error, project: URL, backup: URL, metadata: SyncBackupMetadata, scratch: URL) -> Error {
+        var report = RollbackReport()
+        report.attempt("projekt \(project.lastPathComponent)") {
+            try applySyncBackup(project: project, backup: backup, metadata: metadata)
+        }
+        if !report.succeeded { keptBackups.insert(scratch) }
+        return report.error(after: error, keeping: report.succeeded ? nil : backup.path)
+    }
+
+    /// The rollback rule, reachable from a test: a backup that cannot be applied must surface both
+    /// failures and keep its directory.
+    static func rollingBackForTests(_ error: Error, project: URL, backup: URL, relativePath: String, scratch: URL) -> Error {
+        rollingBack(error, project: project, backup: backup,
+                    metadata: SyncBackupMetadata(createdAt: .now, entries: [SyncBackupEntry(targetRelativePath: relativePath, savedName: "item-0", existed: true)]),
+                    scratch: scratch)
+    }
+
+    /// Scratch directories a failed rollback left behind on purpose. `scratchDirectory` names each
+    /// one uniquely, so nothing else ever looks here; the set exists only so the `defer` that
+    /// normally cleans up can tell those apart.
+    nonisolated(unsafe) private static var keptBackups = Set<URL>()
+    static func shouldKeepScratch(_ url: URL) -> Bool { keptBackups.contains(url) }
 
     private static func makeSyncBackup(project: URL, targets: [URL], in backupRoot: URL) throws -> (URL, SyncBackupMetadata) {
         let fm = FileManager.default

@@ -6,6 +6,52 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-09-10
+
+Wydanie po trzech rundach zewnętrznego przeglądu kodu. Każdy punkt miał reprodukcję przed poprawką i ma test regresyjny po niej.
+
+### Domknięcie migracji i odzyskiwania
+
+- Wyczyszczone przypisania MCP i dokumentów nie wracają ze starego formatu po ponownym odczycie; edycja definicji utrwala odzyskane przypisania w tej samej transakcji.
+- Przywracanie snapshotów stosuje wspólny zapis chroniący `mcp.json` od pierwszego bajtu (0600), także po utracie pliku.
+- Uszkodzony plik biblioteki jest nazwany w komunikacie razem z podpowiedzią, gdzie go przywrócić. Odczyt konfiguracji obejmuje teraz również `mcp.json` i `docs.json`, więc surowy błąd parsera bez nazwy pliku pojawiałby się przy zwykłym otwarciu listy projektów.
+- Zapis metadanych, przywracanie snapshotów i instalacja pluginów zachowują prywatną kopię dyskową oraz zgłaszają oba błędy, jeśli rollback zawiedzie. Nieczytelny oryginał zatrzymuje operację przed zapisem.
+
+Poprawki z zewnętrznego przeglądu kodu. Każdy punkt miał reprodukcję przed poprawką i ma test regresyjny po niej.
+
+### Bezpieczeństwo
+
+- **Synchronizacja mogła usunąć pliki poza projektem przez dowiązanie symboliczne.** Sprawdzanie nazwy wpisu w manifeście nie wystarcza, jeśli sam `.claude/skills` jest linkiem prowadzącym gdzie indziej — zwykły wpis `demo` trafiał wtedy poza projekt. Katalog docelowy jest teraz weryfikowany po rozwiązaniu dowiązań, po obu stronach porównania. Nie dotyczy `~/.claude/skills` i jego odpowiedników: podlinkowanie ich do repozytorium z dotfiles to normalna praktyka, a tam nie ma projektu, z którego można by wyjść.
+
+- **Manifest skilli mógł wskazać katalog poza katalogiem skilli.** Identyfikatory z `.skillbox.json` były doklejane do ścieżki i przekazywane do usuwania bez sprawdzenia, a plik ten leży w `.claude/skills/`, czyli jedzie razem z repozytorium. Wpis w rodzaju `../../victim` w sklonowanym projekcie kasował katalog niemający ze skillami nic wspólnego — przy zwykłej synchronizacji, nie tylko przy sprzątaniu. Identyfikator musi być teraz nazwą jednego katalogu, a manifest z takim wpisem blokuje projekt zamiast po cichu pomijać wpis.
+- **`mcp.json` mógł zawierać token przy domyślnych uprawnieniach.** Od 0.18.0 wartości lokalne trafiają wprost do tego pliku, ale nie objęła go ochrona, którą miał wcześniejszy `mcp-secrets.json`. Plik, katalog snapshotów, kopie w snapshotach i w pełnych backupach dostają teraz 0600/0700.
+
+### Naprawiono
+
+- **Biblioteka sprzed 0.17.0 traciła wszystkie przypisania**, bo `tools`, `skillIDs` i `tagi` przestały być czytane z `projects.local.json`, a `selections.json` jeszcze nie istniał. Pierwsza synchronizacja traktowała wtedy skille zainstalowane w projektach jako przeznaczone do usunięcia i kasowała je. Stary format jest teraz wczytywany i uzupełniany także wtedy, gdy `selections.json` jest niepełny.
+- **Nieczytelny, niezarządzany `AGENTS.md` był kasowany.** Plik, którego nie dało się odczytać jako UTF-8, stawał się w podglądzie pustą treścią, a pusta treść znaczy „usuń". Plik, którego Agentbox nie zarządza i nie potrafi odczytać, zostaje teraz nietknięty.
+- **Nieudane usunięcie skilla zostawiało bibliotekę w stanie niespójnym** — pliki znikały, zanim odczytana została konfiguracja projektów, więc błąd zostawiał katalog wymieniający skill, którego już nie ma. Usunięcie jest jedną transakcją: katalogi wracają na miejsce, jeśli zapis metadanych się nie powiedzie.
+- **Wykluczenie z Gita w worktree trafiało do pliku, którego Git nie czyta.** `info/exclude` jest jeden na repozytorium i leży we wspólnym katalogu; poprzednia poprawka szła za `gitdir:` i zapisywała wykluczenia do `.git/worktrees/<nazwa>/info/exclude`. Teraz podążamy za `commondir`, tak jak robi to sam Git, a test sprawdza wynik przez `git check-ignore` zamiast pytać o zdanie tę samą funkcję, którą testuje.
+- **Backup starej biblioteki gubił odzyskane przypisania.** Kopia zapisywała surowy `selections.json` obok przekodowanego `projects.local.json`, więc backup biblioteki sprzed 0.17 nie zawierał ani starych pól, ani odzyskanych selekcji — przywrócenie dawało pustą bibliotekę. Obie połowy pochodzą teraz z jednego, już zmigrowanego odczytu.
+- **Migracja obejmowała tylko skille.** Dawny format trzymał też przypisania serwerów MCP (`projectServerIDs`/`projectServerTags`), dokumentów (`projectDocIDs`/`projectDocTags`) i wybór globalny (`globalTools`/`globalSkillIDs`/`globalTags`). Wszystkie są teraz odzyskiwane, scalane pole po polu, więc biblioteka zmigrowana w połowie też wychodzi kompletna.
+- **Przywrócenie starego backupu cofało ochronę uprawnień** — kopiowany `mcp.json` przynosił ze sobą uprawnienia z archiwum. Ochrona jest nakładana po restore z aktualnej reguły.
+- **Nieudane cofanie zmian było ukrywane.** `try?` połykało błąd rollbacku, a `defer` kasował kopię ratunkową — użytkownik dostawał komunikat o cofnięciu operacji nad projektem w stanie pośrednim. Teraz zgłaszane są oba błędy, a kopia zostaje zachowana i wskazana w komunikacie.
+- **Wykluczenie generowanych plików z Gita pomijało worktree i submoduły**, gdzie `.git` jest plikiem, a nie katalogiem. Lokalizacja `info/exclude` jest ustalana z `gitdir:`, a niemożność jej ustalenia jest błędem, nie cichym pominięciem.
+- **Wyłączenie globalnego serwera MCP dla Claude mogło nie zostać zapisane.** Porównanie „czy projekt jest aktualny" pomijało plik z wyłączeniami, więc synchronizacja kończyła się sukcesem bez zapisu, a stan projektu pokazywał `Aktualny`.
+- **Edytor JSON gubił sekrety starszych serwerów** — eksport pokazywał `""` zamiast wartości z `mcp-secrets.json`, a zapis takiego JSON-a nadpisywał działającą konfigurację pustką.
+- **Zapis całej konfiguracji MCP kasował tagi i włączał wyłączone serwery**, bo format `mcpServers` nie ma na nie miejsca. Import zachowuje teraz to, czego edytowany format nie potrafi wyrazić.
+- **Synchronizacja globalna nie sprzątała po odznaczonym kliencie** i pomijała wykluczenia skilli, mimo że interfejs pozwala je ustawić.
+- **Usunięcie folderu nadrzędnego gubiło jego wyłączenia globalnych serwerów MCP**, więc projekty zaczynały je z powrotem dziedziczyć jako aktywne.
+- **Nieczytelnego pliku użytkownika nie wolno nadpisać — również poza dokumentami.** Ta sama pomyłka miała jeszcze trzy siedliska: `.gitignore`, `.codex/config.toml` i `.git/info/exclude` były czytane „miękko", a nieodczytany plik stawał się pustym tekstem, po czym Agentbox dopisywał do niego swoje i zapisywał całość — kasując treść, której nie zrozumiał. Wszystkie trzy przechodzą teraz przez jedno `existingText`, które zgłasza błąd zamiast zaczynać od zera.
+- **Sprzątanie po odznaczonym kliencie kasowało dowiązanie użytkownika.** `~/.claude/skills` podlinkowany do repozytorium z dotfiles jest normalną konfiguracją; opróżniony katalog jest usuwany tylko wtedy, gdy nie jest dowiązaniem.
+- **Podgląd twierdził, że nietykalny dokument zniknie.** Poprawka zatrzymała kasowanie, ale okno i `agentbox docs preview` nadal pisały „plik nie zostanie utworzony". Oba mówią teraz, że plik zostanie bez zmian.
+- **Ciche cofanie zmian znikło z całego rdzenia.** Poza synchronizacją ten sam wzorzec siedział jeszcze w zapisie plików MCP, w zapisie dokumentów, w zapisie metadanych biblioteki, w przywracaniu pełnego backupu i w przywracaniu ustawień pluginów Claude Code — pięć miejsc, w których nieudane cofnięcie było przemilczane. Wszystkie siedem korzysta teraz z jednego `RollbackReport`: zgłasza oba błędy i zachowuje kopię, z której cofało.
+- **Usuwanie skilla powtarzało ten sam wzorzec**: `try?` wokół przywracania katalogów, a zaraz potem kasowanie kopii ratunkowej. Teraz oba błędy są zgłaszane razem, a kopia zostaje.
+- **Formularze zamykały się przed wynikiem zapisu** — projektu, folderu nadrzędnego (także zakładanego z grupy), wsadu projektów, skilla, dokumentu, tagów zbiorczych i importu z Git. Nieudany zapis oznaczał utratę wszystkiego, co użytkownik wpisał. Arkusz zamyka się teraz dopiero po potwierdzonym sukcesie.
+- **`Zaktualizuj wszystkie` zapisywało błąd jako sukces** („Zaktualizowano 0 skilli"). Regresja z 0.23.0.
+- **Generator TOML nie escapował znaków sterujących**, więc wielowierszowy argument serwera MCP tworzył `config.toml`, którego Codex nie potrafił sparsować.
+- `AGENTS.md` i instrukcja opisywały trójstopniową klasyfikację wartości MCP („zmienna, sekret lokalny, wartość zwykła"), która zniknęła z kodu w 0.18.0, oraz heurystykę rozpoznającą sekrety po nazwie klucza, której już nie ma. Oba miejsca mówią teraz, co naprawdę robi kod, a `AGENTS.md` dostał sekcję o obsłudze błędów, bo wspólnym mianownikiem tego przeglądu było niespójne stosowanie zasad, które projekt już miał.
+
 ## [0.24.0] - 2026-09-10
 
 ### Dodano

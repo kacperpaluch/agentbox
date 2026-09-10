@@ -42,7 +42,7 @@ extension SkillboxService {
         for project in config.resolvedProjects.sorted(by: { $0.name < $1.name }) where projectID == nil || project.id == projectID {
             let projectURL = URL(fileURLWithPath: project.path)
             for tool in project.tools + Self.abandonedTools(project: project) {
-                let target = projectURL.appending(path: tool.projectSkillsPath)
+                let target = try Self.managedTarget(project: projectURL, tool: tool)
                 for (id, written) in Self.skillManifest(at: target).skills.sorted(by: { $0.key < $1.key }) {
                     guard let skill = known[id] else { continue }
                     // The library moved on since this project was written, so what differs here is

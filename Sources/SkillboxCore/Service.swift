@@ -146,6 +146,29 @@ public actor SkillboxService {
         return skill
     }
 
+    /// Puts the moved skill directories back and returns the error to report.
+    ///
+    /// The same rule the synchronization rollback follows: a restore that fails is reported next to
+    /// the error that caused it, and the copy it was restoring from is kept rather than deleted on
+    /// the way out. This path had the old shape — `try?` around the move, then `try?` around the
+    /// removal — which is how a failed deletion could take the skills with it and say nothing.
+    static func restoring(_ moved: [(from: URL, to: URL)], after error: Error, scratch: URL) -> Error {
+        let fm = FileManager.default
+        var report = RollbackReport()
+        for item in moved.reversed() {
+            report.attempt(item.from.lastPathComponent) {
+                // Something standing where the skill used to be means the restore cannot be
+                // completed either — and that is exactly when the copy has to be kept.
+                guard !fm.fileExists(atPath: item.from.path) else {
+                    throw SkillboxError.unsafePath("w tym miejscu znajduje się już coś innego")
+                }
+                try fm.moveItem(at: item.to, to: item.from)
+            }
+        }
+        if report.succeeded { try? fm.removeItem(at: scratch) }
+        return report.error(after: error, keeping: report.succeeded ? nil : scratch.path)
+    }
+
     /// The library directory of a skill, guaranteed to sit directly inside `skills/`.
     ///
     /// The identifier is checked instead of the resulting path. Standardizing the two URLs and
@@ -261,16 +284,34 @@ public actor SkillboxService {
         }
         var directories: [URL] = []
         for id in ids { directories.append(try await skillDirectory(id)) }
-        for directory in directories where fm.fileExists(atPath: directory.path) { try fm.removeItem(at: directory) }
         catalog.skills.removeAll { ids.contains($0.id) }
         // One pass over every place — projects, parent folders and this Mac alike. Before selections
         // lived in one map this needed two loops that had to be kept in step.
+        //
+        // Read *before* anything is removed: this file can fail to decode, and deleting the
+        // directories first meant a failure here left the skills gone from disk while the catalog
+        // still listed them — a library nothing could repair.
         var projects = try await store.configuration()
         for key in projects.selections.keys {
             projects.selections[key]?.skillIDs.removeAll { ids.contains($0) }
             projects.selections[key]?.excludedSkillIDs.removeAll { ids.contains($0) }
         }
-        try await store.save(catalog, projects)
+        // The directories move aside first and are dropped only once the metadata write succeeded,
+        // so a failed save puts the library back exactly as it was.
+        let scratch = Self.scratchDirectory()
+        try fm.createDirectory(at: scratch, withIntermediateDirectories: true)
+        var moved: [(from: URL, to: URL)] = []
+        do {
+            for directory in directories where fm.fileExists(atPath: directory.path) {
+                let aside = scratch.appending(path: directory.lastPathComponent)
+                try fm.moveItem(at: directory, to: aside)
+                moved.append((directory, aside))
+            }
+            try await store.save(catalog, projects)
+        } catch {
+            throw Self.restoring(moved, after: error, scratch: scratch)
+        }
+        try? fm.removeItem(at: scratch)
     }
 
     @discardableResult
@@ -544,21 +585,21 @@ public actor SkillboxService {
         let selected = Self.selectedSkills(in: catalog, for: project)
         var results: [Tool: SyncResult] = [:]
         for tool in project.tools {
-            let target = URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath)
+            let target = try Self.managedTarget(project: URL(fileURLWithPath: project.path), tool: tool)
             results[tool] = try await sync(skills: selected, to: target, dryRun: dryRun)
         }
         // A tool unticked in the project keeps its manifest until this cleanup runs; syncing an
         // empty selection into its target removes everything the manifest lists and the manifest
         // itself, instead of leaving orphaned files in the repository.
         for tool in Self.abandonedTools(project: project) {
-            let target = URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath)
+            let target = try Self.managedTarget(project: URL(fileURLWithPath: project.path), tool: tool)
             results[tool] = try await sync(skills: [], to: target, dryRun: dryRun)
         }
         return results
     }
 
-    public func syncGlobal(tool: Tool, skillIDs: [String], tags: [String] = [], dryRun: Bool = false, home: URL = FileManager.default.homeDirectoryForCurrentUser) async throws -> SyncResult {
-        let selected = try await selectedSkills(ids: skillIDs, tags: tags, excluding: [])
+    public func syncGlobal(tool: Tool, skillIDs: [String], tags: [String] = [], excluding excluded: [String] = [], dryRun: Bool = false, home: URL = FileManager.default.homeDirectoryForCurrentUser) async throws -> SyncResult {
+        let selected = try await selectedSkills(ids: skillIDs, tags: tags, excluding: excluded)
         return try await sync(skills: selected, to: tool.globalSkillsURL(home: home), dryRun: dryRun)
     }
 
@@ -575,9 +616,71 @@ public actor SkillboxService {
     static func skillManifest(at target: URL) -> SkillManifest {
         guard let data = try? Data(contentsOf: target.appending(path: ".skillbox.json")) else { return SkillManifest(version: 2, skills: [:]) }
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
-        if let manifest = try? decoder.decode(SkillManifest.self, from: data) { return manifest }
+        if let manifest = try? decoder.decode(SkillManifest.self, from: data) {
+            return SkillManifest(version: manifest.version, skills: manifest.skills.filter { isSafeSkillID($0.key) })
+        }
         let legacy = (try? JSONDecoder().decode([String].self, from: data)) ?? []
-        return SkillManifest(version: 1, skills: Dictionary(uniqueKeysWithValues: legacy.map { ($0, Date.distantPast) }))
+        return SkillManifest(version: 1, skills: Dictionary(uniqueKeysWithValues: legacy.filter(isSafeSkillID).map { ($0, Date.distantPast) }))
+    }
+
+    /// The text of a file that may not exist yet.
+    ///
+    /// A file that exists but cannot be read as UTF-8 is an error, never an empty string. Every
+    /// caller here goes on to *rewrite* what it just read, so starting from `""` silently replaces
+    /// the user's content with ours — the same mistake that once deleted an unreadable `AGENTS.md`,
+    /// hiding in `.gitignore`, `.codex/config.toml` and `.git/info/exclude` as well.
+    static func existingText(at url: URL) throws -> String {
+        guard FileManager.default.fileExists(atPath: url.path) else { return "" }
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
+            throw SkillboxError.unsafePath("nie można odczytać \(url.path) jako tekstu UTF-8 — Agentbox nie nadpisze pliku, którego nie rozumie")
+        }
+        return text
+    }
+
+    /// The directory one tool's skills occupy in a project, checked to be genuinely inside it.
+    ///
+    /// Validating the *name* of a manifest entry is not enough: `.claude/skills` can itself be a
+    /// symbolic link pointing somewhere else entirely, and then a perfectly ordinary entry like
+    /// `demo` resolves outside the project and gets removed. Both ends are resolved before they are
+    /// compared, because macOS hands out `/tmp` for `/private/tmp` and that alone is not an escape.
+    ///
+    /// Deliberately not applied to `~/.claude/skills` and its siblings: symlinking those into a
+    /// dotfiles repository is a normal thing to do, and there is no enclosing project to leave.
+    static func managedTarget(project: URL, tool: Tool) throws -> URL {
+        let target = project.appending(path: tool.projectSkillsPath)
+        let resolvedProject = project.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolved = target.resolvingSymlinksInPath().standardizedFileURL.path
+        guard resolved == resolvedProject || resolved.hasPrefix(resolvedProject + "/") else {
+            throw SkillboxError.unsafePath("\(target.path) prowadzi poza projekt (\(resolved)) — Agentbox nie zapisze ani nie usunie niczego w tym miejscu")
+        }
+        return target
+    }
+
+    /// A manifest entry names one directory sitting directly inside the target — never a path.
+    ///
+    /// Nothing Agentbox writes could be anything else, but `.skillbox.json` lives in
+    /// `.claude/skills/`, which teams commit, so the file can arrive from a cloned repository. An
+    /// entry like `../../victim` would otherwise be joined to the target and handed straight to
+    /// `removeItem`, deleting a directory that has nothing to do with skills.
+    static func isSafeSkillID(_ id: String) -> Bool {
+        !id.isEmpty && !id.hasPrefix(".") && id == URL(fileURLWithPath: "/tmp").appending(path: id).lastPathComponent
+    }
+
+    /// Stops before the first write when a manifest holds an entry that cannot be a skill directory.
+    ///
+    /// `skillManifest` already drops such entries, so nothing would be deleted either way — but
+    /// silently ignoring part of a file the user (or their repository) provided is exactly what the
+    /// project rules forbid. Reported as a conflict, like an unmanaged skill directory: the project
+    /// shows as blocked with the offending name, instead of half-synchronizing.
+    static func assertSafeSkillManifest(at target: URL) throws {
+        guard let data = try? Data(contentsOf: target.appending(path: ".skillbox.json")) else { return }
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let ids: [String]
+        if let manifest = try? decoder.decode(SkillManifest.self, from: data) { ids = Array(manifest.skills.keys) }
+        else { ids = (try? JSONDecoder().decode([String].self, from: data)) ?? [] }
+        if let unsafeID = ids.first(where: { !isSafeSkillID($0) }) {
+            throw SkillboxError.unsafePath("\(target.appending(path: ".skillbox.json").path): wpis `\(unsafeID)` nie jest nazwą katalogu skilla")
+        }
     }
 
     static func writeSkillManifest(_ skills: [Skill], to target: URL) throws {
@@ -616,6 +719,7 @@ public actor SkillboxService {
     }
 
     static func skillPreview(tool: Tool, target: URL, current: [Skill], library: URL) throws -> SkillSyncPreview {
+        try assertSafeSkillManifest(at: target)
         let manifest = skillManifest(at: target)
         let previous = Set(manifest.skills.keys)
         let ids = Set(current.map(\.id))
@@ -657,6 +761,7 @@ public actor SkillboxService {
 
     private func sync(skills: [Skill], to target: URL, dryRun: Bool) async throws -> SyncResult {
         guard target.pathComponents.contains("skills"), target.path != "/" else { throw SkillboxError.unsafePath(target.path) }
+        try Self.assertSafeSkillManifest(at: target)
         let previous = Self.managedSkillIDs(at: target)
         let current = skills.map(\.id).sorted(); var result = SyncResult()
         // Checked before the first removal so a conflict never leaves a half-synchronized target.
@@ -677,7 +782,12 @@ public actor SkillboxService {
             if skills.isEmpty {
                 let manifest = target.appending(path: ".skillbox.json")
                 if fm.fileExists(atPath: manifest.path) { try fm.removeItem(at: manifest) }
-                if let leftovers = try? fm.contentsOfDirectory(atPath: target.path), leftovers.allSatisfy({ $0 == ".DS_Store" }) {
+                // An emptied directory Agentbox created is clutter worth taking away — but a
+                // symbolic link is the user's own construction, most often `~/.claude/skills`
+                // pointing into a dotfiles repository. Removing it would quietly dismantle their
+                // setup and leave the link to be recreated by hand.
+                let isSymlink = (try? fm.attributesOfItem(atPath: target.path)[.type] as? FileAttributeType) == .typeSymbolicLink
+                if !isSymlink, let leftovers = try? fm.contentsOfDirectory(atPath: target.path), leftovers.allSatisfy({ $0 == ".DS_Store" }) {
                     try? fm.removeItem(at: target)
                 }
             } else {

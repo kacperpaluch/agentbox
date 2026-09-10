@@ -405,8 +405,13 @@ public struct DocPreview: Sendable {
     public var content: String
     public var added: [String]
     public var removed: [String]
-    public init(file: String, content: String, added: [String], removed: [String]) {
+    /// The file is nobody's business but the user's and must not be touched at all — not written,
+    /// not removed. Set when Agentbox does not manage it and cannot even read it as text, where
+    /// "empty content" would otherwise be indistinguishable from "delete this file".
+    public var leaveAsIs: Bool
+    public init(file: String, content: String, added: [String], removed: [String], leaveAsIs: Bool = false) {
         self.file = file; self.content = content; self.added = added; self.removed = removed
+        self.leaveAsIs = leaveAsIs
     }
 }
 

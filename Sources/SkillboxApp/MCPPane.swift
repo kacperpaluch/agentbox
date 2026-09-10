@@ -52,7 +52,7 @@ struct MCPPane: View {
         .sheet(item: $editingServer) { server in MCPServerEditor(model: model, server: server, existingTags: existingTags) }
         .sheet(item: $serverToDuplicate) { server in MCPDuplicateView(model: model, server: server) }
         .sheet(item: Binding(get: { bulkJSON.map(IdentifiableString.init) }, set: { bulkJSON = $0?.value })) { text in MCPBulkJSONView(model: model, text: text.value) }
-        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: "serwerów MCP") { text in Task { await model.addMCPServerTags(checked, text: text); checked.removeAll() } } }
+        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: "serwerów MCP") { text in let ok = await model.addMCPServerTags(checked, text: text); if ok { checked.removeAll() }; return ok } }
         .confirmationDialog("Usunąć serwer \(serverToDelete?.name ?? "")?", isPresented: Binding(get: { serverToDelete != nil }, set: { if !$0 { serverToDelete = nil } })) { Button("Usuń", role: .destructive) { if let serverToDelete { Task { await model.deleteMCPServer(serverToDelete.id) } }; serverToDelete = nil }; Button("Anuluj", role: .cancel) { serverToDelete = nil } } message: { Text(serverToDelete.map { server in
             (usageForDeletion?.summary).map { "Używany przez: \($0). Serwer zostanie usunięty także z przypisań projektów." }
                 ?? "Serwer \(server.name) nie jest przypisany do żadnego projektu."
@@ -349,7 +349,7 @@ struct MCPPreviewView: View {
                 ForEach(preview.mcp, id: \.tool.rawValue) { item in GroupBox { VStack(alignment: .leading, spacing: 8) { Text(item.file).font(.caption).foregroundStyle(.secondary); SyncChangeRows(added: item.added, updated: [], removed: item.removed); FileChangeDisclosure(file: item.file, content: item.content, emptyMeansRemoval: "Plik nie jest potrzebny — nie zostanie utworzony, a istniejący pusty szkielet zostanie usunięty.") }.padding(7) } label: { Label(item.tool.rawValue.capitalized, systemImage: "doc.text") } }
                 if !preview.docs.isEmpty {
                     Text("Dokumenty").font(.headline).padding(.top, 4)
-                    ForEach(preview.docs, id: \.file) { item in GroupBox { VStack(alignment: .leading, spacing: 8) { Text(item.file).font(.caption).foregroundStyle(.secondary); SyncChangeRows(added: item.added, updated: [], removed: item.removed); FileChangeDisclosure(file: item.file, content: item.content, emptyMeansRemoval: "Plik nie jest potrzebny — nie zostanie utworzony, a istniejący zarządzany plik zostanie usunięty.") }.padding(7) } label: { Label(URL(fileURLWithPath: item.file).lastPathComponent, systemImage: "doc.text") } }
+                    ForEach(preview.docs, id: \.file) { item in GroupBox { VStack(alignment: .leading, spacing: 8) { Text(item.file).font(.caption).foregroundStyle(.secondary); SyncChangeRows(added: item.added, updated: [], removed: item.removed); FileChangeDisclosure(file: item.file, content: item.content, leaveAsIs: item.leaveAsIs, emptyMeansRemoval: "Plik nie jest potrzebny — nie zostanie utworzony, a istniejący zarządzany plik zostanie usunięty.") }.padding(7) } label: { Label(URL(fileURLWithPath: item.file).lastPathComponent, systemImage: "doc.text") } }
                 }
                 if !preview.plugins.isEmpty {
                     Text("Pluginy Claude").font(.headline).padding(.top, 4)
@@ -374,6 +374,10 @@ struct SyncChangeRows: View {
 struct FileChangeDisclosure: View {
     let file: String
     let content: String
+    /// The file is not Agentbox's and cannot be read as text, so synchronization will not touch it.
+    /// Without this the preview announced a deletion that no longer happens — the fix stopped the
+    /// write but left the window saying the opposite.
+    var leaveAsIs = false
     let emptyMeansRemoval: String
     @State private var diff: [DiffLine] = []
     @State private var computed = false
@@ -382,20 +386,21 @@ struct FileChangeDisclosure: View {
         VStack(alignment: .leading, spacing: 6) {
             DisclosureGroup("Co się zmieni w pliku") {
                 Group {
-                    if content.isEmpty { Text(emptyMeansRemoval).font(.caption).foregroundStyle(.orange) }
+                    if leaveAsIs { Text("Plik nie jest zarządzany przez Agentbox i nie da się go odczytać jako tekst. Zostanie bez zmian.").font(.caption).foregroundStyle(.secondary) }
+                    else if content.isEmpty { Text(emptyMeansRemoval).font(.caption).foregroundStyle(.orange) }
                     else if !computed { Text("Liczenie różnicy…").font(.caption).foregroundStyle(.secondary) }
                     else if diff.isEmpty { Text("Plik ma już dokładnie taką treść — nic nie zostanie zapisane.").font(.caption).foregroundStyle(.secondary) }
                     else { VStack(alignment: .leading, spacing: 1) { ForEach(diff) { DiffLineRow(line: $0) } } }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
             }
-            if !content.isEmpty {
+            if !content.isEmpty, !leaveAsIs {
                 DisclosureGroup("Cała treść po zapisie") {
                     Text(content).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
                 }
             }
         }
-        .task { diff = TextDiff.lines(file: file, content: content); computed = true }
+        .task { diff = leaveAsIs ? [] : TextDiff.lines(file: file, content: content); computed = true }
     }
 }
 

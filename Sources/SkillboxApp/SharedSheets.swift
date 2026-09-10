@@ -7,9 +7,11 @@ struct BatchTagView: View {
     @Environment(\.dismiss) private var dismiss
     let count: Int; let existingTags: [String]
     var noun = "skilli"
-    let onSave: (String) -> Void
+    /// See `NewSkillView.onCreate` — the sheet closes only once the tags are actually saved.
+    let onSave: (String) async -> Bool
+    @State private var saving = false
     @State private var tags = ""
-    var body: some View { VStack(alignment: .leading, spacing: 16) { Text("Dodaj tagi").font(.title2.bold()); Text("Wybrano \(count) \(noun). Nowe tagi zostaną dopisane do już istniejących.").foregroundStyle(.secondary); HStack { TextField("np. seo, marketing, audit", text: $tags).textFieldStyle(.roundedBorder); ExistingTagMenu(tags: existingTags, text: $tags) }; HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Dodaj") { onSave(tags); dismiss() }.buttonStyle(.borderedProminent).disabled(AppModel.csv(tags).isEmpty) } }.padding(24).frame(width: 520) }
+    var body: some View { VStack(alignment: .leading, spacing: 16) { Text("Dodaj tagi").font(.title2.bold()); Text("Wybrano \(count) \(noun). Nowe tagi zostaną dopisane do już istniejących.").foregroundStyle(.secondary); HStack { TextField("np. seo, marketing, audit", text: $tags).textFieldStyle(.roundedBorder); ExistingTagMenu(tags: existingTags, text: $tags) }; HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Dodaj") { Task { saving = true; defer { saving = false }; if await onSave(tags) { dismiss() } } }.buttonStyle(.borderedProminent).disabled(saving || AppModel.csv(tags).isEmpty) } }.padding(24).frame(width: 520) }
 }
 struct ExistingTagMenu: View {
     let tags: [String]; @Binding var text: String
@@ -19,8 +21,10 @@ struct AddGitView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var url = ""
     @State private var subpath = ""
-    let onAdd: (String, String) -> Void
-    var body: some View { VStack(alignment: .leading, spacing: 18) { Text("Dodaj z Git").font(.title2.bold()); Text("Adres repozytorium lub link GitHub do konkretnego folderu. Możesz wkleić kilka adresów — po jednym w linii.").font(.caption).foregroundStyle(.secondary); TextEditor(text: $url).font(.system(.body, design: .monospaced)).frame(height: 110).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary)); TextField("Podfolder, np. skills (opcjonalnie)", text: $subpath); Text("Dla linku GitHub `/tree/branch/folder` branch i podfolder zostaną rozpoznane automatycznie. Zwykły URL repozytorium importuje wszystkie znalezione katalogi z SKILL.md.").font(.caption).foregroundStyle(.secondary); HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Importuj") { onAdd(url, subpath); dismiss() }.buttonStyle(.borderedProminent).disabled(url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) } }.padding(24).frame(width: 580) }
+    /// See `NewSkillView.onCreate`.
+    let onAdd: (String, String) async -> Bool
+    @State private var adding = false
+    var body: some View { VStack(alignment: .leading, spacing: 18) { Text("Dodaj z Git").font(.title2.bold()); Text("Adres repozytorium lub link GitHub do konkretnego folderu. Możesz wkleić kilka adresów — po jednym w linii.").font(.caption).foregroundStyle(.secondary); TextEditor(text: $url).font(.system(.body, design: .monospaced)).frame(height: 110).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary)); TextField("Podfolder, np. skills (opcjonalnie)", text: $subpath); Text("Dla linku GitHub `/tree/branch/folder` branch i podfolder zostaną rozpoznane automatycznie. Zwykły URL repozytorium importuje wszystkie znalezione katalogi z SKILL.md.").font(.caption).foregroundStyle(.secondary); HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Importuj") { Task { adding = true; defer { adding = false }; if await onAdd(url, subpath) { dismiss() } } }.buttonStyle(.borderedProminent).disabled(adding || url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) } }.padding(24).frame(width: 580) }
 }
 /// A skill written or pasted straight into Agentbox, with no folder on disk and no repository.
 struct NewSkillDraft {
@@ -34,7 +38,10 @@ struct NewSkillView: View {
     @Environment(\.dismiss) private var dismiss
     let existingTags: [String]
     let existingIDs: Set<String>
-    let onCreate: (NewSkillDraft) -> Void
+    /// Reports whether the skill was created. The sheet used to close on the click, so a
+    /// duplicate identifier threw away the whole draft.
+    let onCreate: (NewSkillDraft) async -> Bool
+    @State private var saving = false
     @State private var name = ""
     @State private var identifier = ""
     @State private var identifierEdited = false
@@ -66,7 +73,7 @@ struct NewSkillView: View {
                  ? "Wykryto nagłówek YAML, więc Agentbox nie dopisuje własnego."
                  : "Agentbox dopisze nagłówek YAML z nazwą i opisem. Wklej gotowy plik z blokiem `---`, aby zachować własny nagłówek.")
                 .font(.caption).foregroundStyle(.secondary)
-            HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Utwórz skill") { onCreate(NewSkillDraft(id: effectiveID, name: name, description: description, content: content, tags: AppModel.csv(tags))); dismiss() }.buttonStyle(.borderedProminent).disabled(!idValid || idTaken || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+            HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Utwórz skill") { Task { saving = true; defer { saving = false }; if await onCreate(NewSkillDraft(id: effectiveID, name: name, description: description, content: content, tags: AppModel.csv(tags))) { dismiss() } } }.buttonStyle(.borderedProminent).disabled(saving || !idValid || idTaken || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
         }
         .padding(24)
         .sheetFrame(width: 720, height: 640)

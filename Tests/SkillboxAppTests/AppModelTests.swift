@@ -210,7 +210,51 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(usage.summary, "2 projekty")
     }
 
+    // MARK: Błędy nie mogą wyglądać jak sukces
+
+    /// A failed update used to be swallowed into a green "Zaktualizowano 0 skilli" in the operation
+    /// log. An error has to look like an error.
+    func testFailedUpdateIsReportedAsAnErrorNotAsZeroUpdates() async throws {
+        let model = try await makeModel()
+        // An id nothing in the library knows: `updateSkills` throws rather than returning a result.
+        model.updateAvailable = ["nie-ma-takiego"]
+
+        await model.updateAllAvailable()
+
+        XCTAssertEqual(model.operationLog.first?.kind, .error, "komunikat: \(model.message)")
+        XCTAssertFalse(model.message.contains("Zaktualizowano 0"), "błąd nie może być zapisany jako udana aktualizacja: \(model.message)")
+    }
+
+    /// A form reports whether the save went through, so the sheet can stay open with everything the
+    /// user typed still in it.
+    func testSavingAProjectReportsFailureInsteadOfLosingTheForm() async throws {
+        let model = try await makeModel()
+        let folder = try makeProjectFolder("app")
+        await model.addProject(Project(name: "app", path: folder.path), selection: AttachmentSelection(tools: [.claude]))
+
+        let accepted = await model.addProject(Project(name: "app", path: try makeProjectFolder("inny").path), selection: AttachmentSelection(tools: [.claude]))
+
+        XCTAssertFalse(accepted, "duplikat nazwy musi zwrócić porażkę, żeby arkusz został otwarty")
+        XCTAssertEqual(model.projects.count, 1)
+        let created = await model.createSkill(NewSkillDraft(id: "nowy", name: "nowy", description: "", content: "treść", tags: []))
+        XCTAssertTrue(created, "poprawny zapis nadal zwraca sukces")
+    }
+
     // MARK: Library watcher
+
+    func testCreatingAGroupRootReportsFailureAndThenSuccess() async throws {
+        let model = try await makeModel()
+        let selection = AttachmentSelection(tools: [.claude])
+        let missing = ProjectRoot(name: "grupa", path: root.appending(path: "missing").path)
+        let failed = await model.adoptGroupIntoRoot(missing, following: [], keepingOwnSettings: [], selection: selection, treatingExistingAsKnown: true)
+        XCTAssertFalse(failed)
+        XCTAssertEqual(model.operationLog.first?.kind, .error)
+        XCTAssertTrue(model.projectRoots.isEmpty)
+        let folder = try makeProjectFolder("grupa")
+        let saved = await model.adoptGroupIntoRoot(ProjectRoot(name: "grupa", path: folder.path), following: [], keepingOwnSettings: [], selection: selection, treatingExistingAsKnown: true)
+        XCTAssertTrue(saved)
+        XCTAssertEqual(model.projectRoots.count, 1)
+    }
 
     /// The app writes a recovery snapshot before every metadata change and a full backup once a
     /// day, both inside the library. Waking up for those would mean answering our own writes with a

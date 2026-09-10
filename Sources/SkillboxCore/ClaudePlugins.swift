@@ -122,28 +122,11 @@ extension SkillboxService {
         let missing = selected.filter { !Self.isDeclared($0, among: installed) }
         guard !missing.isEmpty else { return }
         let project = URL(fileURLWithPath: projectPath).standardizedFileURL
-        let snapshot = Self.settingsSnapshot(project)
-        do {
+        let snapshot = try FileRollback(files: Self.claudeSettingsFiles(project))
+        try snapshot.perform {
             for item in missing {
                 try installClaudePlugin(projectPath: projectPath, marketplace: item.marketplace, plugin: item.plugin, scope: item.scope)
             }
-        } catch {
-            Self.restore(snapshot)
-            throw error
-        }
-    }
-
-    /// The two files Claude Code rewrites when a plugin is installed, as they are right now. A file
-    /// that does not exist yet is recorded as `nil`, so restoring removes it again instead of
-    /// leaving an empty one behind.
-    static func settingsSnapshot(_ project: URL) -> [(URL, Data?)] {
-        Self.claudeSettingsFiles(project).map { ($0, try? Data(contentsOf: $0)) }
-    }
-
-    static func restore(_ snapshot: [(URL, Data?)]) {
-        for (url, data) in snapshot {
-            if let data { try? data.write(to: url, options: .atomic) }
-            else if FileManager.default.fileExists(atPath: url.path) { try? FileManager.default.removeItem(at: url) }
         }
     }
 

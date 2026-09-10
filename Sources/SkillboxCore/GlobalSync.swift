@@ -14,9 +14,23 @@ import Foundation
 extension SkillboxService {
     public func previewGlobalSync(home: URL = FileManager.default.homeDirectoryForCurrentUser) async throws -> [SkillSyncPreview] {
         let chosen = try await selection(for: .global)
-        let current = try await selectedSkills(ids: chosen.skillIDs, tags: chosen.skillTags)
+        // Exclusions are offered in the same editor as the choices, so leaving them out here meant
+        // the Mac quietly received a skill its owner had unticked.
+        let current = try await selectedSkills(ids: chosen.skillIDs, tags: chosen.skillTags, excluding: chosen.excludedSkillIDs)
         let library = await store.skillsDirectory
-        return try chosen.tools.map { try Self.skillPreview(tool: $0, target: $0.globalSkillsURL(home: home), current: current, library: library) }
+        return try (chosen.tools + Self.abandonedGlobalTools(chosen: chosen, home: home)).map { tool in
+            try Self.skillPreview(tool: tool, target: tool.globalSkillsURL(home: home), current: chosen.tools.contains(tool) ? current : [], library: library)
+        }
+    }
+
+    /// Clients no longer ticked for this Mac whose user directory still holds an Agentbox manifest.
+    /// Unticking one used to leave every skill it had received sitting there forever — the project
+    /// path has answered this correctly for a long time; the global one never did.
+    static func abandonedGlobalTools(chosen: AttachmentSelection, home: URL) -> [Tool] {
+        Tool.allCases.filter { tool in
+            guard !chosen.tools.contains(tool) else { return false }
+            return FileManager.default.fileExists(atPath: tool.globalSkillsURL(home: home).appending(path: ".skillbox.json").path)
+        }
     }
 
     /// Applies the stored selection. Every tool is previewed first, so an unmanaged skill directory
@@ -26,7 +40,10 @@ extension SkillboxService {
         let previews = try await previewGlobalSync(home: home)
         let chosen = try await selection(for: .global)
         for tool in chosen.tools {
-            _ = try await syncGlobal(tool: tool, skillIDs: chosen.skillIDs, tags: chosen.skillTags, home: home)
+            _ = try await syncGlobal(tool: tool, skillIDs: chosen.skillIDs, tags: chosen.skillTags, excluding: chosen.excludedSkillIDs, home: home)
+        }
+        for tool in Self.abandonedGlobalTools(chosen: chosen, home: home) {
+            _ = try await syncGlobal(tool: tool, skillIDs: [], tags: [], home: home)
         }
         return previews
     }

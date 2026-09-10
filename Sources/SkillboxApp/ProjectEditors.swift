@@ -19,7 +19,10 @@ struct ProjectEditor: View {
     /// What this project has attached today. For a project that follows its folder this is filled
     /// with the folder's values, so switching to own settings starts from what it actually gets.
     let initialSelection: AttachmentSelection
-    let onSave: (Project, AttachmentSelection) -> Void
+    /// Reports whether the save succeeded. The form closed on the click, so a rejected name or
+    /// a vanished folder threw away everything the user had typed.
+    let onSave: (Project, AttachmentSelection) async -> Bool
+    @State private var saving = false
     @State private var name = ""
     @State private var path = ""
     @State private var selection = AttachmentSelection(tools: Tool.allCases)
@@ -40,7 +43,7 @@ struct ProjectEditor: View {
             }.padding(24) }
             SheetFooter {
                 Button("Anuluj") { dismiss() }
-                Button("Zapisz") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || path.isEmpty || (usesOwnSettings && selection.tools.isEmpty))
+                Button("Zapisz") { Task { if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(saving || name.isEmpty || path.isEmpty || (usesOwnSettings && selection.tools.isEmpty))
             }
         }
         .sheetFrame(width: 700, height: 640)
@@ -77,7 +80,8 @@ struct ProjectEditor: View {
         manageGitignore = source.manageGitignore ?? false
     }
 
-    private func save() {
+    private func save() async -> Bool {
+        saving = true; defer { saving = false }
         let follows = root != nil && !usesOwnSettings
         // A project following its folder stores nothing of its own. Keeping a copy would look like
         // a second source of truth and would resurface the moment the folder's settings changed.
@@ -90,7 +94,7 @@ struct ProjectEditor: View {
             manageGitignore: follows ? nil : manageGitignore,
             rootID: project?.rootID,
             overridesRoot: root == nil ? nil : (usesOwnSettings ? true : nil))
-        onSave(saved, follows ? AttachmentSelection() : selection)
+        return await onSave(saved, follows ? AttachmentSelection() : selection)
     }
 
     private func chooseFolder() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; if panel.runModal() == .OK { path = panel.url?.path ?? path } }
@@ -106,7 +110,9 @@ struct ProjectRootEditor: View {
     let root: ProjectRoot
     let followingProjects: Int
     let initialSelection: AttachmentSelection
-    let onSave: (ProjectRoot, AttachmentSelection) -> Void
+    /// See `ProjectEditor.onSave`.
+    let onSave: (ProjectRoot, AttachmentSelection) async -> Bool
+    @State private var saving = false
     @State private var name = ""
     @State private var selection = AttachmentSelection()
     @State private var manageGitignore = false
@@ -142,7 +148,7 @@ struct ProjectRootEditor: View {
             }.padding(24) }
             SheetFooter {
                 Button("Anuluj") { dismiss() }
-                Button("Zapisz") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || selection.tools.isEmpty)
+                Button("Zapisz") { Task { if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(saving || name.isEmpty || selection.tools.isEmpty)
             }
         }
         .sheetFrame(width: 700, height: 640)
@@ -154,9 +160,10 @@ struct ProjectRootEditor: View {
         }
     }
 
-    private func save() {
+    private func save() async -> Bool {
+        saving = true; defer { saving = false }
         let updated = ProjectRoot(id: root.id, name: name, path: root.path, tools: selection.tools, skillIDs: selection.skillIDs, tags: selection.skillTags, excludedSkillIDs: selection.excludedSkillIDs.isEmpty ? nil : selection.excludedSkillIDs, manageGitignore: manageGitignore, watchesNewFolders: watchesNewFolders, ignoredPaths: ignoredPaths)
-        onSave(updated, selection)
+        return await onSave(updated, selection)
     }
 }
 /// What `Dodaj wiele` produces: either a parent folder plus the subfolders picked from it, or —
@@ -174,7 +181,9 @@ struct BatchProjectView: View {
     let skills: [Skill]; let servers: [MCPServer]; let docs: [AgentDoc]; let existingProjects: [Project]; let existingRoots: [ProjectRoot]
     let claudePlugins: [ClaudePluginDefinition]
     let initialSelection: AttachmentSelection
-    let onSave: (BatchProjectRequest) -> Void
+    /// See `ProjectEditor.onSave`.
+    let onSave: (BatchProjectRequest) async -> Bool
+    @State private var saving = false
     @State private var root = ""; @State private var folders: [URL] = []; @State private var selectedFolders = Set<String>()
     @State private var selection = AttachmentSelection(tools: Tool.allCases); @State private var manageGitignore = true; @State private var scanError = ""
     @State private var sharedSettings = true; @State private var watchesNewFolders = true; @State private var onlyFutureFolders = true; @State private var rootName = ""
@@ -210,7 +219,7 @@ struct BatchProjectView: View {
     // Pinned below the scrolling form, so the action stays reachable on any display.
     SheetFooter {
         Button("Anuluj") { dismiss() }
-        Button(sharedSettings ? "Dodaj folder i \(selectedFolders.count) projektów" : "Dodaj \(selectedFolders.count) projektów") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(saveDisabled)
+        Button(sharedSettings ? "Dodaj folder i \(selectedFolders.count) projektów" : "Dodaj \(selectedFolders.count) projektów") { Task { if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(saving || saveDisabled)
     } }.sheetFrame(width: 760, height: 640).onAppear { selection = initialSelection } }
 
     private var saveDisabled: Bool {
@@ -222,16 +231,16 @@ struct BatchProjectView: View {
     private func chooseRoot() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; guard panel.runModal() == .OK, let url = panel.url else { return }; root = url.path; rootName = url.lastPathComponent; do { folders = try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]).filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }.sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }; selectedFolders = Set(availableFolders.map(\.path)); scanError = "" } catch { folders = []; selectedFolders = []; scanError = error.localizedDescription } }
     private func folderBinding(_ folder: URL) -> Binding<Bool> { Binding(get: { selectedFolders.contains(folder.path) }, set: { if $0 { selectedFolders.insert(folder.path) } else { selectedFolders.remove(folder.path) } }) }
 
-    private func save() {
+    private func save() async -> Bool {
+        saving = true; defer { saving = false }
         let chosen = availableFolders.filter { selectedFolders.contains($0.path) }
         let exclusions = selection.excludedSkillIDs.isEmpty ? nil : selection.excludedSkillIDs
         guard sharedSettings else {
             let projects = chosen.map { Project(name: $0.lastPathComponent, path: $0.path, tools: selection.tools, skillIDs: selection.skillIDs, tags: selection.skillTags, excludedSkillIDs: exclusions, manageGitignore: manageGitignore) }
-            onSave(BatchProjectRequest(root: nil, projects: projects, selection: selection))
-            return
+            return await onSave(BatchProjectRequest(root: nil, projects: projects, selection: selection))
         }
         let folder = ProjectRoot(name: rootName, path: root, tools: selection.tools, skillIDs: selection.skillIDs, tags: selection.skillTags, excludedSkillIDs: exclusions, manageGitignore: manageGitignore, watchesNewFolders: watchesNewFolders)
-        onSave(BatchProjectRequest(root: folder, folders: chosen.map(\.path), selection: selection, treatingExistingAsKnown: onlyFutureFolders))
+        return await onSave(BatchProjectRequest(root: folder, folders: chosen.map(\.path), selection: selection, treatingExistingAsKnown: onlyFutureFolders))
     }
 }
 /// Turns a folder that already holds projects into a parent folder with shared settings.
@@ -251,6 +260,7 @@ struct GroupRootSetupView: View {
     @State private var onlyFutureFolders = true
     @State private var following = Set<UUID>()
     @State private var loaded = false
+    @State private var saving = false
 
     private var nameTaken: Bool { model.projectRoots.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame } }
 
@@ -290,7 +300,7 @@ struct GroupRootSetupView: View {
             }.padding(24) }
             SheetFooter {
                 Button("Anuluj") { dismiss() }
-                Button("Utwórz folder nadrzędny") { save(); dismiss() }.buttonStyle(.borderedProminent).disabled(name.isEmpty || nameTaken || selection.tools.isEmpty)
+                Button("Utwórz folder nadrzędny") { Task { saving = true; defer { saving = false }; if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(saving || name.isEmpty || nameTaken || selection.tools.isEmpty)
             }
         }
         .sheetFrame(width: 760, height: 640)
@@ -354,11 +364,11 @@ struct GroupRootSetupView: View {
         }.map(\.id))
     }
 
-    private func save() {
+    private func save() async -> Bool {
         let root = ProjectRoot(name: name, path: folderPath, tools: selection.tools, skillIDs: selection.skillIDs, tags: selection.skillTags, excludedSkillIDs: selection.excludedSkillIDs.isEmpty ? nil : selection.excludedSkillIDs, manageGitignore: manageGitignore, watchesNewFolders: watchesNewFolders)
         let followers = projects.map(\.id).filter { following.contains($0) }
         let owners = projects.map(\.id).filter { !following.contains($0) }
-        model.adoptGroupIntoRoot(root, following: followers, keepingOwnSettings: owners, selection: selection, treatingExistingAsKnown: onlyFutureFolders)
+        return await model.adoptGroupIntoRoot(root, following: followers, keepingOwnSettings: owners, selection: selection, treatingExistingAsKnown: onlyFutureFolders)
     }
 }
 /// Subfolders that showed up in a watched parent folder. Each one is a yes/no question, and both

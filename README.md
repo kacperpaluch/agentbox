@@ -209,6 +209,8 @@ swift run agentbox sync all
 
 `Ustawienia → Backup i odzyskiwanie` pozwala przywrócić snapshot metadanych biblioteki albo pełny backup lokalny. Pliki w folderach projektów odtwarza się ponowną synchronizacją, a czyści przez `Usuń i posprzątaj pliki`. Przed przywróceniem Agentbox automatycznie zachowuje aktualny stan.
 
+Stare przypisania MCP i dokumentów są utrwalane także podczas edycji ich definicji; świadomie wyczyszczone przypisania nie wracają po ponownym otwarciu biblioteki. Przywracanie snapshotu zachowuje ochronę `mcp.json` (0600), również gdy plik trzeba odtworzyć od zera. Jeśli cofnięcie zapisu metadanych lub ustawień pluginów zawiedzie, komunikat podaje oba błędy i ścieżkę zachowanej lokalnej kopii ratunkowej.
+
 ### Wartości MCP
 
 Wartości MCP są zapisywane lokalnie wprost w `mcp.json`, a pełny backup lokalny obejmuje ten plik. Podczas synchronizacji wartości mogą zostać zapisane jawnie w plikach projektu.

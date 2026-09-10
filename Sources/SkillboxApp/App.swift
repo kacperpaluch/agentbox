@@ -95,10 +95,10 @@ struct ContentView: View {
         .overlay(alignment: .bottom) { if !model.message.isEmpty { StatusToast(text: model.message) { model.message = "" } } }
         .task(id: model.message) { let current = model.message; guard !current.isEmpty else { return }; try? await Task.sleep(for: .seconds(4)); guard !Task.isCancelled, model.message == current else { return }; withAnimation { model.message = "" } }
         .overlay { if model.isWorking { WorkingOverlay(progress: model.progress) } }
-        .sheet(isPresented: $showGit) { AddGitView { url, path in Task { await model.addGit(url, subpath: path) } } }
+        .sheet(isPresented: $showGit) { AddGitView { url, path in await model.addGit(url, subpath: path) } }
         .sheet(isPresented: $showProject) {
             ProjectEditor(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, claudePlugins: model.claudePluginLibrary, project: nil, initialSelection: model.projectDefaults) { project, selection in
-                Task { await model.addProject(project, selection: selection) }
+                await model.addProject(project, selection: selection)
             }
         }
         .sheet(isPresented: $showHistory) { OperationHistoryView(entries: model.operationLog) }
