@@ -8,10 +8,11 @@ The application prepares files and directories for those clients. It does not ru
 
 ## Repository map
 
-- `Sources/SkillboxCore/` — models, persistence, imports, rendering, synchronization, Git backup, and external process execution.
+- `Sources/SkillboxCore/` — models, persistence, imports, rendering, synchronization, local backups and recovery snapshots, and external process execution.
 - `Sources/SkillboxApp/` — SwiftUI/AppKit macOS interface.
 - `Sources/SkillboxCLI/` — command-line interface.
 - `Tests/SkillboxCoreTests/` — integration-style core tests and golden fixtures.
+- `Tests/SkillboxAppTests/` — tests for the window's own logic (`AppModel`, `LibraryWatcher`), driving a real service on a temporary library. Never point them at the real one.
 - `Resources/` — application metadata and icons.
 - `scripts/` — application and DMG build scripts.
 - `docs/USER_GUIDE.md` — user-facing behavior and recovery instructions.
@@ -49,6 +50,7 @@ Do not commit `.build/` or generated `dist/` artifacts. DMG files belong in GitH
 ## Architecture rules
 
 - Keep reusable business logic in `SkillboxCore`; do not place persistence or synchronization logic in SwiftUI views.
+- `AppModel` owns the order of an action, the reload that follows it and what the user is told; that logic belongs in `Tests/SkillboxAppTests`, not in a view.
 - Preserve actor isolation for `SkillboxStore` and `SkillboxService`.
 - Keep the core Foundation-based where practical. AppKit-specific code belongs in `SkillboxApp`.
 - Prefer small, explicit models over untyped dictionaries except at JSON/TOML serialization boundaries.
@@ -61,7 +63,7 @@ Do not commit `.build/` or generated `dist/` artifacts. DMG files belong in GitH
 - When adding persisted fields, provide backward-compatible decoding through defaults, optionals, or an explicit migration.
 - Do not silently discard malformed or unknown user data.
 - Preserve atomic writes and create recovery snapshots before mutating library metadata.
-- Never add `projects.local.json`, `mcp-secrets.json`, or `.agentbox-snapshots/` to the library Git backup.
+- The library has no Git backup. It was removed in 0.18.0; `backups/full/` plus `.agentbox-snapshots/` are the whole recovery story. Do not describe the library as backed up to a remote, and do not reintroduce one without deciding first what must stay out of it — `projects.local.json` describes this Mac only, and `mcp-secrets.json` holds unencrypted secrets.
 
 ## Secrets and MCP safety
 

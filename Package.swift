@@ -16,6 +16,7 @@ let package = Package(
         .target(name: "SkillboxCore"),
         .executableTarget(name: "AgentboxCLI", dependencies: ["SkillboxCore"], path: "Sources/SkillboxCLI"),
         .executableTarget(name: "AgentboxApp", dependencies: ["SkillboxCore", .product(name: "Sparkle", package: "Sparkle")], path: "Sources/SkillboxApp"),
-        .testTarget(name: "SkillboxCoreTests", dependencies: ["SkillboxCore"], resources: [.copy("Fixtures")])
+        .testTarget(name: "SkillboxCoreTests", dependencies: ["SkillboxCore"], resources: [.copy("Fixtures")]),
+        .testTarget(name: "SkillboxAppTests", dependencies: ["AgentboxApp", "SkillboxCore"])
     ]
 )

@@ -64,7 +64,7 @@ Menu przy serwerze ma także `Duplikuj…`. Wpisz własną nową nazwę technicz
 
 ### Stan projektów
 
-`Projekty → Sprawdź stan` sprawdza wszystkie projekty naraz i pokazuje odznakę przy każdym z nich:
+Agentbox obserwuje folder biblioteki, więc zmiana zrobiona poza aplikacją — skill poprawiony w edytorze, `agentbox` uruchomiony w terminalu, przywrócony backup — odświeża okno sama z siebie, bez klikania. `Projekty → Sprawdź stan` sprawdza wszystkie projekty naraz i pokazuje odznakę przy każdym z nich:
 
 - **Aktualny** — pliki projektu odpowiadają bibliotece,
 - **Do synchronizacji +N ~N -N** — tyle skilli i wpisów MCP zostanie dodanych, odświeżonych i usuniętych,

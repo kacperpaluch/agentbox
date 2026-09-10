@@ -6,6 +6,20 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-10
+
+### Dodano
+
+- Agentbox obserwuje folder biblioteki i sam odświeża okno, gdy coś zmieni się poza aplikacją: skill poprawiony w edytorze, `agentbox` uruchomiony w terminalu, przywrócony backup. Dotąd okno pokazywało bibliotekę taką, jaka była w chwili otwarcia, a projekt wymagający synchronizacji ujawniał się dopiero przy najbliższym kliknięciu. Własne zapisy Agentbox (snapshoty i backupy) są pomijane, więc obserwacja nie odpowiada na samą siebie.
+
+### Naprawiono
+
+- `AGENTS.md` i ekran ustawień opisywały nieistniejące repozytorium backupu Git biblioteki — funkcja została usunięta w 0.18.0, a oba miejsca nadal ją obiecywały. Teraz mówią, czym backup naprawdę jest: `backups/full/` i `.agentbox-snapshots/` na tym Macu.
+
+### Zmieniono
+
+- Warstwa okna (`AppModel`, obserwator biblioteki) ma własny zestaw testów — kolejność akcji i przeładowania, treść komunikatów, wpisy w dzienniku operacji i reguły obserwatora. Dotąd testy pokrywały wyłącznie rdzeń, a `AppModel` był jedyną nieprzetestowaną warstwą, którą użytkownik widzi bezpośrednio.
+
 ## [0.21.2] - 2026-09-10
 
 ### Naprawiono

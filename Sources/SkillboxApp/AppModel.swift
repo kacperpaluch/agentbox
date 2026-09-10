@@ -46,15 +46,44 @@ import SkillboxCore
     @Published var serviceError: String?
     private var lastActivationScan = Date.distantPast
     private var lastFullBackupCheck = Date.distantPast
+    /// Notices changes made to the library outside Agentbox — a skill edited in an editor, the CLI
+    /// writing `catalog.json`, a restored backup — so the window stops showing what the library
+    /// looked like when it was opened.
+    private let watcher = LibraryWatcher()
+    private var reloadingFromDisk = false
     var service: SkillboxService?
-    init() {
-        let saved = UserDefaults.standard.string(forKey: "SkillboxLibraryRoot")
+    /// `root` is only passed by tests and previews, which must never touch the real library. The
+    /// app itself takes the folder the user chose, so the argument stays at its default.
+    init(root: URL? = nil) {
+        let saved = root?.path ?? UserDefaults.standard.string(forKey: "SkillboxLibraryRoot")
         let defaultPath = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support/Skillbox").path
-        let shared = AgentboxRootPreference.load()?.path
+        let shared = root == nil ? AgentboxRootPreference.load()?.path : nil
         rootPath = saved ?? shared ?? defaultPath
         do { service = try SkillboxService(root: URL(fileURLWithPath: rootPath)) }
         catch { serviceError = "Nie można otworzyć biblioteki w \(rootPath): \(error.localizedDescription)" }
+        startWatchingLibrary()
         Task { await reload(); await createFullBackupIfDue() }
+    }
+
+    private func startWatchingLibrary() {
+        guard serviceError == nil else { return }
+        watcher.start(root: URL(fileURLWithPath: rootPath)) { [weak self] in self?.libraryChangedOnDisk() }
+    }
+
+    /// Something in the library folder changed. `isWorking` means Agentbox is the one writing, and
+    /// that path reloads by itself when it finishes, so answering here would only repeat the work.
+    ///
+    /// A write of our own whose events arrive after the action already finished still costs one
+    /// extra reload. That reload only reads, so the cheap guard is preferred over a timing window
+    /// that could swallow a real edit made a moment after the app's own.
+    /// Returns whether it started a reload, so the rule can be checked without racing the real
+    /// stream — a watch on a live folder answers a test's own writes too.
+    @discardableResult
+    func libraryChangedOnDisk() -> Bool {
+        guard !isWorking, !reloadingFromDisk else { return false }
+        reloadingFromDisk = true
+        Task { await reload(); reloadingFromDisk = false }
+        return true
     }
     // Statuses depend on the exact things reload() refreshes (skills, tags, MCP servers and their
     // tags), so it recomputes them here too. That is the only place callers need to remember to
@@ -559,6 +588,8 @@ import SkillboxCore
             rootPath = url.standardizedFileURL.path
             serviceError = nil
             selection = nil
+            // The watch belongs to a folder, so switching libraries moves it.
+            startWatchingLibrary()
             await reload()
             message = existing ? "Podłączono istniejącą bibliotekę" : "Biblioteka skopiowana do nowego folderu"
         }
