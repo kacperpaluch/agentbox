@@ -11,6 +11,8 @@ struct MCPPane: View {
     @State private var editingServer: MCPServer?
     @State private var serverToDuplicate: MCPServer?
     @State private var serverToDelete: MCPServer?
+    /// Read while the dialog is open, so the question says how far the deletion reaches.
+    @State private var usageForDeletion: UsageReport?
     @State private var showAdd = false
     @State private var bulkJSON: String?
     @State private var checked = Set<UUID>()
@@ -51,7 +53,11 @@ struct MCPPane: View {
         .sheet(item: $serverToDuplicate) { server in MCPDuplicateView(model: model, server: server) }
         .sheet(item: Binding(get: { bulkJSON.map(IdentifiableString.init) }, set: { bulkJSON = $0?.value })) { text in MCPBulkJSONView(model: model, text: text.value) }
         .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: "serwerów MCP") { text in Task { await model.addMCPServerTags(checked, text: text); checked.removeAll() } } }
-        .confirmationDialog("Usunąć serwer \(serverToDelete?.name ?? "")?", isPresented: Binding(get: { serverToDelete != nil }, set: { if !$0 { serverToDelete = nil } })) { Button("Usuń", role: .destructive) { if let serverToDelete { Task { await model.deleteMCPServer(serverToDelete.id) } }; serverToDelete = nil }; Button("Anuluj", role: .cancel) { serverToDelete = nil } } message: { Text("Serwer zostanie usunięty także z bezpośrednich przypisań projektów.") }
+        .confirmationDialog("Usunąć serwer \(serverToDelete?.name ?? "")?", isPresented: Binding(get: { serverToDelete != nil }, set: { if !$0 { serverToDelete = nil } })) { Button("Usuń", role: .destructive) { if let serverToDelete { Task { await model.deleteMCPServer(serverToDelete.id) } }; serverToDelete = nil }; Button("Anuluj", role: .cancel) { serverToDelete = nil } } message: { Text(serverToDelete.map { server in
+            (usageForDeletion?.summary).map { "Używany przez: \($0). Serwer zostanie usunięty także z przypisań projektów." }
+                ?? "Serwer \(server.name) nie jest przypisany do żadnego projektu."
+        } ?? "Serwer zostanie usunięty także z bezpośrednich przypisań projektów.") }
+        .task(id: serverToDelete?.id) { usageForDeletion = serverToDelete.map { _ in UsageReport() }; if let serverToDelete { usageForDeletion = await model.usage(ofServer: serverToDelete.id) } }
     }
 
     // Same contextual-bar pattern as the Library: add actions when nothing is checked, a selection
@@ -333,17 +339,17 @@ struct MCPPreviewView: View {
             Text("Synchronizacja · \(project.name)").font(.title2.bold())
             Text("Poniżej znajduje się pełny plan zmian skilli i konfiguracji MCP. Całość zostanie wycofana, jeśli którykolwiek zapis się nie powiedzie.").font(.caption).foregroundStyle(.secondary)
             Label("Pliki projektu mogą zawierać jawne sekrety. Agentbox doda je do lokalnego .git/info/exclude, ale nie szyfruje ich na dysku.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
-            if preview?.mcp.contains(where: { $0.file.hasSuffix(".jsonc") }) == true { Label("Plik OpenCode JSONC zostanie przepisany jako JSON. Komentarze i dotychczasowe formatowanie zostaną usunięte.", systemImage: "text.badge.xmark").font(.caption).foregroundStyle(.orange) }
+            if preview?.mcp.contains(where: { $0.file.hasSuffix(".jsonc") }) == true { Label("W pliku OpenCode JSONC podmieniany jest wyłącznie zarządzany klucz `mcp`. Komentarze i pozostałe klucze zostają bez zmian.", systemImage: "text.badge.checkmark").font(.caption).foregroundStyle(.secondary) }
             if !error.isEmpty { Text(error).foregroundStyle(.red) }
             else if preview == nil { ProgressView() }
             else if let preview { ScrollView { VStack(alignment: .leading, spacing: 12) {
                 Text("Skille").font(.headline)
                 ForEach(preview.skills, id: \.tool) { item in GroupBox { VStack(alignment: .leading, spacing: 6) { Text(item.target).font(.caption).foregroundStyle(.secondary); SyncChangeRows(added: item.added, updated: item.updated, removed: item.removed) }.padding(7) } label: { Label(item.tool.rawValue.capitalized, systemImage: "folder") } }
                 Text("MCP").font(.headline).padding(.top, 4)
-                ForEach(preview.mcp, id: \.tool.rawValue) { item in GroupBox { VStack(alignment: .leading, spacing: 8) { Text(item.file).font(.caption).foregroundStyle(.secondary); SyncChangeRows(added: item.added, updated: [], removed: item.removed); DisclosureGroup("Podgląd pliku") { Text(item.content.isEmpty ? "Plik nie jest potrzebny — nie zostanie utworzony, a istniejący pusty szkielet zostanie usunięty." : item.content).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6) } }.padding(7) } label: { Label(item.tool.rawValue.capitalized, systemImage: "doc.text") } }
+                ForEach(preview.mcp, id: \.tool.rawValue) { item in GroupBox { VStack(alignment: .leading, spacing: 8) { Text(item.file).font(.caption).foregroundStyle(.secondary); SyncChangeRows(added: item.added, updated: [], removed: item.removed); FileChangeDisclosure(file: item.file, content: item.content, emptyMeansRemoval: "Plik nie jest potrzebny — nie zostanie utworzony, a istniejący pusty szkielet zostanie usunięty.") }.padding(7) } label: { Label(item.tool.rawValue.capitalized, systemImage: "doc.text") } }
                 if !preview.docs.isEmpty {
                     Text("Dokumenty").font(.headline).padding(.top, 4)
-                    ForEach(preview.docs, id: \.file) { item in GroupBox { VStack(alignment: .leading, spacing: 8) { Text(item.file).font(.caption).foregroundStyle(.secondary); SyncChangeRows(added: item.added, updated: [], removed: item.removed); DisclosureGroup("Podgląd pliku") { Text(item.content.isEmpty ? "Plik nie jest potrzebny — nie zostanie utworzony, a istniejący zarządzany plik zostanie usunięty." : item.content).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6) } }.padding(7) } label: { Label(URL(fileURLWithPath: item.file).lastPathComponent, systemImage: "doc.text") } }
+                    ForEach(preview.docs, id: \.file) { item in GroupBox { VStack(alignment: .leading, spacing: 8) { Text(item.file).font(.caption).foregroundStyle(.secondary); SyncChangeRows(added: item.added, updated: [], removed: item.removed); FileChangeDisclosure(file: item.file, content: item.content, emptyMeansRemoval: "Plik nie jest potrzebny — nie zostanie utworzony, a istniejący zarządzany plik zostanie usunięty.") }.padding(7) } label: { Label(URL(fileURLWithPath: item.file).lastPathComponent, systemImage: "doc.text") } }
                 }
                 if !preview.plugins.isEmpty {
                     Text("Pluginy Claude").font(.headline).padding(.top, 4)
@@ -357,4 +363,65 @@ struct MCPPreviewView: View {
 struct SyncChangeRows: View {
     let added: [String], updated: [String], removed: [String]
     var body: some View { VStack(alignment: .leading, spacing: 3) { if added.isEmpty && updated.isEmpty && removed.isEmpty { Text("Brak zmian").font(.caption).foregroundStyle(.secondary) }; ForEach(added, id: \.self) { Label($0, systemImage: "plus.circle.fill").foregroundStyle(.green) }; ForEach(updated, id: \.self) { Label($0, systemImage: "arrow.triangle.2.circlepath").foregroundStyle(.blue) }; ForEach(removed, id: \.self) { Label($0, systemImage: "minus.circle.fill").foregroundStyle(.orange) } }.font(.caption) }
+}
+
+/// What a synchronization will actually do to one managed file: the difference against what is on
+/// disk right now, with the whole resulting content one step further in.
+///
+/// The counts above this say *how many* entries change; a repository owner deciding whether to let
+/// Agentbox write into their project needs to see *what* changes — especially in files like
+/// `.mcp.json` and `AGENTS.md`, which are merged with content they wrote themselves.
+struct FileChangeDisclosure: View {
+    let file: String
+    let content: String
+    let emptyMeansRemoval: String
+    @State private var diff: [DiffLine] = []
+    @State private var computed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            DisclosureGroup("Co się zmieni w pliku") {
+                Group {
+                    if content.isEmpty { Text(emptyMeansRemoval).font(.caption).foregroundStyle(.orange) }
+                    else if !computed { Text("Liczenie różnicy…").font(.caption).foregroundStyle(.secondary) }
+                    else if diff.isEmpty { Text("Plik ma już dokładnie taką treść — nic nie zostanie zapisane.").font(.caption).foregroundStyle(.secondary) }
+                    else { VStack(alignment: .leading, spacing: 1) { ForEach(diff) { DiffLineRow(line: $0) } } }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
+            }
+            if !content.isEmpty {
+                DisclosureGroup("Cała treść po zapisie") {
+                    Text(content).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
+                }
+            }
+        }
+        .task { diff = TextDiff.lines(file: file, content: content); computed = true }
+    }
+}
+
+struct DiffLineRow: View {
+    let line: DiffLine
+    var body: some View {
+        Text(prefix + line.text)
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(tint)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    private var prefix: String {
+        switch line.kind {
+        case .added: return "+ "
+        case .removed: return "− "
+        case .same: return "  "
+        case .gap: return ""
+        }
+    }
+    private var tint: Color {
+        switch line.kind {
+        case .added: return .green
+        case .removed: return .orange
+        case .same: return .secondary
+        case .gap: return .secondary
+        }
+    }
 }

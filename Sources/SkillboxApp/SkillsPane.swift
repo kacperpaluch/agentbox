@@ -180,6 +180,14 @@ struct SkillRow: View {
 
 struct SkillDetail: View {
     @ObservedObject var model: AppModel; let skill: Skill; @State private var tags = ""; @State private var confirmDelete = false
+    @State private var usage: UsageReport?
+    /// The dialog names what the deletion will actually reach, instead of leaving the user to guess
+    /// how far a library item spread.
+    private var deleteWarning: String {
+        let base = "Skill zostanie usunięty z biblioteki i przypisań projektów. Zniknie z folderów projektów przy kolejnej synchronizacji."
+        guard let summary = usage?.summary else { return base }
+        return "Używany przez: \(summary). " + base
+    }
     @State private var isEditing = false
     @State private var draft = ""
     private var isEditable: Bool { skill.source.kind == .local }
@@ -197,7 +205,8 @@ struct SkillDetail: View {
         .confirmationDialog("Usunąć skill \(skill.name)?", isPresented: $confirmDelete) {
             Button("Usuń skill", role: .destructive) { Task { await model.deleteSkill(skill.id) } }
             Button("Anuluj", role: .cancel) {}
-        } message: { Text("Skill zostanie usunięty z biblioteki i przypisań projektów. Zniknie z folderów projektów przy kolejnej synchronizacji.") }
+        } message: { Text(deleteWarning) }
+        .task(id: skill.id) { usage = await model.usage(ofSkill: skill.id) }
     }
 
     private var header: some View {
@@ -214,6 +223,13 @@ struct SkillDetail: View {
                     Label("Aktualny", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
                 }
                 Button("Usuń", role: .destructive) { confirmDelete = true }.buttonStyle(.bordered)
+            }
+            if let summary = usage?.summary {
+                Label("Używany przez: \(summary)", systemImage: "arrow.triangle.branch")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .help((usage?.projects ?? []).joined(separator: ", "))
+            } else if usage != nil {
+                Label("Nieprzypisany do żadnego projektu", systemImage: "circle.dashed").font(.caption).foregroundStyle(.secondary)
             }
             HStack {
                 TextField("tagi, oddzielone przecinkami", text: $tags).textFieldStyle(.roundedBorder)

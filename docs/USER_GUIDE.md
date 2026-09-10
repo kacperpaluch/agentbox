@@ -64,7 +64,9 @@ Menu przy serwerze ma także `Duplikuj…`. Wpisz własną nową nazwę technicz
 
 ### Stan projektów
 
-Agentbox obserwuje folder biblioteki, więc zmiana zrobiona poza aplikacją — skill poprawiony w edytorze, `agentbox` uruchomiony w terminalu, przywrócony backup — odświeża okno sama z siebie, bez klikania. `Projekty → Sprawdź stan` sprawdza wszystkie projekty naraz i pokazuje odznakę przy każdym z nich:
+Agentbox obserwuje folder biblioteki, więc zmiana zrobiona poza aplikacją — skill poprawiony w edytorze, `agentbox` uruchomiony w terminalu, przywrócony backup — odświeża okno sama z siebie, bez klikania. W bibliotece każdy skill pokazuje, gdzie trafia: `Używany przez: N projektów, folder nadrzędny: …` — licząc także projekty, które biorą go przez tag albo przez folder nadrzędny, i pomijając te, które go wykluczają. To samo pytanie zadaje potwierdzenie usunięcia skilla, serwera MCP, dokumentu i definicji pluginu, żeby skala usunięcia była widoczna, zanim je potwierdzisz. W terminalu odpowiada `agentbox usage <skill>`.
+
+`Projekty → Sprawdź stan` sprawdza wszystkie projekty naraz i pokazuje odznakę przy każdym z nich:
 
 - **Aktualny** — pliki projektu odpowiadają bibliotece,
 - **Do synchronizacji +N ~N -N** — tyle skilli i wpisów MCP zostanie dodanych, odświeżonych i usuniętych,
@@ -105,9 +107,15 @@ W `Biblioteka → Skille` ikona odświeżania najpierw tylko sprawdza dostępne 
 
 Jeżeli chcesz wykonać cały proces jednym kliknięciem, użyj `Narzędzia → Odśwież bibliotekę i zsynchronizuj projekty`. To odpowiednik `agentbox refresh`: sprawdza i pobiera aktualizacje skilli, tworzy pełny backup lokalny, a następnie transakcyjnie synchronizuje wszystkie projekty. Wynik, także błędy poszczególnych projektów, zostaje w historii operacji.
 
-### Przejmowanie skilli z projektu
+### Przejmowanie skilli i zmian z projektu
 
-Jeśli w projekcie leży ręcznie napisany katalog ze `SKILL.md`, którego nie ma w bibliotece, wybierz `⋯ → Przejmij skille z projektu…`. Agentbox skopiuje wskazane katalogi do biblioteki jako skille lokalne — nic nie znika z projektu. To jest sposób na odblokowanie projektu ze statusem `Zablokowany` bez kasowania własnej pracy. Przejęty skill można od razu przypisać do projektów — także tego, z którego pochodzi: jego katalog jest identyczny z kopią biblioteczną, więc pierwsza synchronizacja przejmuje go pod zarząd Agentbox zamiast zgłaszać konflikt.
+`⋯ → Przejmij z projektu…` pokazuje dwie rzeczy naraz i przenosi je do biblioteki jedną decyzją.
+
+**Zmienione w tym projekcie** to zarządzane skille, które zmieniły się w folderze projektu po ostatniej synchronizacji — czyli poprawki zrobione tam, gdzie pracujesz, z otwartym klientem. Przejęcie zastępuje kopię biblioteczną wersją z projektu i odznacza skill jako nowszy, więc pozostałe projekty dostaną tę poprawkę przy swojej synchronizacji, a projekt, z którego pochodzi, od razu jest zgodny z biblioteką. Agentbox pokazuje tu wyłącznie sytuację jednoznaczną: jeśli kopia w bibliotece też się zmieniła, jest to zwykła nieaktualność projektu, a nie coś do oddania. Dwa projekty, które zmieniły ten sam skill inaczej, zatrzymują operację z nazwami obu — wybierz jeden z nich. Skill pochodzący z Git jest wypisany, ale nieaktywny: `Aktualizuj` i tak zastąpiłoby kopię biblioteczną zawartością repozytorium, więc zmianę trzeba wprowadzić w źródle. To samo w terminalu daje `agentbox project adopt-changes <nazwa> [--yes]`.
+
+**Nieznane bibliotece** to ręcznie napisane katalogi ze `SKILL.md`, których biblioteka jeszcze nie ma.
+
+Jeśli w projekcie leży ręcznie napisany katalog ze `SKILL.md`, którego nie ma w bibliotece, wybierz `⋯ → Przejmij z projektu…`. Agentbox skopiuje wskazane katalogi do biblioteki jako skille lokalne — nic nie znika z projektu. To jest sposób na odblokowanie projektu ze statusem `Zablokowany` bez kasowania własnej pracy. Przejęty skill można od razu przypisać do projektów — także tego, z którego pochodzi: jego katalog jest identyczny z kopią biblioteczną, więc pierwsza synchronizacja przejmuje go pod zarząd Agentbox zamiast zgłaszać konflikt.
 
 ### Skille, których Agentbox nie zarządza
 
@@ -216,7 +224,8 @@ Podgląd projektu pokazuje osobno dla Claude, Codex i OpenCode:
 - docelowy katalog skilli;
 - skille dodawane, ponownie zapisywane i usuwane;
 - serwery MCP dodawane i usuwane;
-- pełną wynikową treść plików MCP.
+- `Co się zmieni w pliku` — różnicę między tym, co leży na dysku, a tym, co zostanie zapisane, linia po linii; niezmieniona część długiego pliku jest zwinięta, a plik o już właściwej treści mówi wprost, że nic nie zostanie zapisane;
+- `Cała treść po zapisie` — pełną wynikową treść pliku.
 
 Synchronizacja skilli i MCP jest jedną operacją. Przed zapisem Agentbox tworzy backup zarządzanych katalogów i plików w bibliotece, w `backups/projects/<id-projektu>/`. Jeśli którykolwiek etap zakończy się błędem, wcześniejsze zmiany tej operacji są automatycznie wycofywane. Zachowywanych jest 10 ostatnich backupów.
 

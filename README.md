@@ -90,7 +90,9 @@ swift run agentbox add https://github.com/user/repo.git --path skills/seo --bran
 
 Skille dodane z dysku można edytować w aplikacji przyciskiem `Edytuj SKILL.md`; zapis oznacza projekty z tym skillem jako nieaktualne. Skille z Git są tylko do odczytu, bo `Aktualizuj` zastąpiłoby zmiany zawartością repozytorium.
 
-Ręcznie napisany katalog ze `SKILL.md`, który leży w projekcie i blokuje synchronizację, można przejąć do biblioteki przez `⋯ → Przejmij skille z projektu…` albo `agentbox project adopt <nazwa> --yes`. Po przejęciu katalog w projekcie jest identyczny z kopią biblioteczną, więc pierwsza synchronizacja przejmuje go pod zarząd Agentbox — przejęty skill można od razu przypisać i synchronizować także w projekcie, z którego pochodzi.
+Skill poprawiony wprost w folderze projektu — tam, gdzie pracujesz — można oddać z powrotem do biblioteki przez `⋯ → Przejmij z projektu…` albo `agentbox project adopt-changes <nazwa> --yes`. Wersja z projektu zastępuje kopię biblioteczną, a pozostałe projekty dostają ją przy swojej synchronizacji. Dwa projekty, które zmieniły ten sam skill inaczej, zatrzymują operację, zamiast po cichu wybierać jedną wersję.
+
+Ręcznie napisany katalog ze `SKILL.md`, który leży w projekcie i blokuje synchronizację, można przejąć do biblioteki w tym samym oknie albo przez `agentbox project adopt <nazwa> --yes`. Po przejęciu katalog w projekcie jest identyczny z kopią biblioteczną, więc pierwsza synchronizacja przejmuje go pod zarząd Agentbox — przejęty skill można od razu przypisać i synchronizować także w projekcie, z którego pochodzi.
 
 ### Tagi, filtrowanie i aktualizacje
 
@@ -184,7 +186,7 @@ Kopia sprzed zapisu powstaje w katalogu tymczasowym i znika po zakończeniu oper
 
 GUI pokazuje również pełny plan zmian skilli dla każdego narzędzia. Synchronizacja skilli i MCP działa jako jedna transakcja: błąd na dowolnym etapie przywraca zarządzane katalogi i pliki do stanu sprzed operacji. Kopia użyta do cofnięcia jest tymczasowa i znika po operacji. Projekt bez faktycznych zmian jest pomijany: nic nie jest zapisywane. To samo dotyczy CLI — `agentbox sync project` i `agentbox sync all` używają tej samej ścieżki transakcyjnej.
 
-Agentbox obserwuje folder biblioteki i odświeża okno, gdy ktoś zmieni ją poza aplikacją — z terminala, w edytorze albo przywracając backup. `Sprawdź stan` sprawdza wszystkie projekty naraz i oznacza każdy z nich: aktualny, liczba zmian do synchronizacji, zablokowany albo brak folderu. Liczy się także zmiana samej treści — poprawiony serwer MCP, przepisany dokument czy skill zmieniony w folderze biblioteki — nie tylko dodanie lub usunięcie pozycji. To samo w terminalu daje `agentbox project status`.
+Podgląd synchronizacji pokazuje różnicę linia po linii między tym, co leży w pliku projektu, a tym, co zostanie zapisane — nie tylko liczbę zmian. Każdy skill w bibliotece mówi, do ilu projektów trafia (`agentbox usage <skill>`), a potwierdzenia usunięcia powtarzają tę liczbę, zanim cokolwiek zniknie. Agentbox obserwuje folder biblioteki i odświeża okno, gdy ktoś zmieni ją poza aplikacją — z terminala, w edytorze albo przywracając backup. `Sprawdź stan` sprawdza wszystkie projekty naraz i oznacza każdy z nich: aktualny, liczba zmian do synchronizacji, zablokowany albo brak folderu. Liczy się także zmiana samej treści — poprawiony serwer MCP, przepisany dokument czy skill zmieniony w folderze biblioteki — nie tylko dodanie lub usunięcie pozycji. To samo w terminalu daje `agentbox project status`.
 
 Agentbox zastępuje wyłącznie katalogi skilli wymienione w swoim manifeście `.skillbox.json`. Katalog o tej samej nazwie, który nie pochodzi z Agentbox, zatrzymuje synchronizację zamiast zostać nadpisany — tak samo jak ręcznie dodany serwer MCP. Jedyny wyjątek to katalog identyczny bajt w bajt z kopią biblioteczną, czyli skill świeżo przejęty z projektu: nadpisanie identycznej zawartości niczego nie niszczy, więc synchronizacja przejmuje go zamiast się zatrzymać.
 

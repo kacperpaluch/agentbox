@@ -10,6 +10,8 @@ struct ClaudePluginLibraryPane: View {
     @State private var editing: ClaudePluginDefinition?
     @State private var adding = false
     @State private var deleting: ClaudePluginDefinition?
+    /// Read while the dialog is open, so the question says how far the deletion reaches.
+    @State private var usageForDeletion: UsageReport?
     var visible: [ClaudePluginDefinition] { model.claudePluginLibrary.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.plugin.localizedCaseInsensitiveContains(search) || $0.marketplace.localizedCaseInsensitiveContains(search) } }
     var body: some View {
         VStack(spacing: 0) {
@@ -36,7 +38,9 @@ struct ClaudePluginLibraryPane: View {
         .confirmationDialog("Usunąć plugin \(deleting?.name ?? "") z biblioteki?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             Button("Usuń z biblioteki", role: .destructive) { if let deleting { Task { await model.deleteLibraryClaudePlugin(deleting) } }; deleting = nil }
             Button("Anuluj", role: .cancel) { deleting = nil }
-        } message: { Text("Definicja zniknie z biblioteki i z wyboru wszystkich projektów, więc synchronizacja przestanie go instalować. Pluginy już zainstalowane przez Claude Code zostają na dysku — usuń je w `Projekty → … → Pluginy Claude…`.") }
+        } message: { Text((usageForDeletion?.summary).map { "Wybrany przez: \($0). " } ?? "")
+            + Text("Definicja zniknie z biblioteki i z wyboru wszystkich projektów, więc synchronizacja przestanie go instalować. Pluginy już zainstalowane przez Claude Code zostają na dysku — usuń je w `Projekty → … → Pluginy Claude…`.") }
+        .task(id: deleting?.id) { usageForDeletion = deleting == nil ? nil : await model.usage(ofPlugin: deleting!.id) }
     }
 }
 

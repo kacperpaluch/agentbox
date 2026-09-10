@@ -13,6 +13,8 @@ struct DocsPane: View {
     @State private var editingDoc: AgentDoc?
     @State private var creatingDoc = false
     @State private var docToDelete: AgentDoc?
+    /// Read while the dialog is open, so the question says how far the deletion reaches.
+    @State private var usageForDeletion: UsageReport?
     @State private var checked = Set<String>()
     @State private var showBatchTags = false
     private var existingTags: [String] { Array(Set(model.docs.docs.flatMap(\.tags))).sorted() }
@@ -50,7 +52,9 @@ struct DocsPane: View {
         .confirmationDialog("Usunąć dokument \(docToDelete?.name ?? "")?", isPresented: Binding(get: { docToDelete != nil }, set: { if !$0 { docToDelete = nil } })) {
             Button("Usuń", role: .destructive) { if let docToDelete { Task { await model.deleteDoc(docToDelete.id) } }; docToDelete = nil }
             Button("Anuluj", role: .cancel) { docToDelete = nil }
-        } message: { Text("Dokument zniknie z biblioteki i z przypisań projektów. AGENTS.md i wygenerowany CLAUDE.md znikną z projektów, które go używały, przy kolejnej synchronizacji.") }
+        } message: { Text((usageForDeletion?.summary).map { "Używany przez: \($0). " } ?? "")
+            + Text("Dokument zniknie z biblioteki i z przypisań projektów. AGENTS.md i wygenerowany CLAUDE.md znikną z projektów, które go używały, przy kolejnej synchronizacji.") }
+        .task(id: docToDelete?.id) { usageForDeletion = docToDelete == nil ? nil : await model.usage(ofDoc: docToDelete!.id) }
     }
 
     private var actionBar: some View {

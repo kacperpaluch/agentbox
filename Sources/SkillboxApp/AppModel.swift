@@ -294,9 +294,39 @@ import SkillboxCore
         guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
         return try await service.adoptableSkills(projectID: project.id)
     }
+    /// Skills this project changed since its last synchronization — the ones it has to offer back.
+    func driftedSkills(_ project: Project) async throws -> [DriftedSkill] {
+        guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
+        return try await service.driftedSkills(projectID: project.id)
+    }
+
+    /// Both halves of "przejmij z projektu" as one action, so the sheet reports one result and the
+    /// library takes one recovery snapshot for what the user thinks of as a single decision.
+    func adoptFromProject(newSkills: [AdoptableSkill], changes: [DriftedSkill]) async {
+        await perform {
+            var parts: [String] = []
+            if !newSkills.isEmpty {
+                let adopted = try await self.service?.adoptSkills(newSkills) ?? []
+                parts.append("przejęto \(adopted.count) nowych skilli")
+            }
+            if !changes.isEmpty {
+                let updated = try await self.service?.adoptSkillChanges(changes) ?? []
+                parts.append("zaktualizowano z projektu \(updated.count)")
+            }
+            self.message = parts.isEmpty ? "Nic nie wybrano" : parts.joined(separator: ", ").prefix(1).uppercased() + parts.joined(separator: ", ").dropFirst()
+        }
+    }
+
     func adoptSkills(_ items: [AdoptableSkill]) async {
         await perform { let adopted = try await self.service?.adoptSkills(items) ?? []; self.message = "Przejęto \(adopted.count) skilli do biblioteki" }
     }
+    /// Where a library item actually lands. Read on demand — a confirmation dialog asking "usunąć?"
+    /// without saying what it will reach is a question asked in the dark.
+    func usage(ofSkill id: String) async -> UsageReport { (try? await service?.usage(ofSkill: id)) ?? UsageReport() }
+    func usage(ofServer id: UUID) async -> UsageReport { (try? await service?.usage(ofServer: id)) ?? UsageReport() }
+    func usage(ofDoc id: String) async -> UsageReport { (try? await service?.usage(ofDoc: id)) ?? UsageReport() }
+    func usage(ofPlugin id: UUID) async -> UsageReport { (try? await service?.usage(ofPlugin: id)) ?? UsageReport() }
+
     func loadFullBackups() async { do { fullBackups = try await service?.fullBackups() ?? [] } catch { reportError(error) } }
     func createFullBackup() async { await perform { guard let service = self.service else { throw SkillboxError.commandFailed("Brak usługi") }; let backup = try await service.createFullBackup(applicationVersion: AppVersion.short); self.message = "Utworzono pełny backup: \(backup.name)" }; await loadFullBackups() }
     func restoreFullBackup(_ backup: FullBackupInfo) async { await perform { try await self.service?.restoreFullBackup(named: backup.name); self.message = "Przywrócono pełny backup: \(backup.name)" }; await loadFullBackups() }

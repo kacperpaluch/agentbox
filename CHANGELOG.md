@@ -6,6 +6,18 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-09-10
+
+### Dodano
+
+- **Przejmowanie zmian z projektu do biblioteki.** Skill poprawiony wprost w folderze projektu — tam, gdzie się pracuje, z otwartym klientem — był dotąd w ślepym zaułku: aplikacja widziała rozjazd, a jedyna oferowana akcja nadpisywała poprawkę wersją z biblioteki. `⋯ → Przejmij z projektu…` pokazuje teraz obie rzeczy naraz: skille, których biblioteka nie zna, i zarządzane skille zmienione w projekcie po ostatniej synchronizacji. Pokazywany jest wyłącznie przypadek jednoznaczny — jeśli kopia w bibliotece też się zmieniła, to zwykła nieaktualność projektu. Dwa projekty, które zmieniły ten sam skill inaczej, zatrzymują operację z nazwami obu, zamiast po cichu wybrać jedną wersję. Skill z Git jest wypisany, ale nieaktywny, bo `Aktualizuj` i tak zastąpiłby kopię biblioteczną zawartością repozytorium. W terminalu: `agentbox project adopt-changes <nazwa> [--yes]`.
+- **Różnica przed zapisem.** Podgląd synchronizacji pokazuje `Co się zmieni w pliku`: porównanie linia po linii tego, co leży na dysku, z tym, co Agentbox zapisze — zamiast samego licznika `+3 ~1 -0`. Niezmieniona część długiego pliku jest zwinięta, a plik o już właściwej treści mówi wprost, że nic nie zostanie zapisane. Pełna wynikowa treść jest o jedno kliknięcie dalej, tam gdzie była.
+- **„Gdzie tego używam".** Każdy skill w bibliotece pokazuje, do ilu projektów trafia — licząc te, które biorą go przez tag albo przez folder nadrzędny, i pomijając te, które go wykluczają. Potwierdzenia usunięcia skilla, serwera MCP, dokumentu i definicji pluginu powtarzają tę liczbę, więc `Usunąć skill?` nie jest już pytaniem zadanym w ciemno przy bibliotece obsługującej kilkadziesiąt projektów. W terminalu: `agentbox usage <skill>`.
+
+### Naprawiono
+
+- Podgląd synchronizacji ostrzegał, że zapis do `opencode.jsonc` usunie komentarze i formatowanie. Od 0.21.2 to nieprawda — podmieniany jest wyłącznie zarządzany klucz `mcp`.
+
 ## [0.22.0] - 2026-09-10
 
 ### Dodano

@@ -161,6 +161,55 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: folder.path), "folder projektu zostaje na dysku")
     }
 
+    // MARK: Adoption from a project
+
+    /// Both halves of "przejmij z projektu" — a skill the library never knew and a change made to
+    /// one it did — are one user decision, so they are one action with one message.
+    func testAdoptingNewSkillsAndChangesIsOneAction() async throws {
+        let model = try await makeModel()
+        await model.addLocal(try makeSkill("znany"))
+        let folder = try makeProjectFolder("app")
+        await model.addProject(Project(name: "app", path: folder.path), selection: AttachmentSelection(tools: [.claude], skillIDs: ["znany"]))
+        let project = try XCTUnwrap(model.projects.first)
+        await model.syncEverything(project)
+
+        // One managed skill improved in the project, one written there by hand.
+        try "---\nname: znany\ndescription: Demo\n---\npoprawka z projektu\n"
+            .write(to: folder.appending(path: ".claude/skills/znany/SKILL.md"), atomically: true, encoding: .utf8)
+        let handwritten = folder.appending(path: ".claude/skills/reczny")
+        try FileManager.default.createDirectory(at: handwritten, withIntermediateDirectories: true)
+        try "---\nname: reczny\ndescription: Demo\n---\n".write(to: handwritten.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+
+        let changes = try await model.driftedSkills(project)
+        XCTAssertEqual(changes.map(\.skillID), ["znany"])
+        let newOnes = try await model.adoptableSkills(project)
+        XCTAssertEqual(newOnes.map(\.suggestedID), ["reczny"])
+
+        await model.adoptFromProject(newSkills: newOnes, changes: changes)
+
+        XCTAssertEqual(model.skills.map(\.id).sorted(), ["reczny", "znany"])
+        let library = try await XCTUnwrap(model.service).skillMarkdown(skillID: "znany")
+        XCTAssertTrue(library.contains("poprawka z projektu"))
+        XCTAssertEqual(model.statuses[project.id]?.state, .synced, "projekt oddał zmianę, więc nie ma już rozjazdu")
+        XCTAssertEqual(model.operationLog.first?.kind, .success)
+    }
+
+    // MARK: Usage
+
+    func testUsageAnswersWhereALibraryItemLands() async throws {
+        let model = try await makeModel()
+        await model.addLocal(try makeSkill("wspolny"))
+        for name in ["one", "two"] {
+            let folder = try makeProjectFolder(name)
+            await model.addProject(Project(name: name, path: folder.path), selection: AttachmentSelection(tools: [.claude], skillIDs: ["wspolny"]))
+        }
+
+        let usage = await model.usage(ofSkill: "wspolny")
+
+        XCTAssertEqual(usage.projects, ["one", "two"])
+        XCTAssertEqual(usage.summary, "2 projekty")
+    }
+
     // MARK: Library watcher
 
     /// The app writes a recovery snapshot before every metadata change and a full backup once a

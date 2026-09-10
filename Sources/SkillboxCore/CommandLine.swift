@@ -10,8 +10,8 @@ public enum AgentboxCommand {
       agentbox add <folder|git-url> [--path subdir] [--branch main] [--id name]
       agentbox list | tag <skill> <tag...> | update <skill|--all>
       agentbox new <id> [--name x] [--description y] [--tags a,b] [--file plik|-]
-      agentbox delete <skill>
-      agentbox project add|set|list|status|adopt|unsync|remove ...
+      agentbox delete <skill> | usage <skill>
+      agentbox project add|set|list|status|adopt|adopt-changes|unsync|remove ...
       agentbox project root-add|root-adopt|roots|scan|adopt-new|ignore-new ...
       agentbox sync project <name> [--dry-run]
       agentbox sync all [--dry-run]
@@ -65,6 +65,10 @@ public enum AgentboxCommand {
         case "delete" where rest.count >= 1:
             try await service.deleteSkill(skillID: rest[0])
             return ["Usunięto skill \(rest[0])"]
+        case "usage" where !rest.isEmpty:
+            let report = try await service.usage(ofSkill: rest[0])
+            guard let summary = report.summary else { return ["Skill \(rest[0]) nie jest przypisany do niczego"] }
+            return ["Skill \(rest[0]) — używany przez: \(summary)"] + report.projects.map { "  \($0)" }
         case "project": return try await project(rest, service: service, args: args)
         case "sync": return try await sync(rest, service: service, args: args)
         case "refresh": return try await refresh(service: service)
@@ -106,6 +110,20 @@ public enum AgentboxCommand {
             }
             let adopted = try await service.adoptSkills(candidates)
             return ["Przejęto \(adopted.count): \(adopted.map(\.id).joined(separator: ", "))"]
+        // The other half of adoption: skills the library already manages, changed inside the
+        // project since it was last synchronized. Kept as its own verb because it overwrites the
+        // library copy, while `adopt` only ever adds something new to it.
+        case "adopt-changes" where rest.count >= 2:
+            let project = try await resolve(rest[1], service: service)
+            let drifted = try await service.driftedSkills(projectID: project.id)
+            guard !drifted.isEmpty else { return ["Żaden zarządzany skill nie zmienił się w \(project.name)"] }
+            guard args.contains("--yes") else {
+                return ["Zmienione w \(project.name): \(drifted.count)"]
+                    + drifted.map { "  \($0.skillID)\t\($0.tool.rawValue)\($0.isGitBacked ? "\t(z Git — zmień repozytorium źródłowe)" : "")" }
+                    + ["Dodaj --yes, aby zastąpić kopie w bibliotece wersjami z projektu."]
+            }
+            let adopted = try await service.adoptSkillChanges(drifted.filter { !$0.isGitBacked })
+            return ["Przejęto zmiany: \(adopted.map(\.id).joined(separator: ", "))"]
         case "unsync" where rest.count >= 2:
             let project = try await resolve(rest[1], service: service)
             let removed = try await service.unsyncProject(id: project.id)
@@ -199,7 +217,7 @@ public enum AgentboxCommand {
         return found.filter { $0.rootID == root.id }
     }
 
-    private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode] | set <nazwa> [--skills a,b] [--tags web] | list | status | adopt <nazwa> [--yes] | unsync <nazwa> | remove <nazwa> [--clean] | root-adopt <nazwa> <folder> [--skills a,b] [--tags x] [--keep-own projekt] | root-add <nazwa> <folder> [--tools t] [--skills a,b] [--tags x] [--folders alpha,beta] [--no-watch] | roots | scan [--root nazwa] | adopt-new [--root nazwa] [--yes] [--sync] | ignore-new [--root nazwa] | unignore <folder>"
+    private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode] | set <nazwa> [--skills a,b] [--tags web] | list | status | adopt <nazwa> [--yes] | adopt-changes <nazwa> [--yes] | unsync <nazwa> | remove <nazwa> [--clean] | root-adopt <nazwa> <folder> [--skills a,b] [--tags x] [--keep-own projekt] | root-add <nazwa> <folder> [--tools t] [--skills a,b] [--tags x] [--folders alpha,beta] [--no-watch] | roots | scan [--root nazwa] | adopt-new [--root nazwa] [--yes] [--sync] | ignore-new [--root nazwa] | unignore <folder>"
 
     private static func sync(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
         guard let mode = rest.first else { return [syncUsage] }

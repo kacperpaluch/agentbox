@@ -588,6 +588,17 @@ public actor SkillboxService {
 
     static func managedSkillIDs(at target: URL) -> Set<String> { Set(skillManifest(at: target).skills.keys) }
 
+    /// Records a new timestamp for one skill in a target's manifest, leaving every other entry
+    /// exactly as it was. Used after adopting a change back from a project, where only that one
+    /// skill's bookkeeping moved.
+    static func restampSkillManifest(_ skillID: String, at target: URL, to date: Date) throws {
+        var manifest = skillManifest(at: target)
+        guard manifest.skills[skillID] != nil else { return }
+        manifest.skills[skillID] = date
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(manifest).write(to: target.appending(path: ".skillbox.json"), options: .atomic)
+    }
+
     /// A directory that exists in the target but is not listed in the Agentbox manifest belongs
     /// to the user. Replacing it would destroy hand-written skills, so synchronization stops
     /// instead — the same rule that already protects unmanaged MCP entries.
@@ -719,7 +730,7 @@ public actor SkillboxService {
         return (cloneURL, subpath ?? (detectedPath.isEmpty ? nil : detectedPath), branch ?? parts[3])
     }
 
-    private func copyReplacing(from source: URL, to destination: URL) throws {
+    func copyReplacing(from source: URL, to destination: URL) throws {
         guard fm.fileExists(atPath: source.path) else { throw SkillboxError.invalidSkill(source.path) }
         let staging = destination.deletingLastPathComponent().appending(path: ".skillbox-stage-\(UUID().uuidString)")
         try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)

@@ -171,7 +171,7 @@ extension SkillboxService {
     /// anything disabled at the library level. Shared by `previewMCP` and `globalMCPServers`, which
     /// both need to know what is already fully managed for the project before working out what else
     /// applies to it.
-    private static func assignedServers(selection: AttachmentSelection, mcp: MCPConfiguration) -> [MCPServer] {
+    static func assignedServers(selection: AttachmentSelection, mcp: MCPConfiguration) -> [MCPServer] {
         let serverIDs = Set(selection.serverIDs)
         // Lowercased on both sides, so tags saved before normalization keep matching.
         let tags = Set(selection.serverTags.map { $0.lowercased() })
