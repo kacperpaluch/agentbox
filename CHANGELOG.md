@@ -6,6 +6,16 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-09-10
+
+### Dodano
+
+- **Pluginy Claude Code w CLI**: `agentbox plugin list | add | assign | remove`. Dotąd `sync` i `refresh` instalowały pluginy, ale zdefiniować je w bibliotece i wybrać dla projektu dało się wyłącznie w oknie aplikacji — skryptowana konfiguracja maszyny zatrzymywała się dokładnie w tym miejscu. `list` pokazuje przy każdej definicji, gdzie jest używana, licząc dziedziczenie z folderu nadrzędnego; `assign` odrzuca projekt, który dziedziczy ustawienia, tak samo jak `mcp assign`; `remove` mówi, kogo dotyczyła definicja, i zostawia w projektach to, co Claude Code już zainstalował.
+
+### Zmieniono
+
+- `docs/CLI.md` nadgania pięć wydań, w których nie było ruszane: doszły dokumenty i pluginy w opisie synchronizacji, wyjaśnienie licznika `~` w `project status`, jeden klon na repozytorium w `update --all`, polecenia `usage` i `project adopt-changes` oraz sekcja o tym, czego CLI nie ma i gdzie tego szukać w aplikacji.
+
 ## [0.23.0] - 2026-09-10
 
 ### Dodano

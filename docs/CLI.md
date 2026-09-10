@@ -200,6 +200,24 @@ agentbox docs delete standard
 
 Zsynchronizowany dokument ląduje jako `AGENTS.md` (pełna treść) i `CLAUDE.md` (wygenerowany import `@AGENTS.md`) w katalogu głównym projektu, niezależnie od tego, jakie narzędzia ma projekt zaznaczone.
 
+## Pluginy Claude Code
+
+```bash
+agentbox plugin list
+agentbox plugin add "Claude SEO" claude-seo@agricidaniel-claude-seo --marketplace AgriciDaniel/claude-seo
+agentbox plugin add "Tylko tu" narzedzie@vendor --scope local
+agentbox plugin assign sklep --plugins "Claude SEO,Miodkuj"
+agentbox plugin remove "Claude SEO"
+```
+
+`plugin list` wypisuje definicje z biblioteki: nazwę, identyfikator `plugin@marketplace`, źródło marketplace, zakres i to, gdzie definicja jest wybrana — z tym samym liczeniem co `agentbox usage`, więc widać dziedziczenie z folderu nadrzędnego.
+
+`plugin add` zapisuje definicję w bibliotece. Pierwszy argument to nazwa własna, którą potem podajesz w `assign`, drugi to identyfikator, którego użyje Claude Code. `--marketplace` wskazuje źródło (repozytorium GitHub albo URL) i jest opcjonalne dla pluginu z już dodanego marketplace'u. `--scope project` (domyślnie) zapisuje wybór w `.claude/settings.json`, czyli wspólnie z zespołem; `--scope local` — w `.claude/settings.local.json`, czyli tylko na tym Macu.
+
+`plugin assign` zastępuje wybór pluginów projektu, dokładnie jak `mcp assign` i `docs assign`; pusta lista czyści wybór. Projekt, który dziedziczy ustawienia z folderu nadrzędnego, jest odrzucany z wyjaśnieniem — wybór należy wtedy do folderu. Samo przypisanie niczego nie instaluje: robi to dopiero `agentbox sync project <nazwa>` albo `refresh`, i tylko dla pluginu, którego projekt jeszcze nie deklaruje.
+
+`plugin remove` usuwa definicję z biblioteki i z wyboru wszystkich projektów, podając przy tym, kogo dotyczyła. Pluginy zainstalowane wcześniej przez Claude Code zostają w projektach — Agentbox przestaje jedynie o nie prosić.
+
 ## Pełny backup lokalny
 
 `agentbox refresh` tworzy pełną, lokalną kopię biblioteki przed synchronizacją. Zawiera ona skille, projekty, konfigurację MCP oraz wszystkie zapisane wartości. Kopie nie są szyfrowane — chroń folder biblioteki jak plik z hasłami.
@@ -208,7 +226,7 @@ Zsynchronizowany dokument ląduje jako `AGENTS.md` (pełna treść) i `CLAUDE.md
 
 Kilka rzeczy jest wyłącznie w aplikacji, bo wymagają wyboru albo okna:
 
-- **pluginy Claude Code** — definicje w bibliotece i wybór dla projektu ustawia się w GUI; `sync` i `refresh` instalują to, co jest wybrane, ale CLI nie ma poleceń do zarządzania samymi definicjami;
+- **instalowanie i usuwanie pluginów poza biblioteką** — `Projekty → … → Pluginy Claude…` pokazuje, co Claude Code faktycznie ma w projekcie, i pozwala zainstalować albo usunąć pojedynczy plugin bez definicji w bibliotece;
 - **podgląd różnicy pliku** — `--dry-run` wypisuje, ile wpisów się zmieni; porównanie linia po linii pokazuje okno podglądu synchronizacji;
 - **pełne backupy i przywracanie** — `refresh` tworzy backup, ale wybór kopii do przywrócenia jest w `Kopie zapasowe`;
 - **obserwacja folderu biblioteki** — dotyczy okna aplikacji, nie procesu jednorazowego.

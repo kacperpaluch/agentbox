@@ -19,6 +19,7 @@ public enum AgentboxCommand {
       agentbox refresh
       agentbox mcp list|server|assign|preview|sync ...
       agentbox docs list|new|tag|delete|assign|preview|sync ...
+      agentbox plugin list|add|remove|assign ...
     """
 
     /// Runs one command and returns the lines it produced. Throwing means the command failed.
@@ -74,6 +75,7 @@ public enum AgentboxCommand {
         case "refresh": return try await refresh(service: service)
         case "mcp": return try await mcp(rest, service: service, args: args)
         case "docs": return try await docs(rest, service: service, args: args)
+        case "plugin", "plugins": return try await plugin(rest, service: service, args: args)
         default: return [help]
         }
     }
@@ -463,6 +465,69 @@ public enum AgentboxCommand {
     }
 
     private static let docsUsage = "Użycie: agentbox docs list | new <id> [--name x] [--tags a,b] [--file plik|-] | tag <id> <tag...> | delete <id> | assign <project> --docs a,b [--tags x,y] | preview <project> | sync <project>"
+
+    /// The library half of Claude Code plugins. Installing them is Claude Code's job and already
+    /// happens during `sync`/`refresh`; what was missing here is everything that decides *what* gets
+    /// installed — so a scripted `agentbox refresh` could apply a selection nobody could make
+    /// without opening the app.
+    private static func plugin(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
+        guard let action = rest.first else { return [pluginUsage] }
+        switch action {
+        case "list":
+            let definitions = try await service.libraryClaudePlugins()
+            guard !definitions.isEmpty else { return ["Biblioteka nie ma jeszcze definicji pluginów"] }
+            var lines: [String] = []
+            for definition in definitions {
+                let usage = try await service.usage(ofPlugin: definition.id)
+                lines.append("\(definition.name)\t\(definition.plugin)\t\(definition.marketplace.isEmpty ? "—" : definition.marketplace)\t\(definition.scope.rawValue)\t\(usage.summary ?? "nieprzypisany")")
+            }
+            return lines
+        case "add" where rest.count >= 3:
+            let scope = try pluginScope(option("--scope", in: args))
+            let definition = ClaudePluginDefinition(name: rest[1], marketplace: option("--marketplace", in: args) ?? "", plugin: rest[2], scope: scope)
+            try await service.addLibraryClaudePlugin(definition)
+            return ["Dodano plugin \(definition.name) (\(definition.plugin), \(scope.rawValue))"]
+        case "remove" where rest.count >= 2:
+            let definition = try await resolvePlugin(rest[1], service: service)
+            let usage = try await service.usage(ofPlugin: definition.id)
+            try await service.deleteLibraryClaudePlugin(id: definition.id)
+            // Claude Code owns what is already installed; Agentbox only stops asking for it.
+            return ["Usunięto definicję \(definition.name)"
+                + (usage.summary.map { " — była wybrana przez: \($0)" } ?? "")
+                + ". Pluginy zainstalowane wcześniej zostają w projektach."]
+        case "assign" where rest.count >= 2:
+            let project = try await resolve(rest[1], service: service)
+            let names = csv("--plugins", in: args)
+            var ids: [UUID] = []
+            for name in names { ids.append(try await resolvePlugin(name, service: service).id) }
+            try await service.setClaudePluginSelection(projectID: project.id, ids: ids)
+            return ids.isEmpty
+                ? ["Wyczyszczono wybór pluginów dla \(project.name)"]
+                : ["Przypisano pluginy do \(project.name): \(names.joined(separator: ", ")) — uruchom `agentbox sync project \(project.name)`, żeby je zainstalować"]
+        default: return [pluginUsage]
+        }
+    }
+
+    /// Plugins are addressed by their library name, like documents are by id — a UUID is not
+    /// something anyone types.
+    private static func resolvePlugin(_ name: String, service: SkillboxService) async throws -> ClaudePluginDefinition {
+        let definitions = try await service.libraryClaudePlugins()
+        if let match = definitions.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { return match }
+        guard let match = definitions.first(where: { $0.plugin == name }) else {
+            throw SkillboxError.skillNotFound("plugin \(name)")
+        }
+        return match
+    }
+
+    private static func pluginScope(_ value: String?) throws -> ClaudePluginScope {
+        guard let value else { return .project }
+        guard let scope = ClaudePluginScope(rawValue: value) else {
+            throw SkillboxError.invalidSkill("zakres pluginu to `project` albo `local`: \(value)")
+        }
+        return scope
+    }
+
+    private static let pluginUsage = "Użycie: agentbox plugin list | add <nazwa> <plugin@marketplace> [--marketplace źródło] [--scope project|local] | remove <nazwa> | assign <projekt> --plugins a,b"
 
     private static func resolve(_ name: String, service: SkillboxService) async throws -> Project {
         guard let project = try await service.listProjects().first(where: { $0.name == name }) else { throw SkillboxError.projectNotFound(name) }

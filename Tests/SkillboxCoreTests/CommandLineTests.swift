@@ -140,4 +140,51 @@ final class CommandLineTests: AgentboxTestCase {
         let skillsAfterDeletion = try await service.listSkills()
         XCTAssertTrue(skillsAfterDeletion.isEmpty)
     }
+
+    /// Plugins were the one thing `sync` and `refresh` installed but nothing outside the app could
+    /// choose. A scripted setup has to be able to define one and point a project at it.
+    func testPluginCommandsDefineChooseAndRemoveFromTheTerminal() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let folder = root.appending(path: "sklep")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await AgentboxCommand.run(["project", "add", "sklep", folder.path, "--tools", "claude"], service: service)
+
+        let empty = try await AgentboxCommand.run(["plugin", "list"], service: service)
+        XCTAssertEqual(empty, ["Biblioteka nie ma jeszcze definicji pluginów"])
+
+        _ = try await AgentboxCommand.run(["plugin", "add", "SEO", "claude-seo@vendor", "--marketplace", "vendor/claude-seo"], service: service)
+        let listed = try await AgentboxCommand.run(["plugin", "list"], service: service)
+        XCTAssertEqual(listed.count, 1)
+        XCTAssertTrue(listed[0].contains("claude-seo@vendor"), listed[0])
+        XCTAssertTrue(listed[0].contains("nieprzypisany"), "dopóki nikt go nie wybrał: \(listed[0])")
+
+        // Chosen by the library name, because a UUID is not something anyone types.
+        _ = try await AgentboxCommand.run(["plugin", "assign", "sklep", "--plugins", "SEO"], service: service)
+        let assigned = try await AgentboxCommand.run(["plugin", "list"], service: service)
+        XCTAssertTrue(assigned[0].contains("1 projekt"), assigned[0])
+        let projects = try await service.listProjects()
+        let selected = try await service.selectedClaudePluginIDs(projectID: try XCTUnwrap(projects.first).id)
+        XCTAssertEqual(selected.count, 1)
+
+        // The project's own preview is what synchronization acts on, so the choice has to reach it.
+        let preview = try await service.previewProjectSync(projectID: try XCTUnwrap(projects.first).id)
+        XCTAssertEqual(preview.missingPlugins.map(\.plugin), ["claude-seo@vendor"])
+
+        let removal = try await AgentboxCommand.run(["plugin", "remove", "SEO"], service: service)
+        XCTAssertTrue(removal[0].contains("1 projekt"), "usunięcie mówi, kogo dotyczy: \(removal[0])")
+        let afterRemoval = try await service.selectedClaudePluginIDs(projectID: try XCTUnwrap(projects.first).id)
+        XCTAssertTrue(afterRemoval.isEmpty, "definicja znika też z wyboru projektu")
+    }
+
+    func testPluginCommandRejectsAnUnknownScopeAndAnUnknownName() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+
+        await XCTAssertThrowsErrorAsync(try await AgentboxCommand.run(["plugin", "add", "SEO", "seo@vendor", "--scope", "globalny"], service: service))
+        await XCTAssertThrowsErrorAsync(try await AgentboxCommand.run(["plugin", "remove", "nie-ma-takiego"], service: service))
+        let lines = try await AgentboxCommand.run(["plugin"], service: service)
+        XCTAssertTrue(lines[0].hasPrefix("Użycie: agentbox plugin"), lines[0])
+    }
+
 }
