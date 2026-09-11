@@ -100,9 +100,9 @@ Ręcznie napisany katalog ze `SKILL.md`, który leży w projekcie i blokuje sync
 - checkboxy pozwalają masowo dodawać tagi,
 - lista obsługuje wyszukiwanie, filtrowanie po tagu i sortowanie,
 - projekt może wskazywać konkretne skille albo dynamiczne tagi,
-- `Sprawdź` wykrywa nowe rewizje Git bez automatycznej aktualizacji,
-- `Aktualizuj` pobiera nową wersję tylko wskazanego skilla,
-- po sprawdzeniu GUI pokazuje też przycisk `Aktualizuj <liczba>`, który pobiera wszystkie wykryte aktualizacje. Nie synchronizuje on automatycznie projektów.
+- `Sprawdź aktualizacje` porównuje zawartość skilli, a nie tylko rewizję całego repozytorium,
+- podgląd pozwala wybrać aktualizacje i obejrzeć zmiany wszystkich plików, również skryptów, zasobów binarnych, dowiązań i uprawnień; `.git` oraz `.DS_Store` są pomijane,
+- `Aktualizuj` i `Aktualizuj <liczba>` również otwierają podgląd. Dopiero `Przyjmij wybrane` zapisuje dokładnie obejrzane wersje, po utworzeniu pełnego backupu. Zmiana biblioteki od czasu podglądu zatrzymuje zapis. Projekty synchronizujesz osobno.
 
 ```bash
 swift run agentbox tag my-skill seo audit
@@ -112,15 +112,19 @@ swift run agentbox update --all
 
 `update --all` sprawdza i pobiera wszystkie dostępne aktualizacje skilli Git. Nie synchronizuje automatycznie folderów projektów; po aktualizacji użyj `agentbox sync project <nazwa>` albo `Synchronizuj wszystko` w GUI.
 
-W GUI `Narzędzia → Odśwież bibliotekę i zsynchronizuj projekty` odpowiada poleceniu `agentbox refresh`: aktualizuje skille, tworzy pełny backup lokalny, a następnie synchronizuje wszystkie projekty.
+W GUI `Narzędzia → Odśwież bibliotekę i zsynchronizuj projekty` pokazuje najpierw podgląd aktualizacji. Zatwierdzenie tworzy pełny backup **przed** zmianą skilli, przyjmuje wybrane wersje i synchronizuje projekty. Odznaczone aktualizacje można przyjąć później.
 
-Pełny workflow można wykonać jedną komendą: `agentbox refresh`. Aktualizuje ona skille, tworzy pełny backup lokalny i transakcyjnie synchronizuje wszystkie projekty.
+CLI `agentbox refresh` wykonuje ten workflow bez okna wyboru. `agentbox update --all --dry-run` lub `agentbox update <skill> --dry-run` wyświetla wcześniej różnice bez zapisu; osobne uruchomienie aktualizacji sprawdza źródła ponownie.
 
 ### Usuwanie
 
 `Usuń` w szczegółach skilla usuwa jego kopię z biblioteki i bezpośrednie przypisania do projektów. Nie modyfikuje źródłowego katalogu ani repozytorium. Wcześniej zsynchronizowana kopia znika z projektu podczas kolejnej synchronizacji.
 
 ## Projekty i synchronizacja
+
+Kliknięcie nazwy projektu albo `⋯ → Konfiguracja i pochodzenie…` pokazuje, co Agentbox wybrał i dlaczego: bezpośrednio, przez tag albo z folderu nadrzędnego. Widać wykluczone skille, wyłączone MCP, pliki do dodania lub usunięcia oraz lokalne zmiany skilli. Z tego miejsca otworzysz definicję, edytor źródła przypisań, różnice i przejmowanie zmian. W terminalu: `agentbox project explain <nazwa>`.
+
+Stan dotyczy konfiguracji Agentbox i plików, nie faktycznego załadowania narzędzi w sesji klienta AI. Globalny wybór skilli jest pokazany osobno, bez sprawdzania jego synchronizacji.
 
 Projekt wskazuje istniejący folder na dysku oraz obsługiwane narzędzia. Można mu przypisać pojedyncze skille, serwery MCP i dokument `AGENTS.md`/`CLAUDE.md` albo wybierać każdy typ dynamicznie według tagów.
 
@@ -206,6 +210,8 @@ Pliki konfiguracyjne i manifesty powstają tylko wtedy, gdy projekt ma co synchr
 swift run agentbox sync global --skills seo-audit,docx --tags seo --tools claude,opencode
 swift run agentbox sync all
 ```
+
+W `Ustawienia → Backup i odzyskiwanie → Automatyzacja` widać ostatnią udaną pełną kopię oraz błąd automatycznego backupu, jeśli wystąpił. Sukces i błąd trafiają do historii operacji z bieżącej sesji; błąd automatyzacji nie przerywa pracy toastem ani oknem.
 
 `Ustawienia → Backup i odzyskiwanie` pozwala przywrócić snapshot metadanych biblioteki albo pełny backup lokalny. Pliki w folderach projektów odtwarza się ponowną synchronizacją, a czyści przez `Usuń i posprzątaj pliki`. Przed przywróceniem Agentbox automatycznie zachowuje aktualny stan.
 

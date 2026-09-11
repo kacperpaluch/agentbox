@@ -4,7 +4,7 @@
 
 Wersja DMG zawiera aplikację oraz polecenie terminalowe. Po przeniesieniu Agentbox do folderu `Aplikacje` otwórz `Ustawienia → Wiersz poleceń (CLI)` i wybierz `Zainstaluj CLI`. Agentbox utworzy dowiązanie `/usr/local/bin/agentbox`; macOS może poprosić o hasło administratora. Symlink wskazuje plik wewnątrz aplikacji, dlatego aktualizacja Agentbox aktualizuje również CLI.
 
-Po instalacji otwórz nowe okno Terminala i wykonaj np. `agentbox project list`. Polecenie `agentbox update --all` sprawdza i pobiera wszystkie dostępne aktualizacje skilli Git do biblioteki. Nie kopiuje ich automatycznie do projektów — użyj potem `agentbox sync project <nazwa>` albo `Synchronizuj wszystko` w GUI. Komenda `agentbox refresh` łączy aktualizację skilli, pełny backup lokalny i transakcyjną synchronizację wszystkich projektów w jeden workflow. Pełna lista poleceń znajduje się w [instrukcji CLI](CLI.md).
+Po instalacji otwórz nowe okno Terminala i wykonaj np. `agentbox project list`. Polecenie `agentbox update --all` sprawdza i pobiera wszystkie dostępne aktualizacje skilli Git do biblioteki. Nie kopiuje ich automatycznie do projektów — użyj potem `agentbox sync project <nazwa>` albo `Synchronizuj wszystko` w GUI. Komenda `agentbox refresh` sprawdza aktualizacje, tworzy pełny backup przed ich przyjęciem i synchronizuje projekty transakcyjnie. Pełna lista poleceń znajduje się w [instrukcji CLI](CLI.md).
 
 ## Nawigacja
 
@@ -37,6 +37,16 @@ Numer zainstalowanej wersji i buildu jest stale widoczny na dole paska bocznego.
 
 Każdy obraz aktualizacji jest weryfikowany kluczem EdDSA osadzonym w aplikacji. Prywatny klucz wydawcy pozostaje w macOS Keychain i nie jest przechowywany w repozytorium. Ponieważ wydanie nie ma jeszcze podpisu Developer ID ani notaryzacji Apple, Gatekeeper może wymagać zatwierdzenia aplikacji przez `Otwórz` z menu kontekstowego. Wersję 0.3.0 należy zainstalować ręcznie; mechanizm automatyczny obsłuży następne wydania.
 
+## Podgląd aktualizacji skilli
+
+W `Biblioteka → Skille` kliknij `Sprawdź aktualizacje`. Agentbox pobiera każde repozytorium raz i porównuje zawartość poszczególnych skilli. Commit dotyczący innego skilla albo README repozytorium nie oznacza aktualizacji niezmienionych skilli.
+
+Zaznacz aktualizacje do przyjęcia i rozwiń zmienione pliki. Podgląd obejmuje dodania, usunięcia, tekstowe różnice, pliki binarne, uprawnienia skryptów i względne dowiązania wewnątrz skilla. `.git` oraz `.DS_Store` nie są zasobami skilla. Dowiązania wychodzące poza jego katalog i nieobsługiwane typy plików zatrzymują przygotowanie danego skilla z komunikatem.
+
+Przy każdym skillu widać projekty, które go używają. `Przyjmij wybrane` najpierw tworzy pełny backup, a potem zapisuje dokładnie obejrzane wersje. Nowy commit w repozytorium nie zmienia już otwartego podglądu. Jeśli w międzyczasie zmieniła się kopia biblioteczna albo definicja skilla, zapis zostanie zatrzymany — użyj `Sprawdź ponownie`. Wybrane aktualizacje są zapisywane razem; błąd zapisu przywraca wcześniejsze katalogi. Nieudane cofnięcie jest zgłaszane ze ścieżką zachowanej kopii.
+
+Zwykła aktualizacja nie synchronizuje projektów. `Narzędzia → Odśwież bibliotekę i zsynchronizuj projekty` otwiera ten sam podgląd, a po zatwierdzeniu również synchronizuje projekty. Pominięte aktualizacje zostają na później. W CLI podgląd daje `agentbox update --all --dry-run`; ponowne uruchomienie bez tej flagi sprawdza i przyjmuje bieżące wersje.
+
 ## Wartości MCP
 
 Podczas analizy JSON Agentbox proponuje typ każdej zmiennej środowiskowej i każdego nagłówka. Przed importem można zmienić propozycję.
@@ -61,6 +71,14 @@ Po imporcie `Biblioteka → MCP → Szczegóły → JSON` daje pełną konfigura
 Menu przy serwerze ma także `Duplikuj…`. Wpisz własną nową nazwę techniczną, a Agentbox od razu utworzy niezależną kopię 1:1 transportu, URL-a, argumentów, zmiennych, nagłówków, wartości lokalnych i tagów. Kopia nie przejmuje żadnych przypisań do projektów.
 
 ## Podgląd i synchronizacja
+
+### Co trafia do projektu i dlaczego
+
+Kliknij nazwę projektu albo wybierz `⋯ → Konfiguracja i pochodzenie…`. Lista pokazuje skille, MCP, dokumenty i pluginy wybrane przez Agentbox, źródło przypisania (projekt lub folder nadrzędny), pasujące tagi oraz stan plików. Wykluczone skille i wyłączone serwery są widoczne z powodem pominięcia. Widać również elementy, które poprzedni manifest wskazuje do usunięcia. Konflikt nie ukrywa listy przypisań — powód blokady jest pokazany nad nią.
+
+`Definicja…` otwiera wpis biblioteki. `Edytuj źródło przypisań…` prowadzi do projektu albo właściwego folderu nadrzędnego; zmiana folderu dotyczy wszystkich dziedziczących projektów. Skille mają rozwijane różnice plików. `Przejmij z projektu…` jest dostępne przy wykrytych lokalnych zmianach, a `Podgląd synchronizacji…` pokazuje wspólny plan, także różnice MCP i dokumentów.
+
+Stan MCP opisuje wspólny plik konfiguracyjny — zmiana tego pliku nie oznacza, że zmienił się każdy serwer z osobna. Widok nie sprawdza działania serwerów ani zawartości sesji klienta AI. Globalny wybór skilli Agentbox jest pokazany osobno, bez sprawdzania jego synchronizacji. Odpowiednik tekstowy to `agentbox project explain <nazwa>`.
 
 ### Stan projektów
 
@@ -157,7 +175,7 @@ Projekt może wciągać skille tagiem i jednocześnie pomijać wybrane pozycje. 
 
 ### Usuwanie projektu i sprzątanie plików
 
-Usunięcie projektu daje dwie możliwości. `Usuń tylko z Agentbox` zostawia folder projektu nietknięty. `Usuń i posprzątaj pliki w projekcie` dodatkowo kasuje katalogi skilli, wpisy MCP i dokument `AGENTS.md`/`CLAUDE.md` wymienione w manifestach Agentbox — wyłącznie je. Plik konfiguracyjny, który w całości pochodził z Agentbox, znika razem z wpisami; ręcznie dodane skille, serwery MCP i pliki dokumentów zostają. Przed sprzątaniem powstaje backup, który można cofnąć w `Ustawienia → Backup i odzyskiwanie`.
+Usunięcie projektu daje dwie możliwości. `Usuń tylko z Agentbox` zostawia folder projektu nietknięty. `Usuń i posprzątaj pliki w projekcie` dodatkowo kasuje katalogi skilli, wpisy MCP i dokument `AGENTS.md`/`CLAUDE.md` wymienione w manifestach Agentbox — wyłącznie je. Plik konfiguracyjny, który w całości pochodził z Agentbox, znika razem z wpisami; ręcznie dodane skille, serwery MCP i pliki dokumentów zostają. Przed sprzątaniem powstaje tymczasowa kopia do cofnięcia operacji w razie błędu. Po sukcesie jest usuwana; nie trafia na listę odzyskiwania. Aby odtworzyć pliki z biblioteki, dodaj projekt ponownie, wybierz jego konfigurację i zsynchronizuj. Ręcznych zmian w usuniętych kopiach projektu nie odtwarza ponowna synchronizacja.
 
 Pliki i manifesty powstają tylko wtedy, gdy projekt ma co synchronizować — projekt bez wybranych skilli, serwerów MCP i dokumentu pozostaje nietknięty, a odznaczenie narzędzia sprząta jego pliki skilli/MCP przy kolejnej synchronizacji.
 
@@ -275,6 +293,8 @@ Projekt, w którym nic się nie zmieniło, jest pomijany — nic nie jest zapisy
 Ta część `Ustawienia → Backup i odzyskiwanie` dotyczy wyłącznie biblioteki: snapshotów metadanych i pełnego backupu lokalnego.
 
 ### Pełny backup lokalny
+
+Sekcja `Automatyzacja` pokazuje ostatnią udaną pełną kopię. Błąd automatycznego backupu pozostaje widoczny w tej sekcji i historii operacji z bieżącej sesji; nie wyświetla toastu ani okna. Kolejny udany automatyczny backup usuwa ostrzeżenie z sekcji, ale zachowuje wpis błędu w historii. Przy częstym przełączaniu okien kontrola jest ograniczona do jednej próby na pięć minut.
 
 Pełny backup lokalny chroni projekty i wszystkie wartości MCP. Powstaje automatycznie raz dziennie, gdy automatyzacja w `Ustawienia → Backup i odzyskiwanie → Automatyzacja` jest włączona; przycisk `Utwórz teraz` robi to samo na żądanie. Tworzy czytelną kopię w `<biblioteka>/backups/full/<data>/`. Zawiera `catalog.json`, `selections.json`, `projects.local.json`, `mcp.json`, `docs.json`, metadane `backup.json` oraz cały katalog `skills/`. Hasła i tokeny są widoczne lokalnie w `mcp.json`.
 

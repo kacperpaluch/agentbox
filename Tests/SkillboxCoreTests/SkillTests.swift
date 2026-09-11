@@ -141,7 +141,8 @@ final class SkillTests: AgentboxTestCase {
 
         let result = try await service.updateSkills(ids: ["keeper", "gone"])
 
-        XCTAssertEqual(result.updated.map(\.id), ["keeper"])
+        XCTAssertTrue(result.updated.isEmpty)
+        XCTAssertEqual(result.unchanged, ["keeper"])
         XCTAssertEqual(result.failed.map(\.id), ["gone"])
     }
 

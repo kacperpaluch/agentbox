@@ -47,7 +47,7 @@ struct ClaudePluginLibraryPane: View {
 /// One form for both adding and correcting. Editing keeps the definition's identity, so every
 /// project that already selected this plugin follows the correction instead of quietly keeping the
 /// old identifier.
-private struct ClaudePluginEditor: View {
+struct ClaudePluginEditor: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var model: AppModel
     let definition: ClaudePluginDefinition?

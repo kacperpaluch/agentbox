@@ -486,7 +486,8 @@ public struct GitImportResult: Sendable {
 public struct SkillUpdateResult: Sendable {
     public var updated: [Skill]
     public var failed: [SkippedSkill]
-    public init(updated: [Skill], failed: [SkippedSkill] = []) { self.updated = updated; self.failed = failed }
+    public var unchanged: [String]
+    public init(updated: [Skill], failed: [SkippedSkill] = [], unchanged: [String] = []) { self.updated = updated; self.failed = failed; self.unchanged = unchanged }
 }
 
 public struct ProjectSyncOutcome: Identifiable, Sendable {

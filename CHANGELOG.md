@@ -6,6 +6,24 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-09-11
+
+Wydanie skupione na wyjaśnianiu i kontroli: projekt tłumaczy pochodzenie swojej konfiguracji, a aktualizacje skilli pokazują faktyczne zmiany przed zapisem.
+
+### Dodano
+
+- Szczegóły konfiguracji projektu z pochodzeniem przypisań, tagami, wykluczeniami, stanem plików, różnicami skilli oraz przejściem do definicji, ustawień źródłowych i przejmowania zmian. W CLI: `project explain <nazwa>`.
+- Podgląd aktualizacji skilli z wyborem wersji do przyjęcia i zmianami całych katalogów, w tym zasobów binarnych, dowiązań i uprawnień. Zatwierdzenie zapisuje dokładnie obejrzane pliki; zmieniona od podglądu biblioteka blokuje zapis. CLI udostępnia `update <skill|--all> --dry-run`.
+
+### Zmieniono
+
+- Aktualizacje porównują zawartość skilla zamiast oznaczać wszystkie skille z repozytorium po każdym commicie. Pełny backup powstaje przed aktualizacją, a błąd zapisu cofa wszystkie wybrane katalogi. GUI `Odśwież bibliotekę i zsynchronizuj projekty` wymaga zatwierdzenia podglądu.
+- Automatyczny backup zapisuje sukcesy i błędy w historii operacji; ustawienia pokazują ostatnią udaną kopię oraz błąd automatyzacji bez przerywania pracy oknem ani toastem.
+
+### Naprawiono
+
+- Potwierdzenie usuwania projektu i instrukcja nie obiecują już przywrócenia tymczasowej kopii z listy odzyskiwania. Wyjaśniają jej rolę przy błędzie oraz odtwarzanie plików przez ponowną konfigurację i synchronizację.
+
 ## [0.25.0] - 2026-09-10
 
 Wydanie po trzech rundach zewnętrznego przeglądu kodu. Każdy punkt miał reprodukcję przed poprawką i ma test regresyjny po niej.

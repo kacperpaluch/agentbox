@@ -275,30 +275,11 @@ extension SkillboxService {
         return content.isEmpty ? existing == nil : existing == content
     }
 
-    /// Recursive byte comparison of two skill directories. `.DS_Store` files are ignored: Finder
-    /// drops them at will, and they must not turn an adopted skill back into a conflict.
+    /// The same resource comparison as update previews: bytes, directories, links and permissions.
+    /// A chmod-only update must reach the project too, rather than being skipped as identical text.
     static func directoryMatches(_ source: URL, _ copy: URL) -> Bool {
-        let fm = FileManager.default
-        func files(_ root: URL) -> [String: URL] {
-            guard let enumerator = fm.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey]) else { return [:] }
-            var result: [String: URL] = [:]
-            for case let item as URL in enumerator {
-                guard item.lastPathComponent != ".DS_Store" else { continue }
-                guard (try? item.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { continue }
-                let path = item.standardizedFileURL.path, base = root.standardizedFileURL.path
-                guard path.hasPrefix(base + "/") else { continue }
-                result[String(path.dropFirst(base.count + 1))] = item
-            }
-            return result
-        }
-        guard fm.fileExists(atPath: source.path), fm.fileExists(atPath: copy.path) else { return false }
-        let left = files(source), right = files(copy)
-        guard Set(left.keys) == Set(right.keys) else { return false }
-        for (relative, url) in left {
-            guard let other = right[relative],
-                  let a = try? Data(contentsOf: url), let b = try? Data(contentsOf: other), a == b else { return false }
-        }
-        return true
+        do { return try SkillTree.read(source) == SkillTree.read(copy) }
+        catch { return false }
     }
 
     @discardableResult

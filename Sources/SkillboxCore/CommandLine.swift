@@ -8,10 +8,10 @@ public enum AgentboxCommand {
     public static let help = """
     Agentbox — skille i MCP dla Claude, Codex i OpenCode
       agentbox add <folder|git-url> [--path subdir] [--branch main] [--id name]
-      agentbox list | tag <skill> <tag...> | update <skill|--all>
+      agentbox list | tag <skill> <tag...> | update <skill|--all> [--dry-run]
       agentbox new <id> [--name x] [--description y] [--tags a,b] [--file plik|-]
       agentbox delete <skill> | usage <skill>
-      agentbox project add|set|list|status|adopt|adopt-changes|unsync|remove ...
+      agentbox project add|set|list|status|explain|adopt|adopt-changes|unsync|remove ...
       agentbox project root-add|root-adopt|roots|scan|adopt-new|ignore-new ...
       agentbox sync project <name> [--dry-run]
       agentbox sync all [--dry-run]
@@ -57,12 +57,11 @@ public enum AgentboxCommand {
             try await service.setTags(skillID: rest[0], tags: Array(rest.dropFirst()))
             return ["Zapisano tagi"]
         case "update":
-            guard let target = rest.first else { return ["Użycie: agentbox update <skill|--all>"] }
-            guard target == "--all" else { _ = try await service.update(skillID: target); return ["Zaktualizowano \(target)"] }
-            let ids = try await service.checkUpdates().sorted()
-            guard !ids.isEmpty else { return ["Wszystkie skille są aktualne"] }
-            let result = try await service.updateSkills(ids: ids)
-            return ["Dostępne aktualizacje: \(ids.count)"] + updateLines(result)
+            guard let target = rest.first else { return ["Użycie: agentbox update <skill|--all> [--dry-run]"] }
+            let plan = try await service.previewSkillUpdates(ids: target == "--all" ? nil : [target])
+            if args.contains("--dry-run") { return updatePreviewLines(plan) }
+            let updated = try await service.applySkillUpdates(plan.updates)
+            return updateLines(SkillUpdateResult(updated: updated, failed: plan.failed, unchanged: plan.unchanged))
         case "delete" where rest.count >= 1:
             try await service.deleteSkill(skillID: rest[0])
             return ["Usunięto skill \(rest[0])"]
@@ -85,6 +84,12 @@ public enum AgentboxCommand {
         switch action {
         case "list":
             return try await service.listProjects().map { "\($0.name)\t\($0.path)\t\($0.tools.map(\.rawValue).joined(separator: ","))" }
+        case "explain" where rest.count >= 2:
+            guard let project = try await service.listProjects().first(where: { $0.name == rest[1] }) else { throw SkillboxError.projectNotFound(rest[1]) }
+            let report = try await service.projectConfiguration(projectID: project.id)
+            return ["Konfiguracja Agentbox: \(project.name)"] + report.problems.map { "✗ \($0)" } + report.items.flatMap { item in
+                ["\(item.kind): \(item.name) — \(item.state)", "  \(item.reason)"] + item.paths.map { "  \($0)" }
+            } + report.globalSkills.map { "Globalny wybór Agentbox (bez sprawdzania stanu): \($0)" }
         case "status":
             let projects = try await service.listProjects()
             let names = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0.name) })
@@ -219,7 +224,7 @@ public enum AgentboxCommand {
         return found.filter { $0.rootID == root.id }
     }
 
-    private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode] | set <nazwa> [--skills a,b] [--tags web] | list | status | adopt <nazwa> [--yes] | adopt-changes <nazwa> [--yes] | unsync <nazwa> | remove <nazwa> [--clean] | root-adopt <nazwa> <folder> [--skills a,b] [--tags x] [--keep-own projekt] | root-add <nazwa> <folder> [--tools t] [--skills a,b] [--tags x] [--folders alpha,beta] [--no-watch] | roots | scan [--root nazwa] | adopt-new [--root nazwa] [--yes] [--sync] | ignore-new [--root nazwa] | unignore <folder>"
+    private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode] | set <nazwa> [--skills a,b] [--tags web] | list | status | explain <nazwa> | adopt <nazwa> [--yes] | adopt-changes <nazwa> [--yes] | unsync <nazwa> | remove <nazwa> [--clean] | root-adopt <nazwa> <folder> [--skills a,b] [--tags x] [--keep-own projekt] | root-add <nazwa> <folder> [--tools t] [--skills a,b] [--tags x] [--folders alpha,beta] [--no-watch] | roots | scan [--root nazwa] | adopt-new [--root nazwa] [--yes] [--sync] | ignore-new [--root nazwa] | unignore <folder>"
 
     private static func sync(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
         guard let mode = rest.first else { return [syncUsage] }
@@ -257,18 +262,42 @@ public enum AgentboxCommand {
     /// One line per skill, so a repository that could not be reached names its skills instead of
     /// disappearing into a count.
     private static func updateLines(_ result: SkillUpdateResult) -> [String] {
-        result.updated.map { "Zaktualizowano \($0.id)" } + result.failed.map { "✗ \($0.id) — \($0.reason)" }
+        result.updated.map { "Zaktualizowano \($0.id)" } + result.unchanged.map { "Bez zmian: \($0)" } + result.failed.map { "✗ \($0.id) — \($0.reason)" }
+    }
+
+    private static func updatePreviewLines(_ plan: SkillUpdatePlan) -> [String] {
+        var lines = ["Podgląd aktualizacji — nic nie zapisano. Treść plików może zawierać prywatne dane."]
+        for update in plan.updates {
+            lines.append("\(update.skill.name) → \(update.revision ?? "wersja lokalna")")
+            lines.append("Projekty: \(update.usage.projects.joined(separator: ", "))")
+            for change in update.changes {
+                lines.append("  \(change.kind): \(change.path) \(change.note)")
+                if change.oldText != nil || change.newText != nil {
+                    lines += TextDiff.lines(old: change.oldText ?? "", new: change.newText ?? "").map { line in
+                        (line.kind == .added ? "+ " : line.kind == .removed ? "- " : "  ") + line.text
+                    }
+                }
+            }
+        }
+        return lines + plan.unchanged.map { "Bez zmian: \($0)" } + plan.failed.map { "✗ \($0.id): \($0.reason)" }
     }
 
     private static let syncUsage = "Użycie: agentbox sync project <nazwa> | global [--skills a,b] [--tags x] [--tools claude,codex] | all [--dry-run]"
 
     private static func refresh(service: SkillboxService) async throws -> [String] {
         var lines = ["1/3 Sprawdzanie aktualizacji skilli…"]
-        let updates = try await service.checkUpdates().sorted()
-        if updates.isEmpty { lines.append("Wszystkie skille są aktualne") }
-        else { lines += updateLines(try await service.updateSkills(ids: updates)) }
-        lines.append("2/3 Tworzenie pełnego backupu lokalnego…")
-        let backupName = try await service.createFullBackup(applicationVersion: "CLI").name
+        let plan = try await service.previewSkillUpdates()
+        if let failure = plan.failed.first { throw SkillboxError.commandFailed("\(failure.id): \(failure.reason)") }
+        lines.append("2/3 Pełny backup przed aktualizacją i przyjęcie sprawdzonych wersji…")
+        let updated = try await service.applySkillUpdates(plan.updates)
+        let updates = updated.map(\.id)
+        let backupName: String
+        if updated.isEmpty { backupName = try await service.createFullBackup(applicationVersion: "CLI").name }
+        else {
+            guard let backup = try await service.fullBackups().first else { throw SkillboxError.commandFailed("Brak pełnego backupu po aktualizacji") }
+            backupName = backup.name
+        }
+        lines += updateLines(SkillUpdateResult(updated: updated, unchanged: plan.unchanged))
         lines.append("Utworzono \(backupName)")
         lines.append("3/3 Synchronizacja projektów…")
         let outcomes = try await service.syncAllProjectsTransactions()

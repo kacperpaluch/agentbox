@@ -101,6 +101,7 @@ struct ContentView: View {
                 await model.addProject(project, selection: selection)
             }
         }
+        .sheet(item: $model.updateReview) { plan in SkillUpdatesView(model: model, plan: plan, synchronizing: model.reviewIncludesSync).id(plan.id) }
         .sheet(isPresented: $showHistory) { OperationHistoryView(entries: model.operationLog) }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in Task { await model.scanRootsOnActivation() } }
         .toolbar {

@@ -8,6 +8,7 @@ struct ProjectsView: View {
     @Binding var showProject: Bool
     @State private var showBatch = false
     @State private var showAllSync = false
+    @State private var configurationProject: Project?
     @State private var editing: Project?
     @State private var previewProject: Project?
     @State private var deleting: Project?
@@ -79,13 +80,14 @@ struct ProjectsView: View {
                 initialSelection: model.selection(for: .project(project.id), resolvingInheritance: true)
             ) { updated, selection in await model.updateProject(updated, selection: selection) }
         }
+        .sheet(item: $configurationProject) { project in ProjectConfigurationView(model: model, project: project) }
         .sheet(item: $previewProject) { project in MCPPreviewView(model: model, project: project) }
         .sheet(isPresented: $showAllSync) { AllProjectsSyncPreviewView(model: model) }
         .confirmationDialog("Usunąć projekt \(deleting?.name ?? "") z Agentbox?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             Button("Usuń tylko z Agentbox", role: .destructive) { if let deleting { Task { await model.deleteProject(deleting, removingFiles: false) } }; deleting = nil }
             Button("Usuń i posprzątaj pliki w projekcie", role: .destructive) { if let deleting { Task { await model.deleteProject(deleting, removingFiles: true) } }; deleting = nil }
             Button("Anuluj", role: .cancel) { deleting = nil }
-        } message: { Text("Sprzątanie usuwa z folderu projektu wyłącznie katalogi skilli i wpisy MCP wymienione w manifestach Agentbox. Przed zmianą powstaje backup, który można cofnąć w sekcji Odzyskiwanie.") }
+        } message: { Text("Sprzątanie usuwa wyłącznie skille, wpisy MCP i dokumenty zarządzane przez Agentbox. Kopia na czas operacji służy do cofnięcia zmian w razie błędu; po udanej operacji jest usuwana i nie pojawia się w odzyskiwaniu. Pliki można odtworzyć z biblioteki po ponownym dodaniu i skonfigurowaniu projektu oraz synchronizacji.") }
         .sheet(item: $adopting) { project in AdoptSkillsView(model: model, project: project) }
         .sheet(item: $managingPlugins) { project in ClaudePluginsView(model: model, project: project) }
         .confirmationDialog("Usunąć wspólne ustawienia folderu \(deletingRoot?.name ?? "")?", isPresented: Binding(get: { deletingRoot != nil }, set: { if !$0 { deletingRoot = nil } })) {
@@ -129,7 +131,7 @@ struct ProjectsView: View {
                         // it here means a change to the folder's settings does not quietly skip this
                         // project without anyone noticing on the list.
                         let ownSettings = group.root != nil && !model.inheritsRoot(project)
-                        ProjectRow(project: project, status: model.statuses[project.id], inheritsRoot: model.inheritsRoot(project), ownSettingsInRoot: ownSettings, rootName: group.root?.name, editing: $editing, previewProject: $previewProject, deleting: $deleting, adopting: $adopting, managingPlugins: $managingPlugins)
+                        ProjectRow(project: project, status: model.statuses[project.id], inheritsRoot: model.inheritsRoot(project), ownSettingsInRoot: ownSettings, rootName: group.root?.name, configurationProject: $configurationProject, editing: $editing, previewProject: $previewProject, deleting: $deleting, adopting: $adopting, managingPlugins: $managingPlugins)
                     }
                 } label: {
                     HStack {
@@ -264,6 +266,7 @@ private struct ProjectRow: View {
     /// own settings — so a change to the folder silently stops reaching it.
     var ownSettingsInRoot: Bool = false
     var rootName: String?
+    @Binding var configurationProject: Project?
     @Binding var editing: Project?
     @Binding var previewProject: Project?
     @Binding var deleting: Project?
@@ -273,7 +276,7 @@ private struct ProjectRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: Space.section) {
             VStack(alignment: .leading, spacing: Space.tight) {
-                Text(project.name).rowTitle()
+                Button { configurationProject = project } label: { Text(project.name).rowTitle() }.buttonStyle(.plain).help("Co trafia do projektu i dlaczego")
                 Text(project.path).rowMetadata().lineLimit(1).help(project.path)
             }
             .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
@@ -296,6 +299,7 @@ private struct ProjectRow: View {
             HStack(spacing: Space.tight) {
                 Button("Synchronizuj") { previewProject = project }.buttonStyle(.borderedProminent).controlSize(.small)
                 RowMenu {
+                    Button("Konfiguracja i pochodzenie…") { configurationProject = project }
                     Button("Edytuj…") { editing = project }
                     Button("Przejmij z projektu…") { adopting = project }
                     Button("Pluginy Claude…") { managingPlugins = project }

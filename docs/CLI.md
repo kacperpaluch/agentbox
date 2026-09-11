@@ -32,7 +32,11 @@ agentbox usage nazwa-skilla
 
 `add` kopiuje lokalny skill albo importuje wszystkie znalezione `SKILL.md` z Git. `tag` zastępuje listę tagów wskazanego skilla. `update` działa dla skilli pochodzących z Git. `delete` usuwa skill z biblioteki i jego bezpośrednie przypisania do projektów — tak samo jak `Usuń` w szczegółach skilla; nie rusza katalogu źródłowego ani repozytorium.
 
-`agentbox update --all` najpierw sprawdza zdalne rewizje wszystkich skilli Git, a następnie pobiera wyłącznie dostępne aktualizacje. Skille lokalne są pomijane. Każde repozytorium jest klonowane raz, niezależnie od tego, ile skilli z niego pochodzi, a cała aktualizacja to jeden zapis biblioteki. Repozytorium, do którego nie da się dotrzeć, przerywa wyłącznie swoje skille — pozostałe i tak dostają nowe rewizje, a nieudane są wypisane z powodem (`✗ id — powód`). Aktualizacja biblioteki nie zmienia automatycznie plików projektów — po niej uruchom `agentbox sync project <nazwa>` dla projektów, które mają otrzymać nowe wersje.
+`agentbox update --all` pobiera repozytoria skilli Git (po jednym klonie na repozytorium i branch), porównuje właściwe katalogi i aktualizuje tylko te, których zawartość się zmieniła. Lokalne skille można odświeżyć przez `agentbox update <skill>`. Przed przyjęciem zmian powstaje pełny backup. Błąd pobrania jest wypisany przy danym skillu; poprawnie przygotowane aktualizacje są zapisywane razem, z rollbackiem katalogów przy nieudanym zapisie. Aktualizacja nie zmienia projektów.
+
+`agentbox update --all --dry-run` oraz `agentbox update <skill> --dry-run` wypisują zmienione pliki, różnice tekstowe, zmiany uprawnień i informacje o zasobach binarnych. Nic nie zapisują. Podgląd może zawierać prywatną treść plików. Uruchomienie aktualizacji osobnym poleceniem sprawdza źródła ponownie — do zatwierdzania dokładnie obejrzanej wersji w jednym przebiegu służy okno aktualizacji w GUI.
+
+`agentbox project explain <nazwa>` wypisuje wynik wyboru Agentbox, pochodzenie przypisań, wykluczenia, stany i ścieżki docelowe. Obejmuje też projekty zablokowane przez konflikt: problem nie ukrywa przypisań.
 
 `usage` odpowiada, gdzie skill faktycznie trafia: wypisuje liczbę projektów, foldery nadrzędne i ten Mac, a pod spodem nazwy projektów. Liczone są także projekty, które biorą skill przez tag albo przez folder nadrzędny, i pomijane te, które go wykluczają — czyli dokładnie to, co zobaczy synchronizacja. Warto uruchomić przed `delete`.
 
@@ -113,7 +117,7 @@ Synchronizacja zatrzymuje się, jeśli w katalogu docelowym istnieje katalog ski
 agentbox refresh
 ```
 
-`refresh` wykonuje kolejno: sprawdzenie i pobranie aktualizacji skilli Git, pełny backup lokalny oraz transakcyjną synchronizację skilli, MCP, dokumentów i pluginów we wszystkich projektach. Repozytorium, do którego nie da się dotrzeć, przerywa tylko swoje skille i jest wypisane z powodem — reszta workflow idzie dalej. Błąd synchronizacji zatrzymuje serię, a projekt, który go zgłosił, korzysta z automatycznego rollbacku. Projekty zakończone wcześniej pozostają zsynchronizowane.
+`refresh` wykonuje kolejno: przygotowanie aktualizacji skilli Git, pełny backup **przed** przyjęciem sprawdzonych wersji oraz transakcyjną synchronizację skilli, MCP, dokumentów i pluginów we wszystkich projektach. Nieudane sprawdzenie repozytorium zatrzymuje ten pełny workflow przed aktualizacją. Błąd synchronizacji zatrzymuje serię; projekt, który go zgłosił, korzysta z rollbacku, a projekty zakończone wcześniej pozostają zsynchronizowane.
 
 Przebieg kończy blok `PODSUMOWANIE` z bilansem całości:
 
@@ -220,7 +224,7 @@ agentbox plugin remove "Claude SEO"
 
 ## Pełny backup lokalny
 
-`agentbox refresh` tworzy pełną, lokalną kopię biblioteki przed synchronizacją. Zawiera ona skille, projekty, konfigurację MCP oraz wszystkie zapisane wartości. Kopie nie są szyfrowane — chroń folder biblioteki jak plik z hasłami.
+`agentbox refresh` tworzy pełną, lokalną kopię biblioteki przed aktualizacją skilli i synchronizacją. Zawiera ona skille, projekty, konfigurację MCP oraz wszystkie zapisane wartości. Kopie nie są szyfrowane — chroń folder biblioteki jak plik z hasłami.
 
 ## Czego CLI nie ma
 

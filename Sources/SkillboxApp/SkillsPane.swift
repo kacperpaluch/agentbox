@@ -180,6 +180,7 @@ struct SkillRow: View {
 
 struct SkillDetail: View {
     @ObservedObject var model: AppModel; let skill: Skill; @State private var tags = ""; @State private var confirmDelete = false
+    var showsUpdates = true
     @State private var usage: UsageReport?
     /// The dialog names what the deletion will actually reach, instead of leaving the user to guess
     /// how far a library item spread.
@@ -217,7 +218,7 @@ struct SkillDetail: View {
                     Text(skill.source.location).rowMetadata().lineLimit(1)
                 }
                 Spacer()
-                if model.updateAvailable.contains(skill.id) {
+                if showsUpdates && model.updateAvailable.contains(skill.id) {
                     Button("Aktualizuj") { Task { await model.update(skill.id) } }.buttonStyle(.borderedProminent).tint(.orange)
                 } else if model.hasCheckedUpdates && skill.source.kind == .git {
                     Label("Aktualny", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)

@@ -18,6 +18,9 @@ import SkillboxCore
     private var progressHandler: SyncProgressHandler { { value in await MainActor.run { self.progress = value } } }
     @Published var updateAvailable = Set<String>()
     @Published var hasCheckedUpdates = false
+    @Published var updateReview: SkillUpdatePlan?
+    @Published var reviewIncludesSync = false
+    @Published var automaticBackupError: String?
     @Published var rootPath: String
     @Published var mcp = MCPConfiguration()
     @Published var docs = DocsConfiguration()
@@ -54,15 +57,16 @@ import SkillboxCore
     var service: SkillboxService?
     /// `root` is only passed by tests and previews, which must never touch the real library. The
     /// app itself takes the folder the user chose, so the argument stays at its default.
-    init(root: URL? = nil) {
+    init(root: URL? = nil, startsAutomatically: Bool = true) {
         let saved = root?.path ?? UserDefaults.standard.string(forKey: "SkillboxLibraryRoot")
         let defaultPath = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support/Skillbox").path
         let shared = root == nil ? AgentboxRootPreference.load()?.path : nil
         rootPath = saved ?? shared ?? defaultPath
         do { service = try SkillboxService(root: URL(fileURLWithPath: rootPath)) }
         catch { serviceError = "Nie można otworzyć biblioteki w \(rootPath): \(error.localizedDescription)" }
-        startWatchingLibrary()
-        Task { await reload(); await createFullBackupIfDue() }
+        // Off in tests: a live FSEvents stream on the temporary library answers the test's own
+        // writes, and its reload lands mid-assertion. `libraryChangedOnDisk` is tested directly.
+        if startsAutomatically { startWatchingLibrary(); Task { await reload(); await createFullBackupIfDue() } }
     }
 
     private func startWatchingLibrary() {
@@ -115,18 +119,22 @@ import SkillboxCore
     /// mechanism protecting projects and secrets, easy to forget precisely because it never
     /// complains. Coming back to the app is checked at most every few minutes, and a new backup is
     /// made at most once a day; `createFullBackup` prunes old ones, so this never grows unbounded.
-    private func createFullBackupIfDue() async {
-        guard Date.now.timeIntervalSince(lastFullBackupCheck) > 300 else { return }
-        lastFullBackupCheck = .now
-        guard UserDefaults.standard.object(forKey: "AgentboxAutoBackup") == nil || UserDefaults.standard.bool(forKey: "AgentboxAutoBackup") else { return }
+    func createFullBackupIfDue(now: Date = .now, enabled: Bool? = nil) async {
+        guard now.timeIntervalSince(lastFullBackupCheck) > 300, !isWorking else { return }
+        lastFullBackupCheck = now
+        guard enabled ?? (UserDefaults.standard.object(forKey: "AgentboxAutoBackup") == nil || UserDefaults.standard.bool(forKey: "AgentboxAutoBackup")) else { return }
         guard let service else { return }
         do {
-            let existing = try await service.fullBackups()
-            guard (existing.first?.createdAt ?? .distantPast) < Date.now.addingTimeInterval(-86400) else { return }
+            fullBackups = try await service.fullBackups()
+            guard (fullBackups.first?.createdAt ?? .distantPast) < now.addingTimeInterval(-86400) else { return }
             let backup = try await service.createFullBackup(applicationVersion: AppVersion.short)
             fullBackups = try await service.fullBackups()
+            automaticBackupError = nil
             record(.success, "Automatyczny pełny backup: \(backup.name)")
-        } catch { /* best-effort safety net — a failure here should not interrupt the session */ }
+        } catch {
+            automaticBackupError = "Automatyczny backup nie powiódł się: \(error.localizedDescription)"
+            record(.error, "Automatyczny backup nie powiódł się: \(error.localizedDescription)")
+        }
     }
     func root(for project: Project) -> ProjectRoot? { project.rootID.flatMap { id in projectRoots.first { $0.id == id } } }
     func inheritsRoot(_ project: Project) -> Bool { project.overridesRoot != true && root(for: project) != nil }
@@ -187,34 +195,57 @@ import SkillboxCore
         for item in urls { if let result = try await self.service?.addGitCollection(url: item, subpath: subpath.isEmpty ? nil : subpath) { count += result.imported.count; skipped += result.skipped } }
         self.message = skipped.isEmpty ? "Zaimportowano \(count) skilli" : "Zaimportowano \(count) skilli, pominięto \(skipped.count): " + skipped.map { "\($0.id) (\($0.reason))" }.joined(separator: "; ")
     } }
-    func checkUpdates() async { isWorking = true; defer { isWorking = false }; do { updateAvailable = try await service?.checkUpdates() ?? []; hasCheckedUpdates = true; message = updateAvailable.isEmpty ? "Wszystkie skille są aktualne" : "Dostępne aktualizacje: \(updateAvailable.count)" } catch { message = error.localizedDescription } }
-    func update(_ id: String) async { await perform { _ = try await self.service?.update(skillID: id); self.updateAvailable.remove(id); self.message = "Zaktualizowano \(id)" } }
-    /// Mirrors `agentbox update --all` in the GUI. Updating one skill is intentionally independent
-    /// of the next: a temporary problem with one repository must not prevent the remaining skills
-    /// from receiving their available revisions.
-    func updateAllAvailable() async {
-        let ids = updateAvailable.sorted()
-        guard !ids.isEmpty else { return }
+    func checkUpdates() async { await prepareUpdateReview() }
+    func update(_ id: String) async { await prepareUpdateReview(ids: [id]) }
+    func updateAllAvailable() async { await prepareUpdateReview(ids: updateAvailable.sorted()) }
 
+    func prepareUpdateReview(ids: [String]? = nil, synchronizing: Bool = false) async {
         isWorking = true
         defer { isWorking = false }
-        // `try?` here turned a failed update into a green "Zaktualizowano 0 skilli" in the operation
-        // log — the exact pattern this code exists to avoid.
-        let result: SkillUpdateResult
-        do { result = try await service?.updateSkills(ids: ids) ?? SkillUpdateResult(updated: []) }
-        catch {
-            await reload()
-            message = "Nie udało się zaktualizować skilli: \(error.localizedDescription)"
-            record(.error, message)
-            return
-        }
-        for skill in result.updated { updateAvailable.remove(skill.id) }
-        await reload()
-        message = result.failed.isEmpty
-            ? "Zaktualizowano \(result.updated.count) skilli"
-            : "Zaktualizowano \(result.updated.count) z \(ids.count) skilli. Nie udało się: \(result.failed.map { "\($0.id): \($0.reason)" }.joined(separator: "; "))"
-        record(result.failed.isEmpty ? .success : .error, message)
+        do {
+            guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
+            let plan = try await service.previewSkillUpdates(ids: ids)
+            if ids == nil { updateAvailable = Set(plan.updates.map(\.id)) }
+            else { updateAvailable.subtract(plan.unchanged); updateAvailable.formUnion(plan.updates.map(\.id)) }
+            hasCheckedUpdates = true
+            reviewIncludesSync = synchronizing
+            updateReview = plan
+            if !plan.failed.isEmpty {
+                message = "Nie udało się sprawdzić: " + plan.failed.map { "\($0.id): \($0.reason)" }.joined(separator: "; ")
+                record(.error, message)
             }
+        } catch { reportError(error) }
+    }
+
+    func acceptSkillUpdates(_ plan: SkillUpdatePlan, selected: Set<String>, synchronizing: Bool) async -> Bool {
+        isWorking = true
+        defer { isWorking = false; progress = nil }
+        do {
+            guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
+            guard selected.isSubset(of: Set(plan.updates.map(\.id))) else { throw SkillboxError.invalidSkill("wybór nie należy do podglądu") }
+            let accepted = plan.updates.filter { selected.contains($0.id) }
+            let updated = try await service.applySkillUpdates(accepted, applicationVersion: AppVersion.short)
+            updateAvailable.subtract(updated.map(\.id))
+            updateAvailable.subtract(plan.unchanged)
+            record(.success, "Zaktualizowano \(updated.count) skilli; pominięto \(plan.updates.count - updated.count)")
+            if synchronizing {
+                if accepted.isEmpty { _ = try await service.createFullBackup(applicationVersion: AppVersion.short) }
+                let outcomes = try await service.syncAllProjectsTransactions(progress: progressHandler)
+                for outcome in outcomes {
+                    if case .failed(let reason) = outcome.state { throw SkillboxError.commandFailed("\(outcome.plan.project.name): \(reason)") }
+                }
+                message = "Przyjęto \(updated.count) aktualizacji i zakończono synchronizację projektów"
+            } else { message = "Zaktualizowano \(updated.count) skilli. Projekty można teraz zsynchronizować." }
+            record(.success, message)
+            await reload(); await loadFullBackups()
+            updateReview = nil
+            return true
+        } catch {
+            await reload(); await loadFullBackups()
+            reportError(error)
+            return false
+        }
+    }
     func saveSkillMarkdown(_ id: String, content: String) async -> Bool {
         isWorking = true; defer { isWorking = false }
         do {
@@ -565,42 +596,11 @@ import SkillboxCore
             return []
         }
     }
-    /// The GUI counterpart of `agentbox refresh`: update skills, make a local backup, then apply
-    /// the already transactional all-project synchronization.
-    func refresh() async {
-        isWorking = true
-        defer { isWorking = false; progress = nil }
-        do {
-            guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
-            let updates = try await service.checkUpdates().sorted()
-            let updateResult = try await service.updateSkills(ids: updates)
-            updateAvailable.subtract(updateResult.updated.map(\.id))
-
-            let localBackup = try await service.createFullBackup(applicationVersion: AppVersion.short)
-            let outcomes = try await service.syncAllProjectsTransactions(progress: progressHandler)
-
-            let synced = outcomes.filter { $0.state == .synced }.count
-            let unchanged = outcomes.filter { $0.state == .upToDate }.count
-            let failed = outcomes.filter { outcome in
-                if case .failed = outcome.state { return true }
-                return false
-            }
-            let skipped = outcomes.filter { $0.state == .skipped }.count
-            message = "Odświeżono \(updateResult.updated.count) skilli, utworzono backup \(localBackup.name), zsynchronizowano \(synced) projektów"
-            if !updateResult.failed.isEmpty { message += ", nie zaktualizowano \(updateResult.failed.count)" }
-            if unchanged > 0 { message += ", bez zmian \(unchanged)" }
-            if !failed.isEmpty || skipped > 0 { message += ", wymaga uwagi: \(failed.count) błędów, \(skipped) pominiętych" }
-            record(failed.isEmpty && skipped == 0 ? .success : .error, message)
-            for outcome in failed {
-                if case .failed(let reason) = outcome.state { record(.error, "\(outcome.plan.project.name): \(reason)") }
-            }
-            await reload()
-            await loadFullBackups()
-        } catch {
-            await reload()
-            message = "Nie ukończono odświeżania: \(error.localizedDescription)"
-            record(.error, message)
-        }
+    /// Review exact updates before running the full workflow.
+    func refresh() async { await prepareUpdateReview(synchronizing: true) }
+    func projectConfiguration(_ project: Project) async throws -> ProjectConfigurationReport {
+        guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
+        return try await service.projectConfiguration(projectID: project.id)
     }
     func syncGlobal() async -> Bool {
         isWorking = true; defer { isWorking = false }

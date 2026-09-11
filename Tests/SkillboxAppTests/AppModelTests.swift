@@ -23,7 +23,7 @@ final class AppModelTests: XCTestCase {
 
     /// A model on a library of its own. The real one must never be touched by a test.
     private func makeModel() async throws -> AppModel {
-        let model = AppModel(root: root.appending(path: "library"))
+        let model = AppModel(root: root.appending(path: "library"), startsAutomatically: false)
         await model.reload()
         XCTAssertNil(model.serviceError)
         return model
@@ -135,12 +135,18 @@ final class AppModelTests: XCTestCase {
         await model.addGit(repo.absoluteURL.absoluteString, subpath: "")
         XCTAssertEqual(model.skills.count, 2, "przygotowanie: dwa skille w bibliotece")
         try FileManager.default.removeItem(at: repo)
+        _ = try makeSkill("keeper", content: "wersja 2")
         model.updateAvailable = ["keeper", "gone"]
 
         await model.updateAllAvailable()
 
         XCTAssertTrue(model.message.contains("Nie udało się"), "komunikat musi wymienić nieudane: \(model.message)")
         XCTAssertTrue(model.message.contains("gone"))
+        let plan = try XCTUnwrap(model.updateReview)
+        XCTAssertEqual(plan.updates.map(\.id), ["keeper"], "\(plan.failed)")
+        XCTAssertFalse(model.markdown.contains("wersja 2"), "podgląd jeszcze nie zapisuje")
+        let accepted = await model.acceptSkillUpdates(plan, selected: ["keeper"], synchronizing: false)
+        XCTAssertTrue(accepted)
         XCTAssertFalse(model.updateAvailable.contains("keeper"), "zaktualizowany skill znika z listy dostępnych")
         XCTAssertTrue(model.updateAvailable.contains("gone"), "nieudany skill zostaje do ponowienia")
     }
@@ -279,6 +285,77 @@ final class AppModelTests: XCTestCase {
         model.isWorking = true
 
         XCTAssertFalse(model.libraryChangedOnDisk(), "w trakcie własnego zapisu zdarzenia są nasze")
+    }
+
+    func testAutomaticBackupFailureIsVisibleWithoutReplacingToastAndRetryClearsStatus() async throws {
+        let model = try await makeModel()
+        let now = Date.now
+        model.message = "Trwa praca"
+        await model.createFullBackupIfDue(now: now, enabled: true)
+        let original = try XCTUnwrap(model.fullBackups.first)
+        XCTAssertEqual(model.message, "Trwa praca")
+        XCTAssertNil(model.automaticBackupError)
+        XCTAssertTrue(model.operationLog.contains { $0.kind == .success && $0.text.contains("Automatyczny pełny backup") })
+
+        let docs = root.appending(path: "library/docs.json")
+        try Data("not JSON".utf8).write(to: docs)
+        let nextDay = now.addingTimeInterval(90000)
+        await model.createFullBackupIfDue(now: nextDay, enabled: true)
+        XCTAssertNotNil(model.automaticBackupError)
+        XCTAssertEqual(model.fullBackups.first?.name, original.name, "ostatnia udana kopia pozostaje widoczna")
+        XCTAssertEqual(model.operationLog.first?.kind, .error)
+        XCTAssertEqual(model.message, "Trwa praca", "błąd automatyzacji nie pokazuje toastu")
+        let count = model.operationLog.count
+        await model.createFullBackupIfDue(now: nextDay.addingTimeInterval(1), enabled: true)
+        XCTAssertEqual(model.operationLog.count, count, "brak powtarzania błędu przy każdym aktywowaniu okna")
+        try FileManager.default.removeItem(at: docs)
+        await model.createFullBackupIfDue(now: nextDay.addingTimeInterval(301), enabled: true)
+        XCTAssertNil(model.automaticBackupError)
+        XCTAssertTrue(model.operationLog.contains { $0.kind == .error && $0.text.contains("Automatyczny backup") })
+    }
+
+    func testFailedReviewedUpdateStaysOpenAndKeepsLocalEdit() async throws {
+        let model = try await makeModel()
+        await model.addLocal(try makeSkill("demo"))
+        _ = try makeSkill("demo", content: "wersja 2")
+        await model.update("demo")
+        let plan = try XCTUnwrap(model.updateReview)
+        _ = await model.saveSkillMarkdown("demo", content: "własna poprawka")
+        let accepted = await model.acceptSkillUpdates(plan, selected: ["demo"], synchronizing: false)
+        XCTAssertFalse(accepted)
+        XCTAssertNotNil(model.updateReview, "podgląd zostaje otwarty po błędzie")
+        XCTAssertEqual(model.markdown, "własna poprawka")
+        XCTAssertEqual(model.operationLog.first?.kind, .error)
+    }
+
+    func testRefreshWaitsForAcceptanceAndBacksUpBeforeUpdatingAndSyncing() async throws {
+        let model = try await makeModel()
+        let repo = try makeSkill("demo", content: "wersja 1")
+        try runGit(["init"], in: repo)
+        try runGit(["add", "."], in: repo)
+        try runGit(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "initial"], in: repo)
+        _ = await model.addGit(repo.absoluteString, subpath: "")
+        let folder = try makeProjectFolder("project")
+        _ = await model.addProject(Project(name: "project", path: folder.path), selection: AttachmentSelection(tools: [.claude], skillIDs: ["demo"]))
+        let project = try XCTUnwrap(model.projects.first)
+        await model.syncEverything(project)
+        _ = try makeSkill("demo", content: "wersja 2")
+        try runGit(["add", "."], in: repo)
+        try runGit(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "update"], in: repo)
+
+        await model.refresh()
+
+        let plan = try XCTUnwrap(model.updateReview)
+        XCTAssertTrue(model.reviewIncludesSync)
+        let file = folder.appending(path: ".claude/skills/demo/SKILL.md")
+        XCTAssertTrue(try String(contentsOf: file, encoding: .utf8).contains("wersja 1"))
+        let accepted = await model.acceptSkillUpdates(plan, selected: ["demo"], synchronizing: true)
+        XCTAssertTrue(accepted, model.message)
+        XCTAssertNil(model.updateReview)
+        XCTAssertTrue(try String(contentsOf: file, encoding: .utf8).contains("wersja 2"))
+        let backup = try XCTUnwrap(model.fullBackups.first)
+        let backedUp = root.appending(path: "library/backups/full/\(backup.name)/skills/demo/SKILL.md")
+        XCTAssertTrue(try String(contentsOf: backedUp, encoding: .utf8).contains("wersja 1"))
     }
 
     // MARK: Helpers

@@ -27,7 +27,11 @@ struct BackupView: View {
                     VStack(alignment: .leading, spacing: Space.section - 2) {
                         Toggle("Automatycznie twórz pełny backup lokalny raz dziennie", isOn: $autoBackup)
                         Text("Kopie są przechowywane lokalnie w folderze biblioteki. Zawierają także projekty oraz wartości MCP.").rowMetadata()
-                        Text("Pełny workflow jest dostępny w `Biblioteka → Odśwież wszystko`.").rowMetadata()
+                        if let latest = model.fullBackups.first {
+                            Text("Ostatnia udana pełna kopia: \(formatter.string(from: latest.createdAt))").rowMetadata()
+                        } else { Text("Brak potwierdzonej pełnej kopii.").rowMetadata() }
+                        if let error = model.automaticBackupError { Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+                        Text("Pełny workflow: Narzędzia → Odśwież bibliotekę i zsynchronizuj projekty.").rowMetadata()
                     }.padding(Space.row)
                 }
                 snapshotsSection
