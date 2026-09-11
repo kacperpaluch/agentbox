@@ -133,6 +133,15 @@ extension SkillboxService {
             defer { try? FileManager.default.removeItem(at: temp) }
             do {
                 guard Self.isAllowedGitLocation(first.source.location) else { throw SkillboxError.invalidSkill("niedozwolone źródło Git") }
+                // A scan of the whole library asks the cheap question first. A repository whose head
+                // still matches every stored revision has nothing new to show, and cloning it to
+                // find that out cost a full checkout per repository on every "check for updates".
+                // A named skill is always cloned and compared byte by byte, so an explicit request
+                // still sees a library copy that drifted from its source without a new commit.
+                if ids == nil, let remote = try Self.remoteHead(first.source), group.allSatisfy({ $0.source.revision == remote }) {
+                    unchanged += group.map(\.id)
+                    continue
+                }
                 var args = ["clone", "--depth", "1"]
                 if let branch = first.source.branch { args += ["--branch", branch] }
                 args += ["--", first.source.location, temp.path]
@@ -150,6 +159,12 @@ extension SkillboxService {
             } catch { failed += group.map { SkippedSkill(id: $0.id, reason: error.localizedDescription) } }
         }
         return SkillUpdatePlan(updates: updates.sorted { $0.id < $1.id }, unchanged: unchanged.sorted(), failed: failed.sorted { $0.id < $1.id })
+    }
+
+    /// The remote's current revision for this source, or nil when the ref does not resolve.
+    private static func remoteHead(_ source: SkillSource) throws -> String? {
+        let output = try ProcessRunner.run("/usr/bin/git", ["ls-remote", source.location, source.branch ?? "HEAD"])
+        return output.split(whereSeparator: \.isWhitespace).first.map(String.init)
     }
 
     private func inspectedUpdate(_ skill: Skill, source: URL, revision: String?) async throws -> SkillUpdatePreview {

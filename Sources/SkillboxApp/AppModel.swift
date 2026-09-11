@@ -227,15 +227,19 @@ import SkillboxCore
             let updated = try await service.applySkillUpdates(accepted, applicationVersion: AppVersion.short)
             updateAvailable.subtract(updated.map(\.id))
             updateAvailable.subtract(plan.unchanged)
-            record(.success, "Zaktualizowano \(updated.count) skilli; pominięto \(plan.updates.count - updated.count)")
+            let postponed = plan.updates.count - updated.count
+            let summary = "Zaktualizowano \(updated.count) skilli" + (postponed > 0 ? ", odłożono \(postponed)" : "")
             if synchronizing {
+                // Its own entry only here, before a step that can still fail: a failed
+                // synchronization must not hide that the library has already changed.
+                record(.success, summary)
                 if accepted.isEmpty { _ = try await service.createFullBackup(applicationVersion: AppVersion.short) }
                 let outcomes = try await service.syncAllProjectsTransactions(progress: progressHandler)
                 for outcome in outcomes {
                     if case .failed(let reason) = outcome.state { throw SkillboxError.commandFailed("\(outcome.plan.project.name): \(reason)") }
                 }
-                message = "Przyjęto \(updated.count) aktualizacji i zakończono synchronizację projektów"
-            } else { message = "Zaktualizowano \(updated.count) skilli. Projekty można teraz zsynchronizować." }
+                message = summary + " i zsynchronizowano projekty"
+            } else { message = summary + ". Projekty można teraz zsynchronizować." }
             record(.success, message)
             await reload(); await loadFullBackups()
             updateReview = nil

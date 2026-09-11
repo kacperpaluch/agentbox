@@ -39,7 +39,7 @@ Każdy obraz aktualizacji jest weryfikowany kluczem EdDSA osadzonym w aplikacji.
 
 ## Podgląd aktualizacji skilli
 
-W `Biblioteka → Skille` kliknij `Sprawdź aktualizacje`. Agentbox pobiera każde repozytorium raz i porównuje zawartość poszczególnych skilli. Commit dotyczący innego skilla albo README repozytorium nie oznacza aktualizacji niezmienionych skilli.
+W `Biblioteka → Skille` kliknij `Sprawdź aktualizacje`. Agentbox pyta najpierw o głowę każdego repozytorium; te, które się nie ruszyły, nie są w ogóle pobierane. Pozostałe pobiera raz i porównuje zawartość poszczególnych skilli, więc commit dotyczący innego skilla albo README repozytorium nie oznacza aktualizacji niezmienionych skilli. Kopię biblioteczną zmienioną lokalnie, bez nowego commitu w źródle, pokazuje `Aktualizuj` przy konkretnym skillu.
 
 Zaznacz aktualizacje do przyjęcia i rozwiń zmienione pliki. Podgląd obejmuje dodania, usunięcia, tekstowe różnice, pliki binarne, uprawnienia skryptów i względne dowiązania wewnątrz skilla. `.git` oraz `.DS_Store` nie są zasobami skilla. Dowiązania wychodzące poza jego katalog i nieobsługiwane typy plików zatrzymują przygotowanie danego skilla z komunikatem.
 

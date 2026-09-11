@@ -149,6 +149,7 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(accepted)
         XCTAssertFalse(model.updateAvailable.contains("keeper"), "zaktualizowany skill znika z listy dostępnych")
         XCTAssertTrue(model.updateAvailable.contains("gone"), "nieudany skill zostaje do ponowienia")
+        XCTAssertEqual(model.operationLog.filter { $0.text.hasPrefix("Zaktualizowano") }.count, 1, "jedno zdarzenie to jeden wpis w historii")
     }
 
     func testDeletingAProjectWithItsFilesSaysHowMuchWasRemoved() async throws {

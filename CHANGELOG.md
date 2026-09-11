@@ -6,6 +6,13 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.26.1] - 2026-09-11
+
+### Zmieniono
+
+- `Sprawdź aktualizacje` i `agentbox update --all` pytają najpierw `git ls-remote` o głowę repozytorium i pomijają te, które odpowiadają zapisanym rewizjom. Przy wielu repozytoriach sprawdzanie nie klonuje już całej biblioteki. Wskazany skill nadal jest pobierany i porównywany bajt po bajcie.
+- Przyjęcie aktualizacji bez synchronizacji zapisuje jeden wpis w historii operacji zamiast dwóch. Przy pełnym odświeżeniu aktualizacja ma osobny wpis przed synchronizacją, żeby jej błąd nie ukrył zmiany biblioteki.
+
 ## [0.26.0] - 2026-09-11
 
 Wydanie skupione na wyjaśnianiu i kontroli: projekt tłumaczy pochodzenie swojej konfiguracji, a aktualizacje skilli pokazują faktyczne zmiany przed zapisem.

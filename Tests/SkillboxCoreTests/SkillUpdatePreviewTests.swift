@@ -51,6 +51,27 @@ final class SkillUpdatePreviewTests: AgentboxTestCase {
         XCTAssertEqual(try String(contentsOf: backedUp, encoding: .utf8), "old one", "backup jest sprzed aktualizacji")
     }
 
+    /// A library-wide check must not clone a repository whose head has not moved. The proof is the
+    /// only difference that survives the cheap question: a skill edited in the library itself.
+    func testLibraryWideCheckTrustsTheRecordedRevisionAndANamedSkillStillComparesContent() async throws {
+        let service = try await imported()
+        try "edited in the library".write(to: library.appending(path: "skills/one/SKILL.md"), atomically: true, encoding: .utf8)
+
+        let scan = try await service.checkUpdates()
+        XCTAssertTrue(scan.isEmpty, "głowa repozytorium się nie ruszyła")
+        let broad = try await service.previewSkillUpdates()
+        XCTAssertEqual(broad.unchanged, ["one", "two"])
+
+        let named = try await service.previewSkillUpdates(ids: ["one"])
+        XCTAssertEqual(named.updates.map(\.id), ["one"], "wskazany skill porównuje bajty: \(named.failed)")
+        XCTAssertEqual(named.updates.first?.changes.first?.newText, "old one")
+
+        try write("one/SKILL.md", "moved head")
+        try commit()
+        let afterCommit = try await service.checkUpdates()
+        XCTAssertEqual(afterCommit, ["one"], "nowy commit wraca do porównania zawartości")
+    }
+
     func testUnrelatedCommitDoesNotOfferUpdatesOrCreateBackup() async throws {
         let service = try await imported()
         try write("README.md", "not part of either skill")

@@ -100,7 +100,7 @@ Ręcznie napisany katalog ze `SKILL.md`, który leży w projekcie i blokuje sync
 - checkboxy pozwalają masowo dodawać tagi,
 - lista obsługuje wyszukiwanie, filtrowanie po tagu i sortowanie,
 - projekt może wskazywać konkretne skille albo dynamiczne tagi,
-- `Sprawdź aktualizacje` porównuje zawartość skilli, a nie tylko rewizję całego repozytorium,
+- `Sprawdź aktualizacje` pyta najpierw o głowę repozytorium i pobiera tylko te, które faktycznie się ruszyły; pobrane porównuje zawartością poszczególnych skilli, a nie rewizją całego repozytorium,
 - podgląd pozwala wybrać aktualizacje i obejrzeć zmiany wszystkich plików, również skryptów, zasobów binarnych, dowiązań i uprawnień; `.git` oraz `.DS_Store` są pomijane,
 - `Aktualizuj` i `Aktualizuj <liczba>` również otwierają podgląd. Dopiero `Przyjmij wybrane` zapisuje dokładnie obejrzane wersje, po utworzeniu pełnego backupu. Zmiana biblioteki od czasu podglądu zatrzymuje zapis. Projekty synchronizujesz osobno.
 
