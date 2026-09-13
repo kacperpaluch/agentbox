@@ -407,4 +407,13 @@ final class MCPTests: AgentboxTestCase {
         // of lingering as an empty scaffold.
         XCTAssertFalse(FileManager.default.fileExists(atPath: projectURL.appending(path: "opencode.json").path), "opencode.json zawierał tylko wpisy Agentbox, więc znika w całości")
     }
+
+    func testOpenAIKeySurvivesRoundTripAndClearsWhenEmptied() {
+        let previous = OpenAIKeyStore.load()
+        defer { OpenAIKeyStore.save(previous) }
+        OpenAIKeyStore.save("  sk-test-123  ")
+        XCTAssertEqual(OpenAIKeyStore.load(), "sk-test-123", "klucz zapisuje się bez otaczających spacji i wraca przy kolejnym otwarciu okna")
+        OpenAIKeyStore.save("")
+        XCTAssertEqual(OpenAIKeyStore.load(), "", "wyczyszczone pole usuwa wpis z pęku kluczy")
+    }
 }

@@ -37,6 +37,8 @@ struct ClientServersView: View {
             }
         }
         .sheetFrame(width: 760, height: 640)
+        // Okno arkusza zasłania overlay z App.swift, więc postęp musi być rysowany też tutaj.
+        .overlay { if model.isWorking { WorkingOverlay(progress: model.progress) } }
     }
 
     private var explanation: some View {

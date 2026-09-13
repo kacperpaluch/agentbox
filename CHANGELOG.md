@@ -6,6 +6,16 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-09-13
+
+### Dodano
+
+- `Dodaj serwer → AI` pamięta klucz API OpenAI w pęku kluczy macOS, a nazwę modelu w ustawieniach aplikacji. Kolejne dodanie serwera zaczyna się od wypełnionego formularza zamiast przepisywania klucza. Wyczyszczenie pola klucza i uruchomienie AI usuwa wpis z pęku kluczy; klucz nie trafia do biblioteki ani do kopii zapasowych.
+
+### Naprawiono
+
+- Synchronizacja pojedynczego projektu pokazuje postęp i potwierdzenie. Arkusz podglądu zasłaniał wskaźnik pracy z okna, więc zapis wyglądał na bezczynność, a komunikat o powodzeniu widać było dopiero po zamknięciu arkusza. Arkusz rysuje teraz własny wskaźnik i zamyka się po udanej synchronizacji; błąd zostawia go otwartym z powodem. Ten sam wskaźnik dostał arkusz serwerów globalnych, gdzie przyciski `Synchronizuj` miały ten sam problem.
+
 ## [0.26.1] - 2026-09-11
 
 ### Zmieniono

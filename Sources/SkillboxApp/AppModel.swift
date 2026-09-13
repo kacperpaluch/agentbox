@@ -572,7 +572,8 @@ import SkillboxCore
         } catch { reportError(error) }
     }
     func previewProjectSync(_ project: Project) async throws -> ProjectSyncPreview { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewProjectSync(projectID: project.id) }
-    func syncEverything(_ project: Project) async { await perform { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille, MCP, dokumenty i pluginy dla \(project.name)" } }
+    @discardableResult
+    func syncEverything(_ project: Project) async -> Bool { await performing { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille, MCP, dokumenty i pluginy dla \(project.name)" } }
     func previewAllProjectsSync() async throws -> [ProjectSyncPlan] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewAllProjectsSync() }
     func syncAllProjects() async -> [ProjectSyncOutcome] {
         isWorking = true

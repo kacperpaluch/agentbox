@@ -253,7 +253,7 @@ struct MCPImportView: View {
     @State private var singleServerName = ""
     @State private var mode: AddMode = .creator
     @State private var openAIKey = ""
-    @State private var openAIModel = "gpt-5-mini"
+    @AppStorage("AgentboxOpenAIModel") private var openAIModel = "gpt-5-mini"
     private var usesAI: Bool { mode == .ai }
     private var needsReanalysis: Bool { summary?.isSingleServerInput == true && summary?.servers.first?.name != singleServerName }
     var body: some View { VStack(alignment: .leading, spacing: 0) { ScrollView { VStack(alignment: .leading, spacing: 14) {
@@ -279,7 +279,7 @@ struct MCPImportView: View {
         }
         if usesAI {
             HStack { SecureField("Klucz API OpenAI", text: $openAIKey); TextField("Model", text: $openAIModel).frame(width: 160) }
-            Text("Klucz jest używany wyłącznie dla tego żądania i nie jest zapisywany. Treść instrukcji zostanie wysłana do OpenAI; wynik nie zostanie zapisany automatycznie — najpierw go przejrzysz.").font(.caption).foregroundStyle(.orange)
+            Text("Klucz zostaje zapisany w pęku kluczy, a model w ustawieniach — przy kolejnym dodawaniu są już wypełnione. Treść instrukcji zostanie wysłana do OpenAI; wynik nie zostanie zapisany automatycznie — najpierw go przejrzysz.").font(.caption).foregroundStyle(.orange)
         }
         if showFormatHelp { formatHelp }
         TextEditor(text: $source).font(.system(.body, design: .monospaced)).frame(minHeight: 220).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
@@ -295,8 +295,8 @@ struct MCPImportView: View {
         if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
         }
     }.padding(24) }; Divider(); HStack { if working { ProgressView() }; if summary != nil { Text(needsReanalysis ? "Zmień nazwę → Analizuj ponownie" : "Wybrano: \(selected.count)").font(.caption).foregroundStyle(needsReanalysis ? .orange : .secondary) }; Spacer(); Button("Anuluj") { dismiss() }; if mode != .creator { Button(usesAI ? "Przygotuj z AI" : "Analizuj") { Task { await prepare() } }.disabled(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (usesAI && openAIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) || working); Button("Importuj wybrane") { Task { await importNow() } }.buttonStyle(.borderedProminent).disabled(summary == nil || selected.isEmpty || needsReanalysis || working) } }.padding(16).background(.bar)
-    }.sheetFrame(width: 760, height: 680) }
-    private func prepare() async { working = true; error = ""; summary = nil; selected.removeAll(); defer { working = false }; do { if usesAI { source = try await model.generateMCP(source, apiKey: openAIKey, model: openAIModel) }; let analyzed = try await model.analyzeMCP(source, singleServerName: singleServerName.isEmpty ? nil : singleServerName); summary = analyzed; if analyzed.isSingleServerInput, singleServerName.isEmpty { singleServerName = analyzed.servers.first?.name ?? "" }; selected = Set(analyzed.servers.map(\.name)) } catch { self.error = error.localizedDescription; model.reportError(error) } }
+    }.sheetFrame(width: 760, height: 680).task { if openAIKey.isEmpty { openAIKey = OpenAIKeyStore.load() } } }
+    private func prepare() async { working = true; error = ""; summary = nil; selected.removeAll(); defer { working = false }; do { if usesAI { OpenAIKeyStore.save(openAIKey); source = try await model.generateMCP(source, apiKey: openAIKey, model: openAIModel) }; let analyzed = try await model.analyzeMCP(source, singleServerName: singleServerName.isEmpty ? nil : singleServerName); summary = analyzed; if analyzed.isSingleServerInput, singleServerName.isEmpty { singleServerName = analyzed.servers.first?.name ?? "" }; selected = Set(analyzed.servers.map(\.name)) } catch { self.error = error.localizedDescription; model.reportError(error) } }
     private func importNow() async { working = true; error = ""; defer { working = false }; do { _ = try await model.importMCP(source, serverNames: selected, classifications: [:], singleServerName: summary?.isSingleServerInput == true ? singleServerName : nil); dismiss() } catch { self.error = error.localizedDescription; model.reportError(error) } }
     private func chooseFile() { let panel = NSOpenPanel(); panel.allowedContentTypes = [.json, .plainText]; panel.canChooseFiles = true; panel.canChooseDirectories = false; if panel.runModal() == .OK, let url = panel.url { do { source = try String(contentsOf: url, encoding: .utf8); summary = nil } catch { self.error = error.localizedDescription } } }
 
@@ -356,8 +356,11 @@ struct MCPPreviewView: View {
                     ForEach(preview.plugins) { item in ClaudePluginPreviewRow(item: item) }
                 }
             } } }
-            HStack { Spacer(); Button("Zamknij") { dismiss() }; Button("Synchronizuj skille, MCP, dokumenty i pluginy") { Task { await model.syncEverything(project) } }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || preview == nil || model.isWorking) }
-        }.padding(24).sheetFrame(width: 820, height: 700).task { do { preview = try await model.previewProjectSync(project) } catch { self.error = error.localizedDescription; model.reportError(error) } }
+            HStack { Spacer(); Button("Zamknij") { dismiss() }; Button("Synchronizuj skille, MCP, dokumenty i pluginy") { Task { if await model.syncEverything(project) { dismiss() } } }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || preview == nil || model.isWorking) }
+        }.padding(24).sheetFrame(width: 820, height: 700)
+        // Okno arkusza zasłania overlay z App.swift, więc postęp musi być rysowany też tutaj.
+        .overlay { if model.isWorking { WorkingOverlay(progress: model.progress) } }
+        .task { do { preview = try await model.previewProjectSync(project) } catch { self.error = error.localizedDescription; model.reportError(error) } }
     }
 }
 struct SyncChangeRows: View {

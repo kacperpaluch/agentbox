@@ -55,7 +55,7 @@ Importer przyjmuje zarówno mapę `mcpServers`, jak i pojedynczą definicję, na
 
 ### Kreator AI
 
-W `Biblioteka → MCP → Dodaj serwer` wybierz zakładkę `AI`, wklej fragment instrukcji lub README i podaj klucz API OpenAI. Klucz jest wykorzystywany tylko przez bieżące żądanie i nie jest zapisywany. Agentbox wysyła do OpenAI wyłącznie tekst instrukcji, nigdy zawartość istniejących konfiguracji ani sekretów. Wynik nie jest automatycznie zapisywany: najpierw przechodzi przez analizę JSON, wybór serwerów i klasyfikację wartości. Sprawdź wynik przed importem — AI może przygotować format, ale nie zastępuje weryfikacji dokumentacji serwera.
+W `Biblioteka → MCP → Dodaj serwer` wybierz zakładkę `AI`, wklej fragment instrukcji lub README i podaj klucz API OpenAI. Klucz zapisuje się w pęku kluczy macOS, a model w ustawieniach aplikacji, więc następnym razem oba pola są już wypełnione — wyczyszczenie pola klucza i uruchomienie AI usuwa wpis z pęku kluczy. Klucz nie trafia do biblioteki ani do kopii zapasowych. Agentbox wysyła do OpenAI wyłącznie tekst instrukcji, nigdy zawartość istniejących konfiguracji ani sekretów. Wynik nie jest automatycznie zapisywany: najpierw przechodzi przez analizę JSON, wybór serwerów i klasyfikację wartości. Sprawdź wynik przed importem — AI może przygotować format, ale nie zastępuje weryfikacji dokumentacji serwera.
 
 - `Zmienna systemowa` — Agentbox zapisuje nazwę zmiennej, a wartość ma dostarczyć środowisko procesu klienta AI.
 - Każda zwykła wartość, w tym hasło lub token, trafia jawnie do lokalnego `mcp.json` oraz pełnego backupu lokalnego.

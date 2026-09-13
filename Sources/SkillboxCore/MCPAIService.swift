@@ -57,3 +57,32 @@ extension SkillboxService {
         return ""
     }
 }
+
+/// The OpenAI key for the MCP AI assistant, kept in the login keychain so it survives app restarts
+/// without ever landing in plaintext preferences.
+public enum OpenAIKeyStore {
+    private static func query() -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "Agentbox",
+            kSecAttrAccount as String: "openai-api-key"
+        ]
+    }
+
+    public static func load() -> String {
+        var item: CFTypeRef?
+        var read = query()
+        read[kSecReturnData as String] = true
+        guard SecItemCopyMatching(read as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return "" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    public static func save(_ key: String) {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        SecItemDelete(query() as CFDictionary)
+        guard !trimmed.isEmpty else { return }
+        var add = query()
+        add[kSecValueData as String] = Data(trimmed.utf8)
+        SecItemAdd(add as CFDictionary, nil)
+    }
+}

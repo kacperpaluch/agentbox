@@ -166,7 +166,7 @@ Menu serwera zawiera też `Duplikuj…`. Wpisz własną nową nazwę techniczną
 
 `Dodaj serwer → JSON` obsługuje cały obiekt z `mcpServers`, samą mapę serwerów, a także pojedynczą definicję serwera (`command`/`args`/`env` albo `url`). Przy pojedynczym obiekcie Agentbox proponuje nazwę z argumentów; można ją wpisać samodzielnie przed analizą. Można zaznaczyć tylko wybrane serwery do importu, a po imporcie przypisać im tagi. Jeśli macOS zamieni cudzysłowy JSON-a na typograficzne, importer rozpozna je automatycznie.
 
-Zakładka `Dodaj serwer → AI` przyjmuje instrukcję instalacji lub fragment README i prosi OpenAI o sam JSON MCP. Klucz API jest używany tylko dla bieżącego żądania — nie zapisuje się w bibliotece. AI nie importuje ani nie synchronizuje niczego samodzielnie: wygenerowany JSON zawsze przechodzi przez podgląd i wybór serwerów.
+Zakładka `Dodaj serwer → AI` przyjmuje instrukcję instalacji lub fragment README i prosi OpenAI o sam JSON MCP. Klucz API zapisuje się w pęku kluczy macOS, a nazwa modelu w ustawieniach aplikacji, więc kolejne dodanie zaczyna się od gotowego formularza. Klucz nigdy nie trafia do biblioteki ani do kopii zapasowych; wyczyszczenie pola usuwa go z pęku kluczy. AI nie importuje ani nie synchronizuje niczego samodzielnie: wygenerowany JSON zawsze przechodzi przez podgląd i wybór serwerów.
 
 Wartość zapisana jako `${NAZWA_ZMIENNEJ}` odwołuje się do zmiennej systemowej; każda pozostała wartość jest zapisywana wprost lokalnie w `mcp.json`.
 
