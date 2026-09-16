@@ -166,7 +166,7 @@ Menu serwera zawiera też `Duplikuj…`. Wpisz własną nową nazwę techniczną
 
 `Dodaj serwer → JSON` obsługuje cały obiekt z `mcpServers`, samą mapę serwerów, a także pojedynczą definicję serwera (`command`/`args`/`env` albo `url`). Przy pojedynczym obiekcie Agentbox proponuje nazwę z argumentów; można ją wpisać samodzielnie przed analizą. Można zaznaczyć tylko wybrane serwery do importu, a po imporcie przypisać im tagi. Jeśli macOS zamieni cudzysłowy JSON-a na typograficzne, importer rozpozna je automatycznie.
 
-Zakładka `Dodaj serwer → AI` przyjmuje instrukcję instalacji lub fragment README i prosi OpenAI o sam JSON MCP. Klucz API zapisuje się w pęku kluczy macOS, a nazwa modelu w ustawieniach aplikacji, więc kolejne dodanie zaczyna się od gotowego formularza. Klucz nigdy nie trafia do biblioteki ani do kopii zapasowych; wyczyszczenie pola usuwa go z pęku kluczy. AI nie importuje ani nie synchronizuje niczego samodzielnie: wygenerowany JSON zawsze przechodzi przez podgląd i wybór serwerów.
+Zakładka `Dodaj serwer → AI` przyjmuje instrukcję instalacji lub fragment README i prosi OpenAI o sam JSON MCP. Klucz API zapisuje się w pęku kluczy macOS, a nazwa modelu w ustawieniach aplikacji, więc kolejne dodanie zaczyna się od gotowego formularza. Klucz nigdy nie trafia do biblioteki ani do kopii zapasowych; przycisk `Usuń zapamiętany klucz` usuwa go z pęku kluczy. AI nie importuje ani nie synchronizuje niczego samodzielnie: wygenerowany JSON zawsze przechodzi przez podgląd i wybór serwerów.
 
 Wartość zapisana jako `${NAZWA_ZMIENNEJ}` odwołuje się do zmiennej systemowej; każda pozostała wartość jest zapisywana wprost lokalnie w `mcp.json`.
 
@@ -221,7 +221,7 @@ Stare przypisania MCP i dokumentów są utrwalane także podczas edycji ich defi
 
 Wartości MCP są zapisywane lokalnie wprost w `mcp.json`, a pełny backup lokalny obejmuje ten plik. Podczas synchronizacji wartości mogą zostać zapisane jawnie w plikach projektu.
 
-Jeśli projekt jest repozytorium Git, Agentbox dopisuje do lokalnego `.git/info/exclude`:
+Jeśli projekt jest repozytorium Git albo leży wewnątrz repozytorium (np. pakiet w monorepo), Agentbox dopisuje do lokalnego `.git/info/exclude` poniższe wpisy — w drugim przypadku poprzedzone ścieżką projektu względem korzenia repozytorium:
 
 ```text
 .mcp.json

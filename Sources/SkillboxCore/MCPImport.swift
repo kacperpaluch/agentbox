@@ -10,8 +10,9 @@ extension SkillboxService {
         guard !servers.isEmpty else { throw SkillboxError.invalidSkill("nie wybrano serwerów MCP") }
         if let invalid = servers.first(where: { $0.name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) == nil }) { throw SkillboxError.invalidSkill("nazwa MCP \(invalid.name) może zawierać litery, cyfry, _ i -") }
         guard Set(servers.map(\.name)).count == servers.count else { throw SkillboxError.mcpConflict("import zawiera powtórzone nazwy serwerów") }
-        let summary = MCPImportSummary(servers: servers, secretCount: 0, stdioCount: servers.filter { $0.transport == .stdio }.count, httpCount: servers.filter { $0.transport == .http }.count, fields: parsed.summary.fields.filter { chosen.contains($0.serverName) }, isSingleServerInput: parsed.summary.isSingleServerInput)
         var config = try await store.mcpConfiguration()
+        // What is reported is what is saved: a reimported server keeps its old id.
+        var written: [MCPServer] = []
         for server in servers {
             if let index = config.servers.firstIndex(where: { $0.name == server.name }) {
                 let replaced = config.servers[index]
@@ -24,11 +25,12 @@ extension SkillboxService {
                 updated.tags = replaced.tags
                 updated.enabled = replaced.enabled
                 config.servers[index] = updated
+                written.append(updated)
             }
-            else { config.servers.append(server) }
+            else { config.servers.append(server); written.append(server) }
         }
         try await store.save(config)
-        return summary
+        return MCPImportSummary(servers: written, secretCount: 0, stdioCount: written.filter { $0.transport == .stdio }.count, httpCount: written.filter { $0.transport == .http }.count, fields: parsed.summary.fields.filter { chosen.contains($0.serverName) }, isSingleServerInput: parsed.summary.isSingleServerInput)
     }
 
     /// A single server's `command`/`args`/`url`/`env`/`headers` as hand-editable JSON, with every
@@ -44,6 +46,21 @@ extension SkillboxService {
         // `""`, and saving that JSON back replaced a working configuration with a blank token.
         let data = try JSONSerialization.data(withJSONObject: Self.fullEntry(server, secrets: try await store.secrets()), options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         return String(decoding: data, as: UTF8.self)
+    }
+
+    /// The editor's unsaved form as the JSON its other view shows, so switching views carries the
+    /// draft along instead of reloading what was last saved.
+    public func mcpServerDraftJSON(_ server: MCPServer, fields: [MCPManagedField]) async throws -> String {
+        let draft = try Self.applyingFields(fields, to: server)
+        let data = try JSONSerialization.data(withJSONObject: Self.fullEntry(draft, secrets: try await store.secrets()), options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// The other direction: edited JSON back into form values, validated like an import.
+    public func mcpServerDraft(fromJSON json: String, name: String) throws -> (server: MCPServer, fields: [MCPManagedField]) {
+        guard let value = Self.jsonObject(from: json) else { throw SkillboxError.invalidSkill("konfiguracja serwera nie jest poprawnym JSON") }
+        let server = try Self.parseEntry(name: name, value: value).server
+        return (server, Self.managedFields(of: server, secrets: [:]))
     }
 
     /// The whole `mcpServers` configuration as hand-editable JSON — same full-fidelity shape as
@@ -68,7 +85,7 @@ extension SkillboxService {
         var config = try await store.mcpConfiguration()
         guard let index = config.servers.firstIndex(where: { $0.id == id }) else { throw SkillboxError.mcpConflict("serwer MCP nie istnieje") }
         guard !config.servers.contains(where: { $0.id != id && $0.name == name }) else { throw SkillboxError.mcpConflict("serwer \(name) już istnieje") }
-        let parsed = Self.parseEntry(name: name, value: value)
+        let parsed = try Self.parseEntry(name: name, value: value)
         var updated = parsed.server
         updated.id = id; updated.enabled = enabled; updated.tags = SkillboxService.normalizedTags(tags)
         config.servers[index] = updated
@@ -111,8 +128,13 @@ extension SkillboxService {
         } else { entries = raw }
         var servers: [MCPServer] = []; var secrets: [String: String] = [:]; var fields: [MCPImportField] = []
         for name in entries.keys.sorted() {
-            guard let value = entries[name] as? [String: Any] else { continue }
-            let parsed = Self.parseEntry(name: name, value: value)
+            guard let value = entries[name] as? [String: Any] else {
+                // Inside `mcpServers` every value is a server; loose top-level keys may be anything.
+                if explicitEntries != nil || isSingleServerInput { throw Self.schemaError("mcpServers.\(name)", "obiekt") }
+                continue
+            }
+            if explicitEntries == nil, !isSingleServerInput, !Self.isServerEntry(value) { continue }
+            let parsed = try Self.parseEntry(name: name, value: value)
             servers.append(parsed.server); fields += parsed.fields; secrets.merge(parsed.secrets) { _, new in new }
         }
         return (MCPImportSummary(servers: servers, secretCount: 0, stdioCount: servers.filter { $0.transport == .stdio }.count, httpCount: servers.filter { $0.transport == .http }.count, fields: fields, isSingleServerInput: isSingleServerInput), secrets)
@@ -151,10 +173,27 @@ extension SkillboxService {
     /// Parses one `mcpServers` entry into a server plus the fields/secrets bookkeeping the import
     /// summary and the secrets store need. Shared by the bulk importer and the single-server JSON
     /// editor so both classify values — and name secret accounts — exactly the same way.
-    private static func parseEntry(name: String, value: [String: Any]) -> (server: MCPServer, fields: [MCPImportField], secrets: [String: String]) {
-        let transport: MCPTransport = (value["type"] as? String) == "http" || value["url"] != nil ? .http : .stdio
-        let env = stringMap(value["env"])
-        let headers = stringMap(value["headers"])
+    /// Every field is checked against the shape clients expect before anything is saved. A cast
+    /// with a default turned `"args": "--port 3000"` or `"env": ["A"]` into an empty value, and the
+    /// import then replaced a working server with one that had lost its settings.
+    private static func parseEntry(name: String, value: [String: Any]) throws -> (server: MCPServer, fields: [MCPImportField], secrets: [String: String]) {
+        let path = "mcpServers.\(name)"
+        let type = try optionalString(value["type"], at: "\(path).type")
+        let command = try optionalString(value["command"], at: "\(path).command") ?? ""
+        let url = try optionalString(value["url"], at: "\(path).url") ?? ""
+        var arguments: [String] = []
+        if let raw = value["args"], !(raw is NSNull) {
+            guard let list = raw as? [Any] else { throw schemaError("\(path).args", "tablica tekstów") }
+            arguments = try list.enumerated().map { index, item in
+                guard let text = item as? String else { throw schemaError("\(path).args[\(index)]", "tekst") }
+                return text
+            }
+        }
+        let transport: MCPTransport = type == "http" || value["url"] != nil ? .http : .stdio
+        if transport == .stdio, command.trimmingCharacters(in: .whitespaces).isEmpty { throw schemaError("\(path).command", "niepusty tekst") }
+        if transport == .http, url.trimmingCharacters(in: .whitespaces).isEmpty { throw schemaError("\(path).url", "niepusty tekst") }
+        let env = try stringMap(value["env"], at: "\(path).env")
+        let headers = try stringMap(value["headers"], at: "\(path).headers")
         var environmentRefs: [String: String] = [:], headerRefs: [String: String] = [:]
         var literalEnv: [String: String] = [:], literalHeaders: [String: String] = [:]
         let secretEnv: [String: String] = [:], secretHeaders: [String: String] = [:]
@@ -178,7 +217,7 @@ extension SkillboxService {
             case .literal: literalHeaders[key] = rawValue
             }
         }
-        let server = MCPServer(name: name, transport: transport, command: value["command"] as? String ?? "", arguments: value["args"] as? [String] ?? [], url: value["url"] as? String ?? "", environment: environmentRefs, headers: headerRefs, literalEnvironment: literalEnv.isEmpty ? nil : literalEnv, literalHeaders: literalHeaders.isEmpty ? nil : literalHeaders, secretEnvironment: secretEnv.isEmpty ? nil : secretEnv, secretHeaders: secretHeaders.isEmpty ? nil : secretHeaders)
+        let server = MCPServer(name: name, transport: transport, command: command, arguments: arguments, url: url, environment: environmentRefs, headers: headerRefs, literalEnvironment: literalEnv.isEmpty ? nil : literalEnv, literalHeaders: literalHeaders.isEmpty ? nil : literalHeaders, secretEnvironment: secretEnv.isEmpty ? nil : secretEnv, secretHeaders: secretHeaders.isEmpty ? nil : secretHeaders)
         return (server, fields, secrets)
     }
 
@@ -187,8 +226,30 @@ extension SkillboxService {
         return String(value.dropFirst(2).dropLast())
     }
 
-    private static func stringMap(_ raw: Any?) -> [String: String] {
-        guard let values = raw as? [String: Any] else { return [:] }
-        return values.reduce(into: [:]) { result, item in if !(item.value is NSNull) { result[item.key] = String(describing: item.value) } }
+    private static func stringMap(_ raw: Any?, at path: String) throws -> [String: String] {
+        guard let raw, !(raw is NSNull) else { return [:] }
+        guard let values = raw as? [String: Any] else { throw schemaError(path, "obiekt z wartościami tekstowymi") }
+        var result: [String: String] = [:]
+        for (key, item) in values where !(item is NSNull) {
+            switch item {
+            case let text as String: result[key] = text
+            // A number or a flag is a common way to write an environment value; it is kept as the
+            // text a client would pass on. `true` used to become "1".
+            case let number as NSNumber:
+                result[key] = CFGetTypeID(number) == CFBooleanGetTypeID() ? (number.boolValue ? "true" : "false") : number.stringValue
+            default: throw schemaError("\(path).\(key)", "tekst, liczba lub wartość logiczna")
+            }
+        }
+        return result
+    }
+
+    private static func optionalString(_ raw: Any?, at path: String) throws -> String? {
+        guard let raw, !(raw is NSNull) else { return nil }
+        guard let text = raw as? String else { throw schemaError(path, "tekst") }
+        return text
+    }
+
+    private static func schemaError(_ path: String, _ expected: String) -> Error {
+        SkillboxError.invalidSkill("konfiguracja MCP: \(path) musi być typu: \(expected) — nic nie zapisano")
     }
 }

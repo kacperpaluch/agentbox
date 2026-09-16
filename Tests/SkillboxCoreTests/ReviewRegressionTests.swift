@@ -272,6 +272,98 @@ final class ReviewRegressionTests: AgentboxTestCase {
         XCTAssertTrue(ignored.contains("exclude"), "Git musi faktycznie ignorować wygenerowany plik MCP w worktree: \(ignored)")
     }
 
+    /// A package inside a monorepo: `.git` sits two levels up. Nothing used to be excluded there,
+    /// and a pattern with a slash inside would not have matched from the root anyway.
+    func testGeneratedFilesAreExcludedInAProjectNestedInARepository() async throws {
+        let root = try temp()
+        let repository = root.appending(path: "repo")
+        let package = repository.appending(path: "packages/moja app")
+        try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+        try runGit(["init"], in: repository)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let project = try await service.addProject(name: "app", path: package.path, tools: [.claude, .codex])
+        let server = MCPServer(name: "x", transport: .stdio, command: "npx")
+        try await service.saveMCPServer(server)
+        try await service.setMCPServers(projectID: project.id, serverIDs: [server.id], tags: [])
+
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+
+        for file in [".mcp.json", ".codex/config.toml", ".skillbox/mcp-manifest.json"] {
+            let ignored = try gitOutput(["check-ignore", "-v", "packages/moja app/\(file)"], in: repository)
+            XCTAssertTrue(ignored.contains("exclude"), "Git musi ignorować \(file) w zagnieżdżonym projekcie: \(ignored)")
+        }
+        let elsewhere = try gitOutput(["check-ignore", "-v", ".codex/config.toml"], in: repository)
+        XCTAssertFalse(elsewhere.contains("exclude"), "wzorce dotyczą tylko folderu projektu: \(elsewhere)")
+    }
+
+    /// Files already current skip every write, but must not skip the protection: `git init` after
+    /// the first sync is the ordinary way a project becomes a repository.
+    func testRepositoryInitializedAfterSyncIsProtectedByTheNextSync() async throws {
+        let root = try temp()
+        let folder = root.appending(path: "app")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let project = try await service.addProject(name: "app", path: folder.path, tools: [.claude])
+        let server = MCPServer(name: "x", transport: .stdio, command: "npx")
+        try await service.saveMCPServer(server)
+        try await service.setMCPServers(projectID: project.id, serverIDs: [server.id], tags: [])
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+
+        try runGit(["init"], in: folder)
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        let ignored = try gitOutput(["check-ignore", "-v", ".mcp.json"], in: folder)
+        XCTAssertTrue(ignored.contains("exclude"), "ponowna synchronizacja aktualnego projektu dodaje wykluczenia: \(ignored)")
+
+        try "".write(to: folder.appending(path: ".git/info/exclude"), atomically: true, encoding: .utf8)
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        let restored = try gitOutput(["check-ignore", "-v", ".mcp.json"], in: folder)
+        XCTAssertTrue(restored.contains("exclude"), "usunięte reguły wracają: \(restored)")
+    }
+
+    /// Clutter from 0.7.0 is removed by name — but a `.skillbox` that is a link leads elsewhere.
+    func testLegacyBackupCleanupDoesNotFollowALinkedSkillboxFolder() async throws {
+        let root = try temp()
+        let folder = root.appending(path: "app"), outside = root.appending(path: "gdzie-indziej")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside.appending(path: "sync-backups"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: folder.appending(path: ".skillbox"), withDestinationURL: outside)
+        SkillboxService.removeLegacyBackupDirectories(folder)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outside.appending(path: "sync-backups").path))
+
+        let own = root.appending(path: "own")
+        try FileManager.default.createDirectory(at: own.appending(path: ".skillbox/sync-backups"), withIntermediateDirectories: true)
+        SkillboxService.removeLegacyBackupDirectories(own)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: own.appending(path: ".skillbox/sync-backups").path), "własny stary katalog nadal znika")
+    }
+
+    // MARK: Równoległe zapisy
+
+    /// Two operations read the same library; the second save must not wipe out the first. The same
+    /// holds when the other writer is `agentbox` running next to the app.
+    func testSavingAValueReadBeforeAnotherSaveIsRefused() async throws {
+        let root = try temp()
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        for name in ["a", "b"] {
+            try FileManager.default.createDirectory(at: root.appending(path: name), withIntermediateDirectories: true)
+            _ = try await service.addProject(name: name, path: root.appending(path: name).path, tools: [.claude])
+        }
+        let projects = try await service.storedProjects()
+        var stale = try await service.store.configuration()
+        try await service.setSelection(AttachmentSelection(tools: [.codex]), for: .project(projects[0].id))
+        stale.selections[projects[1].id.uuidString] = AttachmentSelection(tools: [.opencode])
+        await XCTAssertThrowsErrorAsync(try await service.store.save(stale))
+        let kept = try await service.storedSelection(for: .project(projects[0].id))
+        XCTAssertEqual(kept.tools, [.codex], "pierwszy zapis przetrwał")
+
+        var mcp = try await service.store.mcpConfiguration()
+        try #"{"version":1,"servers":[]}"#.write(to: root.appending(path: "data/mcp.json"), atomically: true, encoding: .utf8)
+        mcp.servers.append(MCPServer(name: "x", transport: .stdio, command: "npx"))
+        await XCTAssertThrowsErrorAsync(try await service.store.save(mcp)) // zmiana z innego procesu też blokuje zapis
+
+        let fresh = try await service.store.configuration()
+        try await service.store.save(fresh)
+    }
+
     // MARK: Nieudane cofanie zmian
 
     /// A rollback that cannot finish must say so and keep the copy it was restoring from. Reporting

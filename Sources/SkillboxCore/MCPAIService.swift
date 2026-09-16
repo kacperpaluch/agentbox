@@ -60,29 +60,50 @@ extension SkillboxService {
 
 /// The OpenAI key for the MCP AI assistant, kept in the login keychain so it survives app restarts
 /// without ever landing in plaintext preferences.
+///
+/// `account` exists for tests only: a test that round-tripped the production entry once printed
+/// the user's real key in a failed assertion. Every status is checked — a save that deleted the old
+/// entry and then failed to add the new one used to lose the key without a word.
 public enum OpenAIKeyStore {
-    private static func query() -> [String: Any] {
+    public static let productionAccount = "openai-api-key"
+
+    private static func query(_ account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "Agentbox",
-            kSecAttrAccount as String: "openai-api-key"
+            kSecAttrAccount as String: account
         ]
     }
 
-    public static func load() -> String {
+    public static func load(account: String = productionAccount) -> String {
         var item: CFTypeRef?
-        var read = query()
+        var read = query(account)
         read[kSecReturnData as String] = true
         guard SecItemCopyMatching(read as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return "" }
         return String(decoding: data, as: UTF8.self)
     }
 
-    public static func save(_ key: String) {
+    /// Stores the trimmed key. An empty key is not a way to delete — that is `delete`.
+    public static func save(_ key: String, account: String = productionAccount) throws {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        SecItemDelete(query() as CFDictionary)
         guard !trimmed.isEmpty else { return }
-        var add = query()
-        add[kSecValueData as String] = Data(trimmed.utf8)
-        SecItemAdd(add as CFDictionary, nil)
+        let data = Data(trimmed.utf8)
+        let updated = SecItemUpdate(query(account) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if updated == errSecSuccess { return }
+        guard updated == errSecItemNotFound else { throw failure("zapisać", updated) }
+        var add = query(account)
+        add[kSecValueData as String] = data
+        let added = SecItemAdd(add as CFDictionary, nil)
+        guard added == errSecSuccess else { throw failure("zapisać", added) }
+    }
+
+    public static func delete(account: String = productionAccount) throws {
+        let status = SecItemDelete(query(account) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw failure("usunąć", status) }
+    }
+
+    private static func failure(_ verb: String, _ status: OSStatus) -> Error {
+        let reason = (SecCopyErrorMessageString(status, nil) as String?) ?? "OSStatus \(status)"
+        return SkillboxError.commandFailed("nie udało się \(verb) klucza OpenAI w pęku kluczy: \(reason)")
     }
 }

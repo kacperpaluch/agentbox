@@ -144,10 +144,25 @@ public struct AgentDoc: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
+/// The bytes on disk a stored value was read from. Never written to a file.
+///
+/// The service reads a value, changes a copy and saves it back, with other work in between — and
+/// another operation, or `agentbox` running next to the app, can save the same file meanwhile. An
+/// atomic write only keeps the file whole; it does not stop the later save from wiping out the
+/// earlier one. Each value therefore remembers what it was read from, and the store refuses to
+/// save it over anything else. A value built from scratch carries no version and is not checked.
+public struct StoredVersion: Sendable {
+    var digest: String?
+    public init() {}
+    init(digest: String) { self.digest = digest }
+}
+
 public struct DocsConfiguration: Codable, Sendable {
     public var version = 1
     public var docs: [AgentDoc] = []
+    public var storedVersion = StoredVersion()
     public init() {}
+    enum CodingKeys: String, CodingKey { case version, docs }
 }
 
 public struct Catalog: Codable, Sendable {
@@ -155,7 +170,9 @@ public struct Catalog: Codable, Sendable {
     public var skills: [Skill] = []
     /// Optional for libraries created before 0.19.0.
     public var claudePlugins: [ClaudePluginDefinition]?
+    public var storedVersion = StoredVersion()
     public init() {}
+    enum CodingKeys: String, CodingKey { case version, skills, claudePlugins }
 }
 
 public struct ClaudePluginDefinition: Codable, Identifiable, Hashable, Sendable {
@@ -180,6 +197,8 @@ public struct LocalConfiguration: Codable, Sendable {
     /// written to `selections.json` by the store — never part of `projects.local.json`, which is
     /// this Mac's local record and stays out of the Git backup.
     public var selections: [String: AttachmentSelection] = [:]
+    /// Covers `projects.local.json` and `selections.json` together, since they are saved together.
+    public var storedVersion = StoredVersion()
     public init() {}
 
     // `backupRemote` used to live here, pointing at the library's Git backup. That feature is gone,
@@ -284,7 +303,9 @@ public struct MCPConfiguration: Codable, Sendable {
     /// lookup — so a project added later can still be switched back on like any other, and existing
     /// projects are never changed behind the user's back.
     public var defaultDisabledGlobalServers: [String: [String]]?
+    public var storedVersion = StoredVersion()
     public init() {}
+    enum CodingKeys: String, CodingKey { case version, servers, projectDisabledGlobalServers, defaultDisabledGlobalServers }
 }
 
 /// One MCP server Agentbox found declared globally for a tool — outside any project, so it loads

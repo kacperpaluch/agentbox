@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public actor SkillboxStore {
@@ -23,7 +24,11 @@ public actor SkillboxStore {
         try fm.createDirectory(at: self.root.appending(path: "skills"), withIntermediateDirectories: true)
     }
 
-    public func catalog() throws -> Catalog { try read(catalogURL, fallback: Catalog()) }
+    public func catalog() throws -> Catalog {
+        var value = try read(catalogURL, fallback: Catalog())
+        value.storedVersion = try version(of: [catalogURL])
+        return value
+    }
     /// `projects.local.json` and `selections.json` are read as one value.
     ///
     /// They are separate files because they answer different questions: the first is this Mac's own
@@ -34,6 +39,7 @@ public actor SkillboxStore {
         var config: LocalConfiguration = try read(localURL, fallback: LocalConfiguration())
         config.selections = try read(selectionsURL, fallback: SelectionsConfiguration()).selections
         config.selections = try Self.withLegacyAttachments(config.selections, local: localURL, mcp: mcpURL, docs: docsURL, persisted: selectionsURL, fm: fm)
+        config.storedVersion = try version(of: [localURL, selectionsURL])
         return config
     }
 
@@ -121,11 +127,47 @@ public actor SkillboxStore {
         }
         return merged
     }
-    public func mcpConfiguration() throws -> MCPConfiguration { try read(mcpURL, fallback: MCPConfiguration()) }
-    public func docsConfiguration() throws -> DocsConfiguration { try read(docsURL, fallback: DocsConfiguration()) }
+    public func mcpConfiguration() throws -> MCPConfiguration {
+        var value = try read(mcpURL, fallback: MCPConfiguration())
+        value.storedVersion = try version(of: [mcpURL])
+        return value
+    }
+    public func docsConfiguration() throws -> DocsConfiguration {
+        var value = try read(docsURL, fallback: DocsConfiguration())
+        value.storedVersion = try version(of: [docsURL])
+        return value
+    }
 
-    public func save(_ catalog: Catalog) throws { try snapshotLibrary(); try atomicWrite(catalog, to: catalogURL) }
-    public func save(_ config: LocalConfiguration) throws { try snapshotLibrary(); try writeTogether(localWrites(config)) }
+    /// What `files` hold right now, as one fingerprint.
+    private func version(of files: [URL]) throws -> StoredVersion {
+        var hasher = SHA256()
+        for file in files {
+            hasher.update(data: Data(file.lastPathComponent.utf8))
+            if fm.fileExists(atPath: file.path) { hasher.update(data: Data([1])); hasher.update(data: try Data(contentsOf: file)) }
+            else { hasher.update(data: Data([0])) }
+        }
+        return StoredVersion(digest: hasher.finalize().map { String(format: "%02x", $0) }.joined())
+    }
+
+    /// Refuses a save whose value was read from bytes that are no longer on disk.
+    private func requireUnchanged(_ checks: [(StoredVersion, [URL])]) throws {
+        for (stored, files) in checks {
+            guard let expected = stored.digest else { continue }
+            guard try version(of: files).digest == expected else {
+                throw SkillboxError.commandFailed("biblioteka zmieniła się w trakcie tej operacji (inne okno albo polecenie agentbox) — nic nie zapisano, odśwież widok i spróbuj ponownie")
+            }
+        }
+    }
+    private var localFiles: [URL] { [localURL, selectionsURL] }
+
+    public func save(_ catalog: Catalog) throws {
+        try requireUnchanged([(catalog.storedVersion, [catalogURL])])
+        try snapshotLibrary(); try atomicWrite(catalog, to: catalogURL)
+    }
+    public func save(_ config: LocalConfiguration) throws {
+        try requireUnchanged([(config.storedVersion, localFiles)])
+        try snapshotLibrary(); try writeTogether(localWrites(config))
+    }
 
     /// The two halves of a `LocalConfiguration`, encoded. Split out so every overload below writes
     /// both files and no caller can accidentally persist the projects without their attachments.
@@ -141,16 +183,19 @@ public actor SkillboxStore {
     /// or neither. Saving them separately burned two of the ten snapshot slots and could leave the
     /// catalog and the project list disagreeing when the second write failed.
     public func save(_ catalog: Catalog, _ config: LocalConfiguration) throws {
+        try requireUnchanged([(catalog.storedVersion, [catalogURL]), (config.storedVersion, localFiles)])
         try snapshotLibrary()
         try writeTogether([(try encoder.encode(catalog), catalogURL)] + (try localWrites(config)))
     }
 
     public func save(_ config: LocalConfiguration, _ mcp: MCPConfiguration) throws {
+        try requireUnchanged([(config.storedVersion, localFiles), (mcp.storedVersion, [mcpURL])])
         try snapshotLibrary()
         try writeTogether((try localWrites(config)) + [(try encoder.encode(mcp), mcpURL)])
     }
 
     public func save(_ config: LocalConfiguration, _ docs: DocsConfiguration) throws {
+        try requireUnchanged([(config.storedVersion, localFiles), (docs.storedVersion, [docsURL])])
         try snapshotLibrary()
         try writeTogether((try localWrites(config)) + [(try encoder.encode(docs), docsURL)])
     }
@@ -158,6 +203,7 @@ public actor SkillboxStore {
     /// Used where one user action touches a project's own record plus both side-table assignments
     /// (MCP servers and docs) — same one-snapshot reasoning as the two-file overloads above.
     public func save(_ config: LocalConfiguration, _ mcp: MCPConfiguration, _ docs: DocsConfiguration) throws {
+        try requireUnchanged([(config.storedVersion, localFiles), (mcp.storedVersion, [mcpURL]), (docs.storedVersion, [docsURL])])
         try snapshotLibrary()
         try writeTogether((try localWrites(config)) + [(try encoder.encode(mcp), mcpURL), (try encoder.encode(docs), docsURL)])
     }
@@ -217,8 +263,15 @@ public actor SkillboxStore {
         // used to leave a different set of files behind on every run — impossible to reason about
         // from a bug report, and impossible to test.
         let ordered = replacements.sorted { $0.key.lastPathComponent < $1.key.lastPathComponent }
+        // Same reason as in `restoreFullBackup`: a snapshot older than `selections.json` records its
+        // assignments in the files it restores, and today's `selections.json` would outrank them.
+        let dropSelections = replacements[selectionsURL] == nil && replacements[localURL] != nil && fm.fileExists(atPath: selectionsURL.path)
         try snapshotLibrary()
-        try writeTogether(ordered.map { (data: $0.value, url: $0.key) })
+        let rollback = try FileRollback(files: ordered.map(\.key) + (dropSelections ? [selectionsURL] : []))
+        try rollback.perform {
+            for (url, data) in ordered { try Self.writeData(data, to: url) }
+            if dropSelections { try fm.removeItem(at: selectionsURL) }
+        }
         return replacements.keys.map(\.lastPathComponent).sorted()
     }
 
@@ -317,7 +370,14 @@ public actor SkillboxStore {
                 let target = root.appending(path: name); let backupItem = package.appending(path: name)
                 // "docs.json" and "selections.json" are the names that can legitimately be missing
                 // from an older backup.
-                guard fm.fileExists(atPath: backupItem.path) else { continue }
+                guard fm.fileExists(atPath: backupItem.path) else {
+                    // A backup older than `selections.json` keeps its assignments in the files just
+                    // restored. Today's `selections.json` left in place would win the migration
+                    // over them, and the restore would report success while keeping the current
+                    // assignments.
+                    if name == "selections.json", fm.fileExists(atPath: target.path) { try fm.removeItem(at: target) }
+                    continue
+                }
                 if fm.fileExists(atPath: target.path) { try fm.removeItem(at: target) }
                 try fm.copyItem(at: backupItem, to: target)
             }

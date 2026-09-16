@@ -76,7 +76,7 @@ struct BackupView: View {
         .confirmationDialog("Przywrócić snapshot biblioteki?", isPresented: Binding(get: { snapshotToRestore != nil }, set: { if !$0 { snapshotToRestore = nil } })) {
             Button("Przywróć bibliotekę", role: .destructive) { if let snapshotToRestore { Task { await model.restoreLibrary(snapshotToRestore) } }; snapshotToRestore = nil }
             Button("Anuluj", role: .cancel) { snapshotToRestore = nil }
-        } message: { Text("Aktualny stan zostanie zachowany jako nowy snapshot. Sekrety i katalog skills nie zostaną zmienione.") }
+        } message: { Text("Aktualny stan zostanie zachowany jako nowy snapshot. Przywrócone zostaną metadane biblioteki, w tym mcp.json razem z lokalnymi wartościami MCP (np. tokenami) z chwili snapshotu. Katalog skills i klucz OpenAI w pęku kluczy nie zostaną zmienione.") }
     }
 
     private var snapshotsSection: some View {

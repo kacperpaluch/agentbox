@@ -30,4 +30,27 @@ final class GlobalSyncTests: AgentboxTestCase {
         _ = try await service.syncGlobalSelection(home: home)
         XCTAssertFalse(FileManager.default.fileExists(atPath: home.appending(path: ".claude/skills/notes").path))
     }
+
+    /// The second client fails; the first one, already written, must come back as it was.
+    func testFailingClientRollsBackTheClientsAlreadyWritten() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let home = root.appending(path: "home")
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        for id in ["old", "new"] {
+            let source = root.appending(path: "source/\(id)")
+            try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+            try id.write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+            _ = try await service.addLocal(path: source.path)
+        }
+        try await service.setSelection(AttachmentSelection(tools: [.claude, .opencode], skillIDs: ["old"]), for: .global)
+        _ = try await service.syncGlobalSelection(home: home)
+        let claude = home.appending(path: ".claude/skills")
+        let before = try SkillTree.read(claude)
+
+        try await service.setSelection(AttachmentSelection(tools: [.claude, .opencode], skillIDs: ["new"]), for: .global)
+        defer { SkillboxService.injectedFailure = nil }
+        SkillboxService.injectedFailure = { if $0 == "global:opencode" { throw SkillboxError.commandFailed("wymuszony błąd") } }
+        await XCTAssertThrowsErrorAsync(try await service.syncGlobalSelection(home: home))
+        XCTAssertEqual(try SkillTree.read(claude), before, "Claude wraca do stanu sprzed synchronizacji")
+    }
 }

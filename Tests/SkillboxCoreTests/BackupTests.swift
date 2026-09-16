@@ -200,6 +200,10 @@ final class BackupTests: AgentboxTestCase {
     }
     func testProcessRunnerStopsAProcessThatNeverFinishes() throws {
         let started = Date()
+        // Both streams closed early, the process still running: the timeout must still apply.
+        let closedEarly = Date()
+        XCTAssertThrowsError(try ProcessRunner.run("/bin/sh", ["-c", "exec >&- 2>&-; sleep 30"], timeout: 1))
+        XCTAssertLessThan(Date().timeIntervalSince(closedEarly), 10, "limit czasu obejmuje cały proces, nie tylko strumienie")
         XCTAssertThrowsError(try ProcessRunner.run("/bin/sh", ["-c", "sleep 30"], timeout: 1)) { error in
             XCTAssertTrue("\(error)".contains("limit"), "\(error)")
         }

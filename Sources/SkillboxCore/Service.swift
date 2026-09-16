@@ -60,8 +60,9 @@ public actor SkillboxService {
         let source = URL(fileURLWithPath: path).standardizedFileURL
         let skillsDirectory = await store.skillsDirectory
         var catalog = try await store.catalog()
-        let skill = try importSkill(from: source, source: SkillSource(kind: .local, location: source.path), suppliedID: suppliedID, into: &catalog, skillsDirectory: skillsDirectory)
-        try await store.save(catalog)
+        let skill = try plannedImport(from: source, source: SkillSource(kind: .local, location: source.path), suppliedID: suppliedID, into: &catalog)
+        let saved = catalog
+        try await replacingLibrarySkills([(source, skill.id)]) { try await self.store.save(saved) }
         return skill
     }
 
@@ -81,10 +82,10 @@ public actor SkillboxService {
         if id != nil, candidates.count > 1 { throw SkillboxError.invalidSkill("--id można podać tylko dla pojedynczego skilla") }
         // The whole import is one catalog read and one save: a save per candidate burned one of
         // the ten recovery snapshots each, and an error mid-loop left a partially saved catalog.
-        let skillsDirectory = await store.skillsDirectory
         var catalog = try await store.catalog()
         var imported: [Skill] = []
         var skipped: [SkippedSkill] = []
+        var copies: [(source: URL, id: String)] = []
         for candidate in candidates {
             let tempPath = temp.resolvingSymlinksInPath().path
             let candidatePath = candidate.resolvingSymlinksInPath().path
@@ -98,19 +99,23 @@ public actor SkillboxService {
             // invalid) is recorded and skipped rather than aborting the batch — a repository with
             // 25 skills should not fail to import 24 of them because one id collides.
             do {
+                // Two candidates resolving to one id would install one over the other.
+                guard !copies.contains(where: { $0.id == skillID }) else { throw SkillboxError.duplicateSkill(skillID) }
                 if let index = catalog.skills.firstIndex(where: { $0.id == skillID }) {
                     guard catalog.skills[index].source.kind == .git, Self.sameGitLocation(catalog.skills[index].source.location, input.url) else { throw SkillboxError.duplicateSkill(skillID) }
-                    try copyReplacing(from: candidate, to: skillsDirectory.appending(path: skillID))
+                    guard fm.fileExists(atPath: candidate.appending(path: "SKILL.md").path) else { throw SkillboxError.invalidSkill("brak SKILL.md w \(candidate.path)") }
                     catalog.skills[index].source = source
                     catalog.skills[index].updatedAt = .now
                     imported.append(catalog.skills[index])
                 } else {
-                    imported.append(try importSkill(from: candidate, source: source, suppliedID: skillID, into: &catalog, skillsDirectory: skillsDirectory))
+                    imported.append(try plannedImport(from: candidate, source: source, suppliedID: skillID, into: &catalog))
                 }
+                copies.append((candidate, skillID))
             } catch { skipped.append(SkippedSkill(id: skillID, reason: error.localizedDescription)) }
         }
         guard !imported.isEmpty else { throw SkillboxError.invalidSkill(skipped.first?.reason ?? "nie zaimportowano żadnego skilla") }
-        try await store.save(catalog)
+        let saved = catalog
+        try await replacingLibrarySkills(copies) { try await self.store.save(saved) }
         return GitImportResult(imported: imported, skipped: skipped)
     }
 
@@ -123,15 +128,71 @@ public actor SkillboxService {
 
     /// Adds one skill to the passed-in catalog without saving it, so a batch import can make
     /// one save (and one recovery snapshot) for any number of skills.
-    private func importSkill(from sourceURL: URL, source: SkillSource, suppliedID: String?, into catalog: inout Catalog, skillsDirectory: URL) throws -> Skill {
+    /// Validates one new skill and adds it to `catalog`. The directory is copied by the caller,
+    /// together with the rest of its batch, in `replacingLibrarySkills`.
+    private func plannedImport(from sourceURL: URL, source: SkillSource, suppliedID: String?, into catalog: inout Catalog) throws -> Skill {
         guard fm.fileExists(atPath: sourceURL.appending(path: "SKILL.md").path) else { throw SkillboxError.invalidSkill("brak SKILL.md w \(sourceURL.path)") }
         let id = suppliedID ?? sourceURL.lastPathComponent.lowercased().replacingOccurrences(of: " ", with: "-")
         guard id.range(of: "^[a-z0-9]+(?:-[a-z0-9]+)*$", options: .regularExpression) != nil else { throw SkillboxError.invalidSkill(id) }
         guard !catalog.skills.contains(where: { $0.id == id }) else { throw SkillboxError.duplicateSkill(id) }
-        try copyReplacing(from: sourceURL, to: skillsDirectory.appending(path: id))
         let skill = Skill(id: id, name: id, source: source)
         catalog.skills.append(skill)
         return skill
+    }
+
+    /// Test hook: called with `install:<id>` before each library directory is replaced and with
+    /// `commit` before the metadata is saved, so a test can fail the second step of a batch.
+    nonisolated(unsafe) static var injectedFailure: ((String) throws -> Void)?
+
+    /// Replaces whole library skill directories, then runs `commit` — the catalog save that makes
+    /// them official — as one operation.
+    ///
+    /// The shape `applySkillUpdates` already had: every new tree is copied aside before the first
+    /// original moves, originals are kept until `commit` succeeded, and any failure — a later copy,
+    /// or the save itself — puts every directory back. Import, reimport and adoption used to replace
+    /// directories one by one and drop each previous copy straight away, so a failure on the second
+    /// skill left the first one overwritten with no way back.
+    func replacingLibrarySkills(_ items: [(source: URL, id: String)], commit: () async throws -> Void) async throws {
+        guard !items.isEmpty else { try await commit(); return }
+        guard Set(items.map(\.id)).count == items.count else { throw SkillboxError.invalidSkill("powtórzony skill w jednej operacji") }
+        let library = await store.skillsDirectory
+        let scratch = Self.scratchDirectory()
+        try fm.createDirectory(at: scratch.appending(path: "new"), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try fm.createDirectory(at: scratch.appending(path: "old"), withIntermediateDirectories: true)
+        var keep = false
+        defer { if !keep { try? fm.removeItem(at: scratch) } }
+        for (index, item) in items.enumerated() {
+            guard Self.isSafeSkillID(item.id) else { throw SkillboxError.unsafePath(item.id) }
+            guard fm.fileExists(atPath: item.source.path) else { throw SkillboxError.invalidSkill(item.source.path) }
+            try fm.copyItem(at: item.source, to: scratch.appending(path: "new/\(index)"))
+        }
+        try fm.createDirectory(at: library, withIntermediateDirectories: true)
+        var moved: [(target: URL, saved: URL?)] = []
+        do {
+            for (index, item) in items.enumerated() {
+                try Self.injectedFailure?("install:\(item.id)")
+                let target = library.appending(path: item.id)
+                var saved: URL?
+                if fm.fileExists(atPath: target.path) {
+                    saved = scratch.appending(path: "old/\(index)")
+                    try fm.moveItem(at: target, to: saved!)
+                }
+                moved.append((target, saved))
+                try fm.moveItem(at: scratch.appending(path: "new/\(index)"), to: target)
+            }
+            try Self.injectedFailure?("commit")
+            try await commit()
+        } catch {
+            var report = RollbackReport()
+            for item in moved.reversed() {
+                report.attempt(item.target.lastPathComponent) {
+                    if fm.fileExists(atPath: item.target.path) { try fm.removeItem(at: item.target) }
+                    if let saved = item.saved { try fm.moveItem(at: saved, to: item.target) }
+                }
+            }
+            keep = !report.succeeded
+            throw report.error(after: error, keeping: keep ? scratch.path : nil)
+        }
     }
 
     /// Puts the moved skill directories back and returns the error to report.
@@ -231,10 +292,20 @@ public actor SkillboxService {
             throw SkillboxError.invalidSkill("skille z Git są zastępowane przy aktualizacji, więc nie można ich edytować w aplikacji")
         }
         let directory = try await skillDirectory(skillID)
+        let file = directory.appending(path: "SKILL.md")
+        // Without `updatedAt` saved, projects never learn about the edit, so a failed catalog save
+        // takes the file back with it.
+        let previous = fm.fileExists(atPath: file.path) ? try Data(contentsOf: file) : nil
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
-        try content.write(to: directory.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        try content.write(to: file, atomically: true, encoding: .utf8)
         catalog.skills[index].updatedAt = .now
-        try await store.save(catalog)
+        do { try await store.save(catalog) } catch {
+            var report = RollbackReport()
+            report.attempt(file.path) {
+                if let previous { try previous.write(to: file, options: .atomic) } else { try fm.removeItem(at: file) }
+            }
+            throw report.error(after: error)
+        }
     }
 
     public func setTags(skillID: String, tags: [String]) async throws {
@@ -466,7 +537,7 @@ public actor SkillboxService {
         var found: [AdoptableSkill] = []
         for tool in project.tools {
             let target = URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath)
-            let managed = Self.managedSkillIDs(at: target)
+            let managed = try Self.managedSkillIDs(at: target)
             let entries = (try? fm.contentsOfDirectory(at: target, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
             for entry in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
                 let id = entry.lastPathComponent
@@ -483,14 +554,17 @@ public actor SkillboxService {
 
     @discardableResult
     public func adoptSkills(_ items: [AdoptableSkill]) async throws -> [Skill] {
-        let skillsDirectory = await store.skillsDirectory
         var catalog = try await store.catalog()
         var adopted: [Skill] = []
+        var copies: [(source: URL, id: String)] = []
         for item in items {
             let source = URL(fileURLWithPath: item.path).standardizedFileURL
-            adopted.append(try importSkill(from: source, source: SkillSource(kind: .local, location: source.path), suppliedID: item.suggestedID, into: &catalog, skillsDirectory: skillsDirectory))
+            let skill = try plannedImport(from: source, source: SkillSource(kind: .local, location: source.path), suppliedID: item.suggestedID, into: &catalog)
+            adopted.append(skill)
+            copies.append((source, skill.id))
         }
-        try await store.save(catalog)
+        let saved = catalog
+        try await replacingLibrarySkills(copies) { try await self.store.save(saved) }
         return adopted
     }
 
@@ -543,22 +617,50 @@ public actor SkillboxService {
 
     /// Manifest of skills Agentbox owns inside one target directory.
     ///
-    /// Version 2 records when each skill was last written so drift can be detected without
-    /// hashing files. Version 1 was a bare `["id", ...]` array and still decodes; its entries get
-    /// `distantPast`, so the first sync after upgrading reports them as outdated once.
+    /// Version 2 records when each skill was last written. Version 3 adds what was written — a
+    /// digest of each directory — because a timestamp cannot tell a skill edited in the project
+    /// from one edited straight in the library folder, and adoption needs exactly that answer.
+    /// Version 1 was a bare `["id", ...]` array and still decodes; its entries get `distantPast`,
+    /// so the first sync after upgrading reports them as outdated once.
     struct SkillManifest: Codable {
-        var version = 2
+        static let currentVersion = 3
+        var version = currentVersion
         var skills: [String: Date] = [:]
+        var digests: [String: String]?
     }
 
-    static func skillManifest(at target: URL) -> SkillManifest {
-        guard let data = try? Data(contentsOf: target.appending(path: ".skillbox.json")) else { return SkillManifest(version: 2, skills: [:]) }
-        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
-        if let manifest = try? decoder.decode(SkillManifest.self, from: data) {
-            return SkillManifest(version: manifest.version, skills: manifest.skills.filter { isSafeSkillID($0.key) })
+    /// The manifest of one target. A missing file means nothing is managed; anything else that
+    /// cannot be read is an error, never an empty manifest: treating a damaged file as "nothing is
+    /// ours" turned managed skills into conflicts, skipped their cleanup and overwrote the file.
+    ///
+    /// Entries are input — `.claude/skills/` is committed, so the file can arrive from a cloned
+    /// repository — and one that cannot be a skill directory stops the operation.
+    static func skillManifest(at target: URL) throws -> SkillManifest {
+        let url = target.appending(path: ".skillbox.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return SkillManifest() }
+        let data: Data
+        do { data = try Data(contentsOf: url) } catch {
+            throw SkillboxError.unsafePath("nie można odczytać \(url.path): \(error.localizedDescription)")
         }
-        let legacy = (try? JSONDecoder().decode([String].self, from: data)) ?? []
-        return SkillManifest(version: 1, skills: Dictionary(uniqueKeysWithValues: legacy.filter(isSafeSkillID).map { ($0, Date.distantPast) }))
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        let manifest: SkillManifest
+        if let decoded = try? decoder.decode(SkillManifest.self, from: data) {
+            guard (1...SkillManifest.currentVersion).contains(decoded.version) else {
+                throw SkillboxError.unsafePath("\(url.path) ma nieobsługiwaną wersję \(decoded.version) — zaktualizuj Agentbox")
+            }
+            manifest = decoded
+        } else if let legacy = try? JSONDecoder().decode([String].self, from: data) {
+            guard Set(legacy).count == legacy.count else {
+                throw SkillboxError.unsafePath("\(url.path) wymienia ten sam skill więcej niż raz")
+            }
+            manifest = SkillManifest(version: 1, skills: Dictionary(uniqueKeysWithValues: legacy.map { ($0, Date.distantPast) }))
+        } else {
+            throw SkillboxError.unsafePath("\(url.path) jest uszkodzony — Agentbox nie wie, które skille w \(target.path) do niego należą. Usuń lub popraw plik, zanim zsynchronizujesz projekt")
+        }
+        if let unsafeID = manifest.skills.keys.sorted().first(where: { !isSafeSkillID($0) }) {
+            throw SkillboxError.unsafePath("\(url.path): wpis `\(unsafeID)` nie jest nazwą katalogu skilla")
+        }
+        return manifest
     }
 
     /// The text of a file that may not exist yet.
@@ -604,40 +706,35 @@ public actor SkillboxService {
         !id.isEmpty && !id.hasPrefix(".") && id == URL(fileURLWithPath: "/tmp").appending(path: id).lastPathComponent
     }
 
-    /// Stops before the first write when a manifest holds an entry that cannot be a skill directory.
-    ///
-    /// `skillManifest` already drops such entries, so nothing would be deleted either way — but
-    /// silently ignoring part of a file the user (or their repository) provided is exactly what the
-    /// project rules forbid. Reported as a conflict, like an unmanaged skill directory: the project
-    /// shows as blocked with the offending name, instead of half-synchronizing.
-    static func assertSafeSkillManifest(at target: URL) throws {
-        guard let data = try? Data(contentsOf: target.appending(path: ".skillbox.json")) else { return }
-        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
-        let ids: [String]
-        if let manifest = try? decoder.decode(SkillManifest.self, from: data) { ids = Array(manifest.skills.keys) }
-        else { ids = (try? JSONDecoder().decode([String].self, from: data)) ?? [] }
-        if let unsafeID = ids.first(where: { !isSafeSkillID($0) }) {
-            throw SkillboxError.unsafePath("\(target.appending(path: ".skillbox.json").path): wpis `\(unsafeID)` nie jest nazwą katalogu skilla")
-        }
-    }
+    /// What a skill directory holds, or `nil` when it cannot be read as a skill tree.
+    static func skillDigest(_ directory: URL) -> String? { try? SkillTree.read(directory).digest }
 
     static func writeSkillManifest(_ skills: [Skill], to target: URL) throws {
-        let manifest = SkillManifest(version: 2, skills: Dictionary(uniqueKeysWithValues: skills.map { ($0.id, $0.updatedAt) }))
+        var digests: [String: String] = [:]
+        for skill in skills { digests[skill.id] = skillDigest(target.appending(path: skill.id)) }
+        try writeSkillManifest(SkillManifest(skills: Dictionary(uniqueKeysWithValues: skills.map { ($0.id, $0.updatedAt) }), digests: digests), to: target)
+    }
+
+    private static func writeSkillManifest(_ manifest: SkillManifest, to target: URL) throws {
+        var manifest = manifest
+        manifest.version = SkillManifest.currentVersion
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(manifest).write(to: target.appending(path: ".skillbox.json"), options: .atomic)
     }
 
-    static func managedSkillIDs(at target: URL) -> Set<String> { Set(skillManifest(at: target).skills.keys) }
+    static func managedSkillIDs(at target: URL) throws -> Set<String> { Set(try skillManifest(at: target).skills.keys) }
 
-    /// Records a new timestamp for one skill in a target's manifest, leaving every other entry
-    /// exactly as it was. Used after adopting a change back from a project, where only that one
-    /// skill's bookkeeping moved.
+    /// Records a new timestamp and digest for one skill in a target's manifest, leaving every other
+    /// entry exactly as it was. Used after adopting a change back from a project, where only that
+    /// one skill's bookkeeping moved.
     static func restampSkillManifest(_ skillID: String, at target: URL, to date: Date) throws {
-        var manifest = skillManifest(at: target)
+        var manifest = try skillManifest(at: target)
         guard manifest.skills[skillID] != nil else { return }
         manifest.skills[skillID] = date
-        let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; encoder.dateEncodingStrategy = .iso8601
-        try encoder.encode(manifest).write(to: target.appending(path: ".skillbox.json"), options: .atomic)
+        var digests = manifest.digests ?? [:]
+        digests[skillID] = skillDigest(target.appending(path: skillID))
+        manifest.digests = digests
+        try writeSkillManifest(manifest, to: target)
     }
 
     /// A directory that exists in the target but is not listed in the Agentbox manifest belongs
@@ -657,8 +754,7 @@ public actor SkillboxService {
     }
 
     static func skillPreview(tool: Tool, target: URL, current: [Skill], library: URL) throws -> SkillSyncPreview {
-        try assertSafeSkillManifest(at: target)
-        let manifest = skillManifest(at: target)
+        let manifest = try skillManifest(at: target)
         let previous = Set(manifest.skills.keys)
         let ids = Set(current.map(\.id))
         try assertNoUnmanagedSkillConflict(ids: Array(ids), target: target, managed: previous, library: library)
@@ -699,8 +795,7 @@ public actor SkillboxService {
 
     private func sync(skills: [Skill], to target: URL, dryRun: Bool) async throws -> SyncResult {
         guard target.pathComponents.contains("skills"), target.path != "/" else { throw SkillboxError.unsafePath(target.path) }
-        try Self.assertSafeSkillManifest(at: target)
-        let previous = Self.managedSkillIDs(at: target)
+        let previous = try Self.managedSkillIDs(at: target)
         let current = skills.map(\.id).sorted(); var result = SyncResult()
         // Checked before the first removal so a conflict never leaves a half-synchronized target.
         try Self.assertNoUnmanagedSkillConflict(ids: current, target: target, managed: previous, library: await store.skillsDirectory)
@@ -791,8 +886,11 @@ public actor SkillboxService {
             if existed { try? fm.removeItem(at: previous) }
         } catch {
             try? fm.removeItem(at: staging)
-            if existed, fm.fileExists(atPath: previous.path) { try? fm.moveItem(at: previous, to: destination) }
-            throw error
+            var report = RollbackReport()
+            if existed, fm.fileExists(atPath: previous.path) {
+                report.attempt(destination.path) { try fm.moveItem(at: previous, to: destination) }
+            }
+            throw report.error(after: error, keeping: report.succeeded ? nil : previous.path)
         }
     }
 }

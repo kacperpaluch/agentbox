@@ -261,6 +261,8 @@ struct GroupRootSetupView: View {
     @State private var following = Set<UUID>()
     @State private var loaded = false
     @State private var saving = false
+    @State private var differingDocuments = false
+    @State private var documentsConfirmed = false
 
     private var nameTaken: Bool { model.projectRoots.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame } }
 
@@ -296,11 +298,17 @@ struct GroupRootSetupView: View {
                          : "Agentbox zapyta także o podfoldery, które już tam leżą i nie są projektami.")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(6) }
+                if differingDocuments {
+                    GroupBox { VStack(alignment: .leading, spacing: 6) {
+                        Label("Projekty używają różnych dokumentów, a folder może mieć tylko jeden. Wybierz go poniżej — przy każdym projekcie, który go zmieni, widać „inny dokument”.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Toggle("Rozumiem, że dokument części projektów się zmieni", isOn: $documentsConfirmed).toggleStyle(.checkbox)
+                    }.padding(6) }
+                }
                 AttachmentPicker(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, claudePlugins: model.claudePluginLibrary, selection: $selection, manageGitignore: $manageGitignore)
             }.padding(24) }
             SheetFooter {
                 Button("Anuluj") { dismiss() }
-                Button("Utwórz folder nadrzędny") { Task { saving = true; defer { saving = false }; if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(saving || name.isEmpty || nameTaken || selection.tools.isEmpty)
+                Button("Utwórz folder nadrzędny") { Task { saving = true; defer { saving = false }; if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(saving || name.isEmpty || nameTaken || selection.tools.isEmpty || (differingDocuments && !documentsConfirmed))
             }
         }
         .sheetFrame(width: 760, height: 640)
@@ -322,8 +330,17 @@ struct GroupRootSetupView: View {
         selection.skillTags = Set(current.flatMap(\.skillTags)).sorted()
         selection.serverIDs = Set(current.flatMap(\.serverIDs)).sorted { $0.uuidString < $1.uuidString }
         selection.serverTags = Set(current.flatMap(\.serverTags)).sorted()
-        selection.docIDs = current.compactMap { $0.docIDs.first }.first.map { [$0] } ?? []
-        selection.docTags = Set(current.flatMap(\.docTags)).sorted()
+        // One document per project: when the group uses different ones there is no union to take,
+        // so nothing is picked on anyone's behalf — the form says so and waits for a choice.
+        let documents = Set(current.map { resolvedDocs(ids: $0.docIDs, tags: $0.docTags) })
+        if documents.count <= 1, let only = current.first {
+            selection.docIDs = only.docIDs
+            selection.docTags = only.docTags
+        } else {
+            differingDocuments = true
+        }
+        let plugins = Set(current.flatMap { $0.claudePluginIDs ?? [] })
+        selection.claudePluginIDs = plugins.isEmpty ? nil : plugins.sorted { $0.uuidString < $1.uuidString }
         // Only what every project already excludes stays excluded; anything else would drop a skill
         // that one of them deliberately keeps.
         selection.excludedSkillIDs = projects.dropFirst()
@@ -332,12 +349,13 @@ struct GroupRootSetupView: View {
         manageGitignore = !projects.isEmpty && projects.allSatisfy { $0.manageGitignore == true }
     }
 
-    /// What the project would gain or lose, counted the same way synchronization resolves it.
+    /// What the project would gain or lose, counted the same way synchronization resolves it —
+    /// every part of the selection, not only skills and servers.
     private func change(for project: Project) -> String {
         guard following.contains(project.id) else { return "zachowa własne" }
-        let before = resolvedSkills(ids: Set(project.skillIDs), tags: Set(project.tags), excluded: Set(project.excludedSkillIDs ?? []))
-        let after = resolvedSkills(ids: Set(selection.skillIDs), tags: Set(selection.skillTags), excluded: Set(selection.excludedSkillIDs))
         let effective = model.selection(for: .project(project.id), resolvingInheritance: true)
+        let before = resolvedSkills(ids: Set(effective.skillIDs), tags: Set(effective.skillTags), excluded: Set(effective.excludedSkillIDs))
+        let after = resolvedSkills(ids: Set(selection.skillIDs), tags: Set(selection.skillTags), excluded: Set(selection.excludedSkillIDs))
         let beforeServers = resolvedServers(ids: Set(effective.serverIDs), tags: Set(effective.serverTags))
         let afterServers = resolvedServers(ids: Set(selection.serverIDs), tags: Set(selection.serverTags))
         var parts: [String] = []
@@ -347,7 +365,33 @@ struct GroupRootSetupView: View {
         if removedSkills > 0 { parts.append("−\(removedSkills) skilli") }
         if addedServers > 0 { parts.append("+\(addedServers) MCP") }
         if removedServers > 0 { parts.append("−\(removedServers) MCP") }
+        let addedTools = Set(selection.tools).subtracting(effective.tools).count, removedTools = Set(effective.tools).subtracting(selection.tools).count
+        if addedTools > 0 { parts.append("+\(addedTools) narzędzi") }
+        if removedTools > 0 { parts.append("−\(removedTools) narzędzi") }
+        if resolvedDocs(ids: effective.docIDs, tags: effective.docTags) != resolvedDocs(ids: selection.docIDs, tags: selection.docTags) { parts.append("inny dokument") }
+        let beforePlugins = Set(effective.claudePluginIDs ?? []), afterPlugins = Set(selection.claudePluginIDs ?? [])
+        if afterPlugins.subtracting(beforePlugins).count > 0 { parts.append("+\(afterPlugins.subtracting(beforePlugins).count) pluginów") }
+        if beforePlugins.subtracting(afterPlugins).count > 0 { parts.append("−\(beforePlugins.subtracting(afterPlugins).count) pluginów") }
+        let shown = disabledGlobal(project.id).subtracting(sharedDisabledGlobal).count
+        if shown > 0 { parts.append("+\(shown) globalnych MCP") }
         return parts.isEmpty ? "bez zmian" : parts.joined(separator: ", ")
+    }
+
+    private func resolvedDocs(ids: [String], tags: [String]) -> Set<String> {
+        let wanted = Set(tags.map { $0.lowercased() })
+        return Set(model.docs.docs.filter { ids.contains($0.id) || !wanted.isDisjoint(with: $0.tags.map { $0.lowercased() }) }.map(\.id))
+    }
+
+    /// Hidden global servers, as "tool:name", for one selection.
+    private func disabledGlobal(_ id: UUID) -> Set<String> {
+        Set((model.mcp.projectDisabledGlobalServers?[id.uuidString] ?? [:]).flatMap { tool, names in names.map { "\(tool):\($0)" } })
+    }
+
+    /// What the folder will keep hidden: only what every following project hides.
+    private var sharedDisabledGlobal: Set<String> {
+        let sets = projects.filter { following.contains($0.id) }.map { disabledGlobal($0.id) }
+        guard let first = sets.first else { return [] }
+        return sets.dropFirst().reduce(first) { $0.intersection($1) }
     }
 
     private func resolvedSkills(ids: Set<String>, tags: Set<String>, excluded: Set<String>) -> Set<String> {

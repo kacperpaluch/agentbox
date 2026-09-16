@@ -30,7 +30,12 @@ enum ProcessRunner {
         process.environment = nonInteractiveEnvironment()
         process.standardInput = FileHandle.nullDevice
         let pipe = Pipe(); process.standardOutput = pipe; process.standardError = pipe
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
         try process.run()
+        // One deadline for the whole life of the process. It used to cover only the output: a
+        // process that closed both streams and kept running was then waited for without limit.
+        let deadline = DispatchTime.now() + timeout
         // The read happens on its own thread so a timeout can abandon it. An orphaned
         // grandchild (git → ssh on a dead connection) keeps the pipe open after its parent
         // dies, and a blocking read here would freeze the service actor until app restart.
@@ -38,7 +43,7 @@ enum ProcessRunner {
         let done = DispatchSemaphore(value: 0)
         let handle = pipe.fileHandleForReading
         Thread.detachNewThread { buffer.set(handle.readDataToEndOfFile()); done.signal() }
-        if done.wait(timeout: .now() + timeout) == .timedOut {
+        if done.wait(timeout: deadline) == .timedOut || exited.wait(timeout: deadline) == .timedOut {
             // SIGKILL reaches only the direct child; a grandchild holding the pipe leaks one
             // blocked reader thread until it exits, but the actor stays usable.
             kill(process.processIdentifier, SIGKILL)

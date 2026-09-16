@@ -204,4 +204,71 @@ final class DocsTests: AgentboxTestCase {
         let afterLegacyRestore = try await service.docsConfiguration().docs
         XCTAssertEqual(Set(afterLegacyRestore.map(\.id)), ["standard", "current-only"], "docs.json spoza backupu powinno przetrwać restore starszego pakietu bez docs.json")
     }
+
+    private func docsProject() async throws -> (SkillboxService, Project, URL) {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let project = try await service.addProject(name: "p", path: projectURL.path, tools: [.claude])
+        return (service, project, projectURL)
+    }
+
+    /// Files already identical to the assigned document still need their manifest; skipping it
+    /// left the project pending forever and made the next document edit a conflict.
+    func testIdenticalDocumentsAreTakenOverByAnUpToDateSync() async throws {
+        let (service, project, projectURL) = try await docsProject()
+        let doc = try await service.createDoc(id: "standard", content: "zasady")
+        try await service.setDocs(projectID: project.id, docIDs: [doc.id], tags: [])
+        try "zasady\n".write(to: projectURL.appending(path: "AGENTS.md"), atomically: true, encoding: .utf8)
+        try "@AGENTS.md\n".write(to: projectURL.appending(path: "CLAUDE.md"), atomically: true, encoding: .utf8)
+
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+
+        XCTAssertEqual(try DocsRenderer.manifestDocID(projectURL), "standard")
+        let status = try await service.projectStatuses().first { $0.projectID == project.id }
+        XCTAssertEqual(status?.state, .synced)
+        try await service.saveDocContent(docID: doc.id, name: "", content: "nowe zasady")
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        XCTAssertEqual(try String(contentsOf: projectURL.appending(path: "AGENTS.md"), encoding: .utf8), "nowe zasady\n")
+    }
+
+    /// The name used to be enough: a directory now called `AGENTS.md` went recursively.
+    func testManagedDocumentReplacedByADirectoryIsNotRemoved() async throws {
+        let (service, project, projectURL) = try await docsProject()
+        let doc = try await service.createDoc(id: "standard", content: "zasady")
+        try await service.setDocs(projectID: project.id, docIDs: [doc.id], tags: [])
+        _ = try await service.syncDocs(projectID: project.id)
+        let agents = projectURL.appending(path: "AGENTS.md")
+        try FileManager.default.removeItem(at: agents)
+        try FileManager.default.createDirectory(at: agents, withIntermediateDirectories: true)
+        try "ważne".write(to: agents.appending(path: "notatki.txt"), atomically: true, encoding: .utf8)
+
+        try await service.setDocs(projectID: project.id, docIDs: [], tags: [])
+        await XCTAssertThrowsErrorAsync(try await service.syncDocs(projectID: project.id))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: agents.appending(path: "notatki.txt").path))
+    }
+
+    func testUnreadableManagedDocumentIsNotReplaced() async throws {
+        let (service, project, projectURL) = try await docsProject()
+        let doc = try await service.createDoc(id: "standard", content: "zasady")
+        try await service.setDocs(projectID: project.id, docIDs: [doc.id], tags: [])
+        _ = try await service.syncDocs(projectID: project.id)
+        let binary = Data([0xFF, 0xFE, 0x00, 0xC3])
+        try binary.write(to: projectURL.appending(path: "AGENTS.md"))
+        try await service.saveDocContent(docID: doc.id, name: "", content: "inne")
+        await XCTAssertThrowsErrorAsync(try await service.syncDocs(projectID: project.id))
+        XCTAssertEqual(try Data(contentsOf: projectURL.appending(path: "AGENTS.md")), binary)
+    }
+
+    func testDamagedDocsManifestIsReportedNotOverwritten() async throws {
+        let (service, project, projectURL) = try await docsProject()
+        let doc = try await service.createDoc(id: "standard", content: "zasady")
+        try await service.setDocs(projectID: project.id, docIDs: [doc.id], tags: [])
+        _ = try await service.syncDocs(projectID: project.id)
+        let manifest = projectURL.appending(path: ".skillbox/docs-manifest.json")
+        try "{ zepsuty".write(to: manifest, atomically: true, encoding: .utf8)
+        await XCTAssertThrowsErrorAsync(try await service.syncProjectTransaction(projectID: project.id))
+        XCTAssertEqual(try String(contentsOf: manifest, encoding: .utf8), "{ zepsuty")
+    }
 }

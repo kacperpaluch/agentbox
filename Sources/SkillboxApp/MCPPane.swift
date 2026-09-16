@@ -201,12 +201,21 @@ struct MCPServerEditor: View {
     @State private var fields: [MCPManagedField] = []
     @State private var editingJSON = false
     @State private var jsonText = ""
+    /// Set when the saved variables and headers could not be read. The form then cannot be saved:
+    /// it rebuilds them from `fields`, and an empty list would erase them.
+    @State private var fieldsError: String?
+    @State private var switchError = ""
     init(model: AppModel, server: MCPServer, existingTags: [String]) { self.model = model; original = server; self.existingTags = existingTags; _name = State(initialValue: server.name); _transport = State(initialValue: server.transport); _command = State(initialValue: server.command); _arguments = State(initialValue: server.arguments.joined(separator: "\n")); _url = State(initialValue: server.url); _enabled = State(initialValue: server.enabled); _tags = State(initialValue: (server.tags ?? []).joined(separator: ", ")) }
     /// The JSON view only makes sense once the server is actually saved — a brand-new, unsaved one
     /// has nothing in the store yet to export or to match by id.
     private var isExisting: Bool { model.mcp.servers.contains { $0.id == original.id } }
     var body: some View { VStack(spacing: 0) { ScrollView { Form { Text("Serwer MCP").font(.title2.bold()); TextField("Nazwa techniczna", text: $name); HStack { TextField("Tagi, oddzielone przecinkami", text: $tags); ExistingTagMenu(tags: existingTags, text: $tags) }; Toggle("Włączony", isOn: $enabled)
-        if isExisting { Picker("Widok", selection: $editingJSON) { Text("Formularz").tag(false); Text("JSON").tag(true) }.pickerStyle(.segmented).onChange(of: editingJSON) { if editingJSON { Task { jsonText = await model.exportMCPServerJSON(original.id) } } } }
+        if isExisting {
+            Picker("Widok", selection: Binding(get: { editingJSON }, set: { toJSON in Task { await switchView(toJSON: toJSON) } })) { Text("Formularz").tag(false); Text("JSON").tag(true) }
+                .pickerStyle(.segmented).disabled(fieldsError != nil)
+            if !switchError.isEmpty { Label(switchError, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).textSelection(.enabled) }
+        }
+        if let fieldsError { Label("Nie udało się wczytać zmiennych i nagłówków: \(fieldsError). Zapis jest zablokowany, żeby ich nie usunąć.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).textSelection(.enabled) }
         if editingJSON && isExisting {
             Text("Pełna konfiguracja tego serwera, wartości wprost. Zapis `${VAR}` oznacza odczyt zmiennej systemowej; pozostałe wartości są przechowywane lokalnie w bibliotece.").font(.caption).foregroundStyle(.secondary)
             TextEditor(text: $jsonText).font(.system(.body, design: .monospaced)).frame(height: 340).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
@@ -223,12 +232,35 @@ struct MCPServerEditor: View {
     // Pinned below the scrolling form, so the action stays reachable on any display.
     SheetFooter {
         Button("Anuluj") { dismiss() }
-        Button("Zapisz") { Task { if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(name.isEmpty || (editingJSON && isExisting ? jsonText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty : (transport == .stdio ? command.isEmpty : url.isEmpty)) || model.isWorking)
-    } }.sheetFrame(width: 760, height: 660).task { fields = await model.managedFields(for: original) } }
+        Button("Zapisz") { Task { if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(name.isEmpty || fieldsError != nil || (editingJSON && isExisting ? jsonText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty : (transport == .stdio ? command.isEmpty : url.isEmpty)) || model.isWorking)
+    } }.sheetFrame(width: 760, height: 660).task {
+        // A server that is not saved yet has no fields to read.
+        guard isExisting else { return }
+        do { fields = try await model.managedFields(for: original) } catch { fieldsError = error.localizedDescription }
+    } }
+    private var formServer: MCPServer {
+        MCPServer(id: original.id, name: name, transport: transport, command: command, arguments: arguments.split(whereSeparator: \.isNewline).map(String.init), url: url, enabled: enabled, tags: AppModel.csv(tags))
+    }
+    /// Both views edit one draft: the JSON shows the unsaved form, and going back reads the edited
+    /// JSON into the form. JSON that does not parse keeps the JSON view open with the reason.
+    private func switchView(toJSON: Bool) async {
+        guard toJSON != editingJSON else { return }
+        switchError = ""
+        do {
+            if toJSON {
+                jsonText = try await model.mcpServerDraftJSON(formServer, fields: fields)
+            } else {
+                let draft = try await model.mcpServerDraft(fromJSON: jsonText, name: name)
+                transport = draft.server.transport; command = draft.server.command
+                arguments = draft.server.arguments.joined(separator: "\n"); url = draft.server.url
+                fields = draft.fields
+            }
+            editingJSON = toJSON
+        } catch { switchError = error.localizedDescription }
+    }
     private func save() async -> Bool {
         if editingJSON && isExisting { return await model.updateMCPServerJSON(original.id, name: name, json: jsonText, enabled: enabled, tags: AppModel.csv(tags)) }
-        let server = MCPServer(id: original.id, name: name, transport: transport, command: command, arguments: arguments.split(whereSeparator: \.isNewline).map(String.init), url: url, enabled: enabled, tags: AppModel.csv(tags))
-        return await model.saveMCPServer(server, fields: fields)
+        return await model.saveMCPServer(formServer, fields: fields)
     }
 }
 struct MCPManagedFieldRow: View {
@@ -278,7 +310,10 @@ struct MCPImportView: View {
             Button("Wybierz plik…") { chooseFile() }
         }
         if usesAI {
-            HStack { SecureField("Klucz API OpenAI", text: $openAIKey); TextField("Model", text: $openAIModel).frame(width: 160) }
+            HStack {
+                SecureField("Klucz API OpenAI", text: $openAIKey); TextField("Model", text: $openAIModel).frame(width: 160)
+                Button("Usuń zapamiętany klucz") { forgetOpenAIKey() }.disabled(working)
+            }
             Text("Klucz zostaje zapisany w pęku kluczy, a model w ustawieniach — przy kolejnym dodawaniu są już wypełnione. Treść instrukcji zostanie wysłana do OpenAI; wynik nie zostanie zapisany automatycznie — najpierw go przejrzysz.").font(.caption).foregroundStyle(.orange)
         }
         if showFormatHelp { formatHelp }
@@ -296,7 +331,11 @@ struct MCPImportView: View {
         }
     }.padding(24) }; Divider(); HStack { if working { ProgressView() }; if summary != nil { Text(needsReanalysis ? "Zmień nazwę → Analizuj ponownie" : "Wybrano: \(selected.count)").font(.caption).foregroundStyle(needsReanalysis ? .orange : .secondary) }; Spacer(); Button("Anuluj") { dismiss() }; if mode != .creator { Button(usesAI ? "Przygotuj z AI" : "Analizuj") { Task { await prepare() } }.disabled(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (usesAI && openAIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) || working); Button("Importuj wybrane") { Task { await importNow() } }.buttonStyle(.borderedProminent).disabled(summary == nil || selected.isEmpty || needsReanalysis || working) } }.padding(16).background(.bar)
     }.sheetFrame(width: 760, height: 680).task { if openAIKey.isEmpty { openAIKey = OpenAIKeyStore.load() } } }
-    private func prepare() async { working = true; error = ""; summary = nil; selected.removeAll(); defer { working = false }; do { if usesAI { OpenAIKeyStore.save(openAIKey); source = try await model.generateMCP(source, apiKey: openAIKey, model: openAIModel) }; let analyzed = try await model.analyzeMCP(source, singleServerName: singleServerName.isEmpty ? nil : singleServerName); summary = analyzed; if analyzed.isSingleServerInput, singleServerName.isEmpty { singleServerName = analyzed.servers.first?.name ?? "" }; selected = Set(analyzed.servers.map(\.name)) } catch { self.error = error.localizedDescription; model.reportError(error) } }
+    private func forgetOpenAIKey() {
+        do { try OpenAIKeyStore.delete(); openAIKey = ""; error = "" }
+        catch { self.error = error.localizedDescription; model.reportError(error) }
+    }
+    private func prepare() async { working = true; error = ""; summary = nil; selected.removeAll(); defer { working = false }; do { if usesAI { try OpenAIKeyStore.save(openAIKey); source = try await model.generateMCP(source, apiKey: openAIKey, model: openAIModel) }; let analyzed = try await model.analyzeMCP(source, singleServerName: singleServerName.isEmpty ? nil : singleServerName); summary = analyzed; if analyzed.isSingleServerInput, singleServerName.isEmpty { singleServerName = analyzed.servers.first?.name ?? "" }; selected = Set(analyzed.servers.map(\.name)) } catch { self.error = error.localizedDescription; model.reportError(error) } }
     private func importNow() async { working = true; error = ""; defer { working = false }; do { _ = try await model.importMCP(source, serverNames: selected, classifications: [:], singleServerName: summary?.isSingleServerInput == true ? singleServerName : nil); dismiss() } catch { self.error = error.localizedDescription; model.reportError(error) } }
     private func chooseFile() { let panel = NSOpenPanel(); panel.allowedContentTypes = [.json, .plainText]; panel.canChooseFiles = true; panel.canChooseDirectories = false; if panel.runModal() == .OK, let url = panel.url { do { source = try String(contentsOf: url, encoding: .utf8); summary = nil } catch { self.error = error.localizedDescription } } }
 

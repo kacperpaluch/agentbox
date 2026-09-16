@@ -55,7 +55,7 @@ Importer przyjmuje zarówno mapę `mcpServers`, jak i pojedynczą definicję, na
 
 ### Kreator AI
 
-W `Biblioteka → MCP → Dodaj serwer` wybierz zakładkę `AI`, wklej fragment instrukcji lub README i podaj klucz API OpenAI. Klucz zapisuje się w pęku kluczy macOS, a model w ustawieniach aplikacji, więc następnym razem oba pola są już wypełnione — wyczyszczenie pola klucza i uruchomienie AI usuwa wpis z pęku kluczy. Klucz nie trafia do biblioteki ani do kopii zapasowych. Agentbox wysyła do OpenAI wyłącznie tekst instrukcji, nigdy zawartość istniejących konfiguracji ani sekretów. Wynik nie jest automatycznie zapisywany: najpierw przechodzi przez analizę JSON, wybór serwerów i klasyfikację wartości. Sprawdź wynik przed importem — AI może przygotować format, ale nie zastępuje weryfikacji dokumentacji serwera.
+W `Biblioteka → MCP → Dodaj serwer` wybierz zakładkę `AI`, wklej fragment instrukcji lub README i podaj klucz API OpenAI. Klucz zapisuje się w pęku kluczy macOS, a model w ustawieniach aplikacji, więc następnym razem oba pola są już wypełnione — przycisk `Usuń zapamiętany klucz` usuwa wpis z pęku kluczy. Błąd zapisu lub usunięcia klucza jest zgłaszany, a nie pomijany. Klucz nie trafia do biblioteki ani do kopii zapasowych. Agentbox wysyła do OpenAI wyłącznie tekst instrukcji, nigdy zawartość istniejących konfiguracji ani sekretów. Wynik nie jest automatycznie zapisywany: najpierw przechodzi przez analizę JSON, wybór serwerów i klasyfikację wartości. Sprawdź wynik przed importem — AI może przygotować format, ale nie zastępuje weryfikacji dokumentacji serwera.
 
 - `Zmienna systemowa` — Agentbox zapisuje nazwę zmiennej, a wartość ma dostarczyć środowisko procesu klienta AI.
 - Każda zwykła wartość, w tym hasło lub token, trafia jawnie do lokalnego `mcp.json` oraz pełnego backupu lokalnego.
@@ -64,7 +64,7 @@ Agentbox nie zgaduje, co jest sekretem: wartość w postaci `${NAZWA}` staje si�
 
 Wartość z `mcp.json` może zostać zapisana jawnie w wynikowym pliku MCP projektu, jeśli format klienta tego wymaga. Przed synchronizacją Agentbox pokazuje pełną treść wynikowych konfiguracji. Preferuj zmienne systemowe, jeśli klient je obsługuje.
 
-Po imporcie `Biblioteka → MCP → Szczegóły → JSON` daje pełną konfigurację jednego serwera jako tekst do ręcznej edycji. Wartości są widoczne wprost, bo Agentbox jest lokalną aplikacją dla jednej osoby.
+Po imporcie `Biblioteka → MCP → Szczegóły → JSON` daje pełną konfigurację jednego serwera jako tekst do ręcznej edycji. Formularz i JSON to dwa widoki tego samego szkicu: przełączenie przenosi niezapisane zmiany, a JSON z błędem zostaje otwarty z opisem problemu. Import i edycja JSON sprawdzają typy pól (`command`, `args`, `url`, `env`, `headers`) i odrzucają niepoprawną strukturę ze wskazaniem ścieżki, zamiast zapisywać puste wartości. Wartości są widoczne wprost, bo Agentbox jest lokalną aplikacją dla jednej osoby.
 
 `Edytuj wszystko jako JSON` na liście serwerów otwiera osobny, prosty widok dla całej konfiguracji naraz: popraw i `Zapisz`, bez kroku analizy i zaznaczania — to edycja własnej konfiguracji, nie import czegoś nowego. Checkboxy przy serwerach pozwalają zaznaczyć kilka naraz i dodać im tagi jedną operacją, tak jak w Bibliotece.
 
@@ -129,7 +129,7 @@ Jeżeli chcesz wykonać cały proces jednym kliknięciem, użyj `Narzędzia → 
 
 `⋯ → Przejmij z projektu…` pokazuje dwie rzeczy naraz i przenosi je do biblioteki jedną decyzją.
 
-**Zmienione w tym projekcie** to zarządzane skille, które zmieniły się w folderze projektu po ostatniej synchronizacji — czyli poprawki zrobione tam, gdzie pracujesz, z otwartym klientem. Przejęcie zastępuje kopię biblioteczną wersją z projektu i odznacza skill jako nowszy, więc pozostałe projekty dostaną tę poprawkę przy swojej synchronizacji, a projekt, z którego pochodzi, od razu jest zgodny z biblioteką. Agentbox pokazuje tu wyłącznie sytuację jednoznaczną: jeśli kopia w bibliotece też się zmieniła, jest to zwykła nieaktualność projektu, a nie coś do oddania. Dwa projekty, które zmieniły ten sam skill inaczej, zatrzymują operację z nazwami obu — wybierz jeden z nich. Skill pochodzący z Git jest wypisany, ale nieaktywny: `Aktualizuj` i tak zastąpiłoby kopię biblioteczną zawartością repozytorium, więc zmianę trzeba wprowadzić w źródle. To samo w terminalu daje `agentbox project adopt-changes <nazwa> [--yes]`.
+**Zmienione w tym projekcie** to zarządzane skille, które zmieniły się w folderze projektu po ostatniej synchronizacji — czyli poprawki zrobione tam, gdzie pracujesz, z otwartym klientem. Przejęcie zastępuje kopię biblioteczną wersją z projektu i odznacza skill jako nowszy, więc pozostałe projekty dostaną tę poprawkę przy swojej synchronizacji, a projekt, z którego pochodzi, od razu jest zgodny z biblioteką. Agentbox pokazuje tu wyłącznie sytuację jednoznaczną: jeśli kopia w bibliotece też się zmieniła — w aplikacji, w terminalu albo bezpośrednio w edytorze — jest to zwykła nieaktualność projektu, a nie coś do oddania. Jeśli biblioteka albo projekt zmieni się po otwarciu listy, przejęcie odmówi zapisu i poprosi o odświeżenie. Nieudane przejęcie przywraca wszystkie katalogi i metadane biblioteki. Dwa projekty, które zmieniły ten sam skill inaczej, zatrzymują operację z nazwami obu — wybierz jeden z nich. Skill pochodzący z Git jest wypisany, ale nieaktywny: `Aktualizuj` i tak zastąpiłoby kopię biblioteczną zawartością repozytorium, więc zmianę trzeba wprowadzić w źródle. To samo w terminalu daje `agentbox project adopt-changes <nazwa> [--yes]`.
 
 **Nieznane bibliotece** to ręcznie napisane katalogi ze `SKILL.md`, których biblioteka jeszcze nie ma.
 
@@ -205,7 +205,7 @@ W sekcji `Projekty` wybierz `Dodaj wiele`, a następnie wskaż folder nadrzędny
 
 Domyślnie ustawienia z `Dodaj wiele` zapisują się **na folderze nadrzędnym**, a jego podfoldery je dziedziczą. Zmiana w folderze obejmuje od razu wszystkie projekty, które z niego korzystają — nie trzeba edytować każdego z osobna. Ustawienia folderu otwiera przycisk `Ustawienia folderu` w nagłówku grupy na liście projektów.
 
-Projekty dodane wcześniej — pojedynczo albo przed pojawieniem się folderów nadrzędnych — też mogą dostać wspólne ustawienia. W nagłówku ich grupy jest przycisk `Wspólne ustawienia…`. Formularz startuje od sumy tego, czego projekty w folderze już używają, więc utworzenie folderu niczego nikomu nie zabiera, a przy każdym projekcie widać, co dokładnie się zmieni (`bez zmian`, `+2 skilli`, `−1 MCP`). Odznaczony projekt zostaje w folderze, ale zachowuje własne ustawienia.
+Projekty dodane wcześniej — pojedynczo albo przed pojawieniem się folderów nadrzędnych — też mogą dostać wspólne ustawienia. W nagłówku ich grupy jest przycisk `Wspólne ustawienia…`. Formularz startuje od sumy tego, czego projekty w folderze już używają — skilli, MCP i pluginów — więc utworzenie folderu niczego nikomu nie zabiera, a przy każdym projekcie widać, co dokładnie się zmieni (`bez zmian`, `+2 skilli`, `−1 MCP`, `inny dokument`, `+1 globalnych MCP`). Jeśli projekty używają różnych dokumentów, formularz niczego nie wybiera za ciebie: trzeba wskazać dokument i potwierdzić zmianę. Folder zachowuje wyłączenia globalnych serwerów wspólne dla wszystkich przechodzących projektów. Odznaczony projekt zostaje w folderze, ale zachowuje własne ustawienia.
 
 Pojedynczy projekt może wyłamać się z tego schematu: w jego edytorze przełącznik `Skąd projekt bierze ustawienia` przełącza między `Z folderu` a `Własne dla tego projektu`. Formularz startuje wtedy od tego, co projekt dostawał z folderu, więc odejście od wspólnych ustawień nic nie zmienia, dopóki czegoś nie poprawisz. Na liście projektów widać obie sytuacje: projekt, który dziedziczy z folderu, ma przy nazwie małą strzałkę z podpowiedzią; projekt, który się wyłamał, ma zamiast niej pomarańczową plakietkę `Własne ustawienia` — od razu widać, że zmiana w folderze nadrzędnym go nie obejmie.
 
@@ -272,7 +272,7 @@ Przed zmianą plików danych Agentbox zachowuje rotacyjne snapshoty w:
 
 Snapshot zawiera bieżące wersje `catalog.json`, `selections.json`, `projects.local.json`, `mcp.json` i `docs.json`. Zachowywanych jest 10 ostatnich snapshotów.
 
-W `Ustawienia → Backup i odzyskiwanie → Snapshoty biblioteki` można wybrać kopię na podstawie daty i przywrócić zapisane w niej pliki. Katalog `skills/` nie jest zmieniany. Przed przywróceniem Agentbox tworzy snapshot aktualnego stanu.
+W `Ustawienia → Backup i odzyskiwanie → Snapshoty biblioteki` można wybrać kopię na podstawie daty i przywrócić zapisane w niej pliki. Przywracany `mcp.json` zawiera lokalne wartości MCP — także tokeny — w wersji z chwili snapshotu. Katalog `skills/` i klucz OpenAI w pęku kluczy nie są zmieniane. Przed przywróceniem Agentbox tworzy snapshot aktualnego stanu.
 
 Przywrócony `mcp.json` ma uprawnienia 0600, również jeśli wcześniej go brakowało. Nieudane cofnięcie przywracania lub zapisu ustawień pluginów zgłasza oba błędy i pozostawia prywatną kopię ratunkową pod ścieżką wskazaną w komunikacie. W kopiach tego zapisu plik `restore.json` przyporządkowuje pliki kopii do oryginalnych ścieżek; puste pole `copy` oznacza, że plik wcześniej nie istniał. Kopie nie są szyfrowane i mogą zawierać sekrety — nie publikuj ich.
 
@@ -302,7 +302,7 @@ Folder `backups/` jest lokalny i nie jest wysyłany przez Agentbox do Gita. Peł
 
 ## Pliki projektu i Git
 
-Agentbox dopisuje generowane konfiguracje MCP oraz `.skillbox/` do lokalnego `.git/info/exclude`. Nie usuwa to pliku, który został wcześniej dodany do indeksu Git. Po pierwszej synchronizacji sprawdź:
+Agentbox dopisuje generowane konfiguracje MCP oraz `.skillbox/` do lokalnego `.git/info/exclude`. Dotyczy to także projektu położonego głębiej w większym repozytorium (np. `packages/app` w monorepo) — wpisy wskazują wtedy dokładnie folder projektu. Wykluczenia są sprawdzane przy każdej synchronizacji, również gdy pliki są już aktualne, więc repozytorium zainicjalizowane po pierwszej synchronizacji dostaje ochronę przy następnej. Nie usuwa to pliku, który został wcześniej dodany do indeksu Git. Po pierwszej synchronizacji sprawdź:
 
 ```bash
 git status

@@ -120,16 +120,22 @@ enum DocsRenderer {
 
     private static func manifestURL(_ project: URL) -> URL { project.appending(path: ".skillbox/docs-manifest.json") }
 
-    static func manifestDocID(_ project: URL) -> String? {
-        guard let data = try? Data(contentsOf: manifestURL(project)) else { return nil }
-        return (try? JSONDecoder().decode(ManifestFile.self, from: data))?.docID
+    /// The managed document, or `nil` when there is no manifest. A manifest that exists but cannot
+    /// be read is an error: taken as "nothing managed", it turned Agentbox's own files into
+    /// conflicts and was then overwritten instead of reported.
+    static func manifestDocID(_ project: URL) throws -> String? {
+        let url = manifestURL(project)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        do { return try JSONDecoder().decode(ManifestFile.self, from: Data(contentsOf: url)).docID } catch {
+            throw SkillboxError.docConflict("\(url.path) jest uszkodzony (\(error.localizedDescription)) — popraw lub usuń plik, zanim Agentbox zmieni dokumenty projektu")
+        }
     }
 
     /// In the returned previews, empty `content` means the file should not exist: it is never
     /// created, and an existing managed copy is removed. `doc == nil` with nothing previously
     /// managed instead leaves an unrelated existing file alone — see `renderedFile`.
     static func preview(project: URL, doc: AgentDoc?) throws -> [DocPreview] {
-        let previousID = manifestDocID(project)
+        let previousID = try manifestDocID(project)
         let managed = previousID != nil
         let agents = project.appending(path: "AGENTS.md")
         let claude = project.appending(path: "CLAUDE.md")
@@ -157,24 +163,42 @@ enum DocsRenderer {
     /// Returns `nil` when the file must be left exactly as it is — see `DocPreview.leaveAsIs`.
     private static func renderedFile(file: URL, desired: String?, previouslyManaged: Bool) throws -> String? {
         let fm = FileManager.default
+        let exists = fm.fileExists(atPath: file.path) || (try? fm.attributesOfItem(atPath: file.path)) != nil
         guard let desired else {
             guard previouslyManaged else {
-                guard fm.fileExists(atPath: file.path) else { return "" }
+                guard exists else { return "" }
                 // Unreadable as text and not ours: the only honest answer is to keep our hands off
                 // it. Reading it as an empty string used to mean "this file should not exist", and
                 // the write that followed deleted a document the user had written themselves.
-                guard let existing = try? String(contentsOf: file, encoding: .utf8) else { return nil }
+                guard isRegularFile(file), let existing = try? String(contentsOf: file, encoding: .utf8) else { return nil }
                 return existing
             }
+            // The name was ours; whatever stands there now has to be the kind of thing we wrote
+            // before it is removed. A directory under that name would go recursively.
+            if exists { try requireOwnable(file) }
             return ""
         }
-        if !previouslyManaged, fm.fileExists(atPath: file.path) {
-            let existing = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
-            guard existing == desired else {
-                throw SkillboxError.docConflict("\(file.lastPathComponent) istnieje w \(file.deletingLastPathComponent().path) i nie jest zarządzany przez Agentbox")
+        if exists {
+            try requireOwnable(file)
+            if !previouslyManaged {
+                guard try SkillboxService.existingText(at: file) == desired else {
+                    throw SkillboxError.docConflict("\(file.lastPathComponent) istnieje w \(file.deletingLastPathComponent().path) i nie jest zarządzany przez Agentbox")
+                }
             }
         }
         return desired
+    }
+
+    private static func isRegularFile(_ file: URL) -> Bool {
+        (try? FileManager.default.attributesOfItem(atPath: file.path)[.type] as? FileAttributeType) == .typeRegular
+    }
+
+    /// A plain file Agentbox can read — the only thing it ever writes under these names.
+    private static func requireOwnable(_ file: URL) throws {
+        guard isRegularFile(file) else {
+            throw SkillboxError.docConflict("\(file.path) nie jest zwykłym plikiem — Agentbox go nie zastąpi ani nie usunie")
+        }
+        _ = try SkillboxService.existingText(at: file)
     }
 
     static func apply(previews: [DocPreview], project: URL) throws {
@@ -182,7 +206,7 @@ enum DocsRenderer {
         // Scratch copies for this write only; removed whether it succeeds or fails.
         let backup = SkillboxService.scratchDirectory()
         defer { if !keptBackups.contains(backup) { try? fm.removeItem(at: backup) } }
-        var currentID = manifestDocID(project)
+        var currentID = try manifestDocID(project)
         var originals: [(file: URL, backup: URL?, existed: Bool)] = []
         do {
             for preview in previews where !preview.leaveAsIs {

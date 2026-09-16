@@ -97,7 +97,6 @@ extension SkillboxService {
         let config = try await store.configuration()
         guard let project = config.resolvedProjects.first(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
         let projectURL = URL(fileURLWithPath: project.path)
-        Self.removeLegacyBackupDirectories(projectURL)
         let fm = FileManager.default
         // Including tools the project no longer lists, so their manifests are cleaned up too.
         let tools = project.tools + Self.abandonedTools(project: project)
@@ -115,15 +114,18 @@ extension SkillboxService {
         targets.append(projectURL.appending(path: ".skillbox/docs-manifest.json"))
         var unique: [URL] = []
         for target in targets where !unique.contains(target) { unique.append(target) }
+        // Every manifest is read before the first removal, so a damaged one stops the run up front.
+        let managed = try tools.map { tool in
+            let target = try SkillboxService.managedTarget(project: projectURL, tool: tool)
+            return (tool, target, try SkillboxService.managedSkillIDs(at: target))
+        }
         let scratch = Self.scratchDirectory()
         defer { if !Self.shouldKeepScratch(scratch) { try? FileManager.default.removeItem(at: scratch) } }
         let (backup, metadata) = try Self.makeSyncBackup(project: projectURL, targets: unique, in: scratch)
         var removed: [String] = []
         do {
-            for tool in tools {
-                let target = try SkillboxService.managedTarget(project: projectURL, tool: tool)
-                try SkillboxService.assertSafeSkillManifest(at: target)
-                for skillID in SkillboxService.managedSkillIDs(at: target).sorted() {
+            for (tool, target, ids) in managed {
+                for skillID in ids.sorted() {
                     let directory = target.appending(path: skillID)
                     if fm.fileExists(atPath: directory.path) { try fm.removeItem(at: directory) }
                     removed.append("\(tool.projectSkillsPath)/\(skillID)")
@@ -143,6 +145,7 @@ extension SkillboxService {
             if fm.fileExists(atPath: docsManifest.path) { try fm.removeItem(at: docsManifest) }
             // The manifest was the last thing Agentbox kept there; an emptied .skillbox is ours to
             // take away too instead of leaving clutter in the user's repository.
+            Self.removeLegacyBackupDirectories(projectURL)
             let skillboxDirectory = projectURL.appending(path: ".skillbox")
             if let leftovers = try? fm.contentsOfDirectory(atPath: skillboxDirectory.path), leftovers.allSatisfy({ $0 == ".DS_Store" }) {
                 try? fm.removeItem(at: skillboxDirectory)
@@ -179,10 +182,17 @@ extension SkillboxService {
     }
 
     /// Versions up to 0.7.0 kept a history of sync backups inside each project. They protected
-    /// nothing that the library plus `unsyncProject` cannot reproduce, so they are removed on the
-    /// next sync rather than left behind as clutter in the user's repositories.
+    /// nothing that the library plus `unsyncProject` cannot reproduce, so they are removed after
+    /// the next successful sync rather than left behind as clutter in the user's repositories.
+    ///
+    /// Only when `.skillbox` really is a folder of this project: a symbolic link there points
+    /// somewhere else, and a directory that merely carries the historical name is not ours to
+    /// delete. Failing to remove clutter is not a reason to report a finished sync as failed.
     static func removeLegacyBackupDirectories(_ project: URL) {
         let fm = FileManager.default
+        let container = project.appending(path: ".skillbox")
+        guard (try? fm.attributesOfItem(atPath: container.path)[.type] as? FileAttributeType) == .typeDirectory,
+              container.resolvingSymlinksInPath().standardizedFileURL.path == project.resolvingSymlinksInPath().standardizedFileURL.path + "/.skillbox" else { return }
         for name in ["sync-backups", "mcp-backups"] {
             let directory = project.appending(path: ".skillbox/\(name)")
             if fm.fileExists(atPath: directory.path) { try? fm.removeItem(at: directory) }
@@ -233,6 +243,11 @@ extension SkillboxService {
     func isUpToDate(_ preview: ProjectSyncPreview, skills: [Skill]) async -> Bool {
         guard preview.skills.allSatisfy({ $0.added.isEmpty && $0.removed.isEmpty }) else { return false }
         guard preview.mcp.allSatisfy({ $0.staleFile == nil }) else { return false }
+        // A change of ownership is a change even when the bytes already match: an `AGENTS.md`
+        // identical to the assigned document still needs its manifest, or the project stays
+        // "pending" forever and the next edit of that document is refused as a conflict.
+        guard preview.docs.allSatisfy({ $0.leaveAsIs || ($0.added.isEmpty && $0.removed.isEmpty) }) else { return false }
+        guard preview.mcp.allSatisfy({ $0.added.isEmpty && $0.removed.isEmpty && $0.disabledGlobalAdded.isEmpty && $0.disabledGlobalRemoved.isEmpty }) else { return false }
         return await driftedTargets(preview, skills: skills, includingRenamed: true) == 0
     }
 
@@ -300,10 +315,12 @@ extension SkillboxService {
         guard let project = config.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
         let projectURL = URL(fileURLWithPath: project.path)
         let pluginIDs = config.selections[config.selectionID(for: project).uuidString]?.claudePluginIDs ?? []
-        Self.removeLegacyBackupDirectories(projectURL)
         // Independent of the sync content and idempotent, so it also runs for an unchanged project
         // whose owner has just switched the option on.
         if project.manageGitignore == true { try Self.updateProjectGitignore(projectURL, files: preview.mcp.map { URL(fileURLWithPath: $0.file) }) }
+        // Same reasoning: whether the generated files are excluded from Git does not depend on
+        // whether their content changed.
+        try MCPRenderer.protectGeneratedFiles(projectURL, previews: preview.mcp)
         // A plugin is installed by Claude Code, outside Agentbox's managed file manifests, so this
         // runs even when skills, MCP and docs are already current. It goes first because the CLI
         // reaches the network: installing last meant a flaky install rolled back skills, MCP and
@@ -325,6 +342,7 @@ extension SkillboxService {
                     try SkillboxService.writeSkillManifest(selected, to: projectURL.appending(path: tool.projectSkillsPath))
                 }
             }
+            Self.removeLegacyBackupDirectories(projectURL)
             return (preview, true)
         }
         var targets = preview.skills.map { URL(fileURLWithPath: $0.target) }
@@ -353,6 +371,7 @@ extension SkillboxService {
             // whole library and every managed project file a second time for nothing.
             _ = try await syncMCP(projectID: projectID, previews: preview.mcp)
             _ = try await syncDocs(projectID: projectID, previews: preview.docs)
+            Self.removeLegacyBackupDirectories(projectURL)
             return (preview, false)
         } catch {
             throw Self.rollingBack(error, project: projectURL, backup: backup, metadata: metadata, scratch: scratch)

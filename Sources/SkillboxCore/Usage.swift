@@ -11,13 +11,17 @@ public struct UsageReport: Hashable, Sendable {
     public var projects: [String]
     public var roots: [String]
     public var global: Bool
-    public init(projects: [String] = [], roots: [String] = [], global: Bool = false) {
-        self.projects = projects; self.roots = roots; self.global = global
+    /// Why the usage could not be worked out. A failed lookup is not "unused" — reporting it that
+    /// way took the warning out of the very dialog that asks whether to delete.
+    public var failure: String?
+    public init(projects: [String] = [], roots: [String] = [], global: Bool = false, failure: String? = nil) {
+        self.projects = projects; self.roots = roots; self.global = global; self.failure = failure
     }
-    public var isUnused: Bool { projects.isEmpty && roots.isEmpty && !global }
+    public var isUnused: Bool { failure == nil && projects.isEmpty && roots.isEmpty && !global }
 
     /// One line for a confirmation dialog, or `nil` when nothing uses the item.
     public var summary: String? {
+        if let failure { return "nie udało się ustalić (\(failure))" }
         guard !isUnused else { return nil }
         var parts: [String] = []
         if !projects.isEmpty { parts.append("\(projects.count) \(Self.projectWord(projects.count))") }

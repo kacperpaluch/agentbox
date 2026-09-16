@@ -350,7 +350,7 @@ final class ProjectTests: AgentboxTestCase {
         try await service.configureProject(id: project.id, skillIDs: ["reczny"], tags: [])
         _ = try await service.syncProjectTransaction(projectID: project.id)
         XCTAssertEqual(try String(contentsOf: manual.appending(path: "SKILL.md"), encoding: .utf8), "napisane ręcznie")
-        XCTAssertTrue(SkillboxService.managedSkillIDs(at: projectURL.appending(path: ".claude/skills")).contains("reczny"))
+        XCTAssertTrue(try SkillboxService.managedSkillIDs(at: projectURL.appending(path: ".claude/skills")).contains("reczny"))
         let statuses = try await service.projectStatuses()
         XCTAssertEqual(statuses.first { $0.projectID == project.id }?.state, .synced)
     }
@@ -1008,10 +1008,28 @@ final class ProjectTests: AgentboxTestCase {
         let copied = try String(contentsOf: projectURL.appending(path: ".claude/skills/demo/SKILL.md"), encoding: .utf8)
         XCTAssertTrue(copied.contains("nowa treść"))
     }
+    /// Followers stop reading their own opt-outs from global servers; the folder keeps what they all
+    /// hid instead of silently showing every global server again.
+    func testProjectsJoiningAFolderKeepTheirSharedGlobalServerOptOuts() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let workspace = root.appending(path: "workspace")
+        for name in ["alpha", "beta"] { try FileManager.default.createDirectory(at: workspace.appending(path: name), withIntermediateDirectories: true) }
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let alpha = try await service.addProject(name: "alpha", path: workspace.appending(path: "alpha").path, tools: [.claude])
+        let beta = try await service.addProject(name: "beta", path: workspace.appending(path: "beta").path, tools: [.claude])
+        try await service.setDisabledGlobalServers(projectID: alpha.id, tool: .claude, names: ["wspolny", "tylko-alpha"])
+        try await service.setDisabledGlobalServers(projectID: beta.id, tool: .claude, names: ["wspolny"])
+
+        let stored = try await service.adoptProjectsIntoRoot(ProjectRoot(name: "workspace", path: workspace.path, tools: [.claude]), following: [alpha.id, beta.id], keepingOwnSettings: [])
+
+        let disabled = try await service.mcpConfiguration().projectDisabledGlobalServers ?? [:]
+        XCTAssertEqual(disabled[stored.id.uuidString]?["claude"], ["wspolny"])
+        XCTAssertNil(disabled[alpha.id.uuidString], "stare wyłączenia nie zostają jako druga prawda")
+        XCTAssertNil(disabled[beta.id.uuidString])
+    }
 }
 
 private actor Collector {
     var steps: [SyncProgress] = []
     func append(_ step: SyncProgress) { steps.append(step) }
-
 }

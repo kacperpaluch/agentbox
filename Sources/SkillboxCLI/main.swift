@@ -9,6 +9,10 @@ struct AgentboxCLI {
             let root = ProcessInfo.processInfo.environment["SKILLBOX_HOME"].map { URL(fileURLWithPath: $0) } ?? AgentboxRootPreference.load()
             let service = try SkillboxService(root: root)
             for line in try await AgentboxCommand.run(args, service: service) { print(line) }
+        } catch let partial as AgentboxCommand.PartialFailure {
+            for line in partial.lines { print(line) }
+            FileHandle.standardError.write(Data("Błąd: \(partial.localizedDescription)\n".utf8))
+            exit(1)
         } catch {
             FileHandle.standardError.write(Data("Błąd: \(error.localizedDescription)\n".utf8))
             exit(1)

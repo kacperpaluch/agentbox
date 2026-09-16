@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public struct SkillFileChange: Identifiable, Sendable {
@@ -39,6 +40,20 @@ struct SkillTree: Equatable, Sendable {
     }
     let entries: [String: Entry]
     var rootPermissions: Int = 0o755
+
+    /// A stable fingerprint of everything `==` compares, small enough to keep in a manifest.
+    var digest: String {
+        var hasher = SHA256()
+        func add(_ data: Data) { withUnsafeBytes(of: UInt64(data.count).bigEndian) { hasher.update(bufferPointer: $0) }; hasher.update(data: data) }
+        add(Data(String(rootPermissions).utf8))
+        for path in entries.keys.sorted() {
+            guard let entry = entries[path] else { continue }
+            add(Data(path.utf8))
+            add(Data("\(entry.kind)|\(entry.permissions)".utf8))
+            add(entry.data)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
 
     static func read(_ root: URL) throws -> SkillTree {
         let fm = FileManager.default

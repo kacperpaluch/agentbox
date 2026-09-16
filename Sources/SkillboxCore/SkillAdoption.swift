@@ -2,11 +2,13 @@ import Foundation
 
 /// A managed skill whose copy inside a project no longer matches the library's.
 ///
-/// Only the unambiguous case is reported: the library copy has not moved since this project was
-/// synchronized — its manifest timestamp still matches `Skill.updatedAt` — so the difference can
-/// only have come from the project side, where the user was working. When the library changed too,
-/// the two edits are a conflict that no automatic answer resolves, and the ordinary "nieaktualny"
-/// reporting already covers it.
+/// Only the unambiguous case is reported: the library copy still holds what was written into this
+/// project, so the difference can only have come from the project side, where the user was working.
+/// Manifests since 0.28.0 record a digest of what was written and answer that directly; older ones
+/// only have a timestamp, which a skill edited straight in the library folder does not move — for
+/// those the timestamp is all there is until the next sync records a digest. When the library
+/// changed too, the two edits are a conflict that no automatic answer resolves, and the ordinary
+/// "nieaktualny" reporting already covers it.
 public struct DriftedSkill: Identifiable, Hashable, Sendable {
     public var skillID: String
     public var skillName: String
@@ -19,13 +21,11 @@ public struct DriftedSkill: Identifiable, Hashable, Sendable {
     /// thrown away at the next update. Reported so the user learns why nothing can be taken from
     /// here, but never adopted — the same rule the in-app editor already follows.
     public var isGitBacked: Bool
+    /// Both sides as they were when this was listed. Adoption compares them again before writing,
+    /// so a library edited in the meantime is never overwritten by a stale proposal.
+    var libraryDigest: String
+    var projectDigest: String
     public var id: String { "\(projectID.uuidString)|\(tool.rawValue)|\(skillID)" }
-
-    public init(skillID: String, skillName: String, projectID: UUID, projectName: String, tool: Tool, path: String, isGitBacked: Bool) {
-        self.skillID = skillID; self.skillName = skillName
-        self.projectID = projectID; self.projectName = projectName
-        self.tool = tool; self.path = path; self.isGitBacked = isGitBacked
-    }
 }
 
 extension SkillboxService {
@@ -43,17 +43,34 @@ extension SkillboxService {
             let projectURL = URL(fileURLWithPath: project.path)
             for tool in project.tools + Self.abandonedTools(project: project) {
                 let target = try Self.managedTarget(project: projectURL, tool: tool)
-                for (id, written) in Self.skillManifest(at: target).skills.sorted(by: { $0.key < $1.key }) {
+                let manifest: SkillManifest
+                do { manifest = try Self.skillManifest(at: target) } catch {
+                    // Asked about one project, its damaged manifest is the answer. Across all of
+                    // them, that project is already shown as blocked with this reason, and it must
+                    // not hide what the other projects have to offer.
+                    if projectID != nil { throw error }
+                    continue
+                }
+                for (id, written) in manifest.skills.sorted(by: { $0.key < $1.key }) {
                     guard let skill = known[id] else { continue }
-                    // The library moved on since this project was written, so what differs here is
-                    // an ordinary pending update, not something the project has to offer back.
-                    guard skill.updatedAt <= written else { continue }
                     let copy = target.appending(path: id)
-                    guard fm.fileExists(atPath: copy.path), !Self.directoryMatches(library.appending(path: id), copy) else { continue }
+                    guard fm.fileExists(atPath: copy.path),
+                          let projectDigest = Self.skillDigest(copy),
+                          let libraryDigest = Self.skillDigest(library.appending(path: id)),
+                          projectDigest != libraryDigest else { continue }
+                    if let recorded = manifest.digests?[id] {
+                        // Only the project moved away from what was written.
+                        guard projectDigest != recorded, libraryDigest == recorded else { continue }
+                    } else {
+                        // The library moved on since this project was written, so what differs here
+                        // is an ordinary pending update, not something the project has to offer back.
+                        guard skill.updatedAt <= written else { continue }
+                    }
                     found.append(DriftedSkill(
                         skillID: id, skillName: skill.name,
                         projectID: project.id, projectName: project.name,
-                        tool: tool, path: copy.path, isGitBacked: skill.source.kind == .git
+                        tool: tool, path: copy.path, isGitBacked: skill.source.kind == .git,
+                        libraryDigest: libraryDigest, projectDigest: projectDigest
                     ))
                 }
             }
@@ -83,30 +100,38 @@ extension SkillboxService {
             }
             // Two projects that changed the same skill differently cannot both be right, and taking
             // whichever came last would silently throw the other away.
-            let first = URL(fileURLWithPath: sources[0].path)
-            guard sources.dropFirst().allSatisfy({ Self.directoryMatches(first, URL(fileURLWithPath: $0.path)) }) else {
+            guard Set(sources.map(\.projectDigest)).count == 1 else {
                 throw SkillboxError.skillConflict("skill \(id) zmienił się inaczej w projektach: \(sources.map(\.projectName).sorted().joined(separator: ", ")) — przejmij zmiany z jednego z nich")
             }
-            guard FileManager.default.fileExists(atPath: first.appending(path: "SKILL.md").path) else {
-                throw SkillboxError.invalidSkill("brak SKILL.md w \(first.path)")
+            // What was reviewed is what gets written, and only over the library it was compared with.
+            let stale = "skill \(id) zmienił się od przygotowania listy — odśwież ją przed przejęciem zmian"
+            guard Self.skillDigest(library.appending(path: id)) == sources[0].libraryDigest else { throw SkillboxError.skillConflict(stale) }
+            for source in sources where Self.skillDigest(URL(fileURLWithPath: source.path)) != source.projectDigest {
+                throw SkillboxError.skillConflict(stale)
+            }
+            guard FileManager.default.fileExists(atPath: URL(fileURLWithPath: sources[0].path).appending(path: "SKILL.md").path) else {
+                throw SkillboxError.invalidSkill("brak SKILL.md w \(sources[0].path)")
             }
         }
         var adopted: [Skill] = []
+        var copies: [(source: URL, id: String)] = []
         var restamps: [(target: URL, skillID: String, date: Date)] = []
         for id in grouped.keys.sorted() {
             let sources = grouped[id] ?? []
             guard let index = catalog.skills.firstIndex(where: { $0.id == id }) else { continue }
-            try copyReplacing(from: URL(fileURLWithPath: sources[0].path), to: library.appending(path: id))
+            copies.append((URL(fileURLWithPath: sources[0].path), id))
             catalog.skills[index].updatedAt = .now
             adopted.append(catalog.skills[index])
             for source in sources {
                 restamps.append((URL(fileURLWithPath: source.path).deletingLastPathComponent(), id, catalog.skills[index].updatedAt))
             }
         }
-        try await store.save(catalog)
+        let saved = catalog
+        try await replacingLibrarySkills(copies) { try await self.store.save(saved) }
         // The projects the change came from already hold exactly what the library now has. Without
         // this they would be reported as outdated against their own contribution, and the next sync
-        // would copy identical bytes back into them.
+        // would copy identical bytes back into them. The library change is already committed at
+        // this point; a restamp that fails only costs that project one redundant sync.
         for restamp in restamps { try? Self.restampSkillManifest(restamp.skillID, at: restamp.target, to: restamp.date) }
         return adopted
     }

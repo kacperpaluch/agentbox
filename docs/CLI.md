@@ -103,11 +103,11 @@ agentbox sync global --skills seo-audit,docx --tags seo --tools claude,opencode
 agentbox sync global --dry-run
 ```
 
-`sync project` i `sync all` synchronizują razem skille, MCP, dokumenty i pluginy Claude Code wybrane dla projektu, tą samą ścieżką transakcyjną co GUI: przed zapisem powstaje backup projektu, a błąd cofa zmiany. Plugin jest instalowany tylko wtedy, gdy projekt jeszcze go nie deklaruje — ten już zainstalowany nie kosztuje wywołania CLI Claude Code. `sync all` zatrzymuje serię na pierwszym błędzie i wypisuje wynik dla każdego projektu — `✓` zsynchronizowany, `✗` cofnięty, `–` pominięty.
+`sync project` i `sync all` synchronizują razem skille, MCP, dokumenty i pluginy Claude Code wybrane dla projektu, tą samą ścieżką transakcyjną co GUI: przed zapisem powstaje backup projektu, a błąd cofa zmiany. Plugin jest instalowany tylko wtedy, gdy projekt jeszcze go nie deklaruje — ten już zainstalowany nie kosztuje wywołania CLI Claude Code. `sync all` zatrzymuje serię na pierwszym błędzie i wypisuje wynik dla każdego projektu — `✓` zsynchronizowany, `✗` cofnięty, `–` pominięty. Jeśli którykolwiek projekt został cofnięty albo pominięty, polecenie po wypisaniu raportu kończy się kodem 1.
 
-`sync global` zapisuje wybór skilli, tagów i narzędzi, a następnie kopiuje je do katalogów użytkownika (`~/.claude/skills`, `~/.codex/skills`, `~/.config/opencode/skills`). Wywołany bez `--skills` i `--tags` używa wyboru zapisanego wcześniej w aplikacji.
+`sync global` zapisuje wybór skilli, tagów i narzędzi, a następnie kopiuje je do katalogów użytkownika (`~/.claude/skills`, `~/.codex/skills`, `~/.config/opencode/skills`). Wywołany bez `--skills` i `--tags` używa wyboru zapisanego wcześniej w aplikacji. Wykluczenia ustawione w aplikacji zostają; skill podany wprost w `--skills` przestaje być wykluczony. Jeśli zapis do któregoś klienta się nie powiedzie, pozostali klienci wracają do stanu sprzed polecenia.
 
-`--dry-run` pokazuje planowane zmiany bez zapisu.
+`--dry-run` pokazuje planowane zmiany bez zapisu — również bez zapisu wyboru podanego w `--skills`, `--tags` i `--tools`.
 
 Synchronizacja zatrzymuje się, jeśli w katalogu docelowym istnieje katalog skilla o tej samej nazwie, którego Agentbox nie ma w swoim manifeście. Ręcznie napisany skill nie zostanie nadpisany — usuń go lub zmień nazwę, jeśli ma go zastąpić wersja z biblioteki.
 
@@ -132,7 +132,7 @@ PODSUMOWANIE
     – delta — nie próbowano po błędzie
 ```
 
-Sekcja `Wymaga uwagi` pojawia się tylko wtedy, gdy któryś projekt został cofnięty. Kod wyjścia nie zmienia się z tego powodu — `refresh` kończy się zerem, dopóki sam workflow nie rzuci błędem.
+Sekcja `Wymaga uwagi` pojawia się tylko wtedy, gdy któryś projekt został cofnięty. Wtedy `refresh`, podobnie jak `sync all`, po wypisaniu całego podsumowania kończy się kodem 1, żeby automatyzacja nie uznała niepełnego przebiegu za udany.
 
 ## MCP
 
@@ -156,7 +156,7 @@ agentbox mcp sync sklep
 agentbox mcp server remove docsearch
 ```
 
-`mcp assign` zastępuje bezpośrednie serwery i tagi MCP projektu. Wartości `--env` i `--headers` są odwołaniami do zmiennych systemowych, nie lokalnymi sekretami. Pełną klasyfikacją sekretów istniejącego MCP zarządza obecnie interfejs aplikacji.
+`mcp assign` zastępuje bezpośrednie serwery i tagi MCP projektu. Nieznana nazwa w `--servers` odrzuca całe polecenie i niczego nie zmienia. Wartości `--env` i `--headers` są odwołaniami do zmiennych systemowych, nie lokalnymi sekretami. Pełną klasyfikacją sekretów istniejącego MCP zarządza obecnie interfejs aplikacji.
 
 `mcp server remove` usuwa serwer z biblioteki, jego bezpośrednie przypisania do projektów i jego wartości z lokalnego pliku sekretów — tak samo jak `Usuń` przy serwerze w aplikacji.
 

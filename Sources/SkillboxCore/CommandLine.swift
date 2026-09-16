@@ -22,7 +22,22 @@ public enum AgentboxCommand {
       agentbox plugin list|add|remove|assign ...
     """
 
-    /// Runs one command and returns the lines it produced. Throwing means the command failed.
+    /// A command that ran to the end but did not do everything it was asked to — a project rolled
+    /// back or skipped. Its lines are the full report; the process still has to exit non-zero, or
+    /// automation takes a half-finished run for a successful one.
+    public struct PartialFailure: LocalizedError {
+        public let lines: [String]
+        public let errorDescription: String?
+    }
+
+    private static func requireAllSynced(_ lines: [String], outcomes: [ProjectSyncOutcome]) throws -> [String] {
+        let failed = outcomes.filter { $0.state != .synced && $0.state != .upToDate }.count
+        guard failed == 0 else { throw PartialFailure(lines: lines, errorDescription: "\(failed) z \(outcomes.count) projektów nie zostało zsynchronizowanych") }
+        return lines
+    }
+
+    /// Runs one command and returns the lines it produced. Throwing means the command failed;
+    /// `PartialFailure` carries the lines of a run that failed only in part.
     public static func run(_ args: [String], service: SkillboxService) async throws -> [String] {
         guard let command = args.first else { return [help] }
         if ["help", "--help", "-h"].contains(command) { return [help] }
@@ -236,18 +251,33 @@ public enum AgentboxCommand {
             return lines(for: preview)
         case "global":
             let ids = csv("--skills", in: args), tags = csv("--tags", in: args)
+            var draft: AttachmentSelection?
             if !ids.isEmpty || !tags.isEmpty {
-                let tools = (option("--tools", in: args) ?? "claude,codex,opencode").split(separator: ",").compactMap { Tool(rawValue: String($0)) }
-                try await service.setSelection(AttachmentSelection(tools: tools, skillIDs: ids, skillTags: tags), for: .global)
+                // Only what the command names changes. A fresh selection dropped the exclusions
+                // made in the app; a skill named here explicitly is no longer excluded.
+                var selection = try await service.storedSelection(for: .global)
+                selection.tools = (option("--tools", in: args) ?? "claude,codex,opencode").split(separator: ",").compactMap { Tool(rawValue: String($0)) }
+                selection.skillIDs = ids
+                selection.skillTags = tags
+                selection.excludedSkillIDs.removeAll { ids.contains($0) }
+                draft = selection
             }
-            let previews = dry ? try await service.previewGlobalSync() : try await service.syncGlobalSelection()
+            let previews: [SkillSyncPreview]
+            if dry {
+                // A preview writes nothing, the selection included.
+                previews = try await service.previewGlobalSync(selection: draft)
+            } else {
+                if let draft { try await service.setSelection(draft, for: .global) }
+                previews = try await service.syncGlobalSelection()
+            }
             guard !previews.isEmpty else { return ["Nie wybrano narzędzi dla synchronizacji globalnej"] }
             return previews.map { "\($0.tool.rawValue): +\($0.added.count) ~\($0.updated.count) -\($0.removed.count) → \($0.target)" }
         case "all":
             guard !dry else {
                 return try await service.previewAllProjectsSync().flatMap { ["\($0.project.name):"] + lines(for: $0.preview) }
             }
-            return try await service.syncAllProjectsTransactions().map { outcome in
+            let outcomes = try await service.syncAllProjectsTransactions()
+            let lines = outcomes.map { outcome in
                 switch outcome.state {
                 case .synced: return "✓ \(outcome.plan.project.name)"
                 case .upToDate: return "= \(outcome.plan.project.name) — bez zmian"
@@ -255,6 +285,7 @@ public enum AgentboxCommand {
                 case .skipped: return "– \(outcome.plan.project.name) — pominięto po wcześniejszym błędzie"
                 }
             }
+            return try requireAllSynced(lines, outcomes: outcomes)
         default: return [syncUsage]
         }
     }
@@ -309,7 +340,7 @@ public enum AgentboxCommand {
             case .skipped: lines.append("– \(outcome.plan.project.name) — pominięto")
             }
         }
-        return lines + summary(updates: updates, backupName: backupName, outcomes: outcomes)
+        return try requireAllSynced(lines + summary(updates: updates, backupName: backupName, outcomes: outcomes), outcomes: outcomes)
     }
 
     /// A closing block for `refresh`. The per-project lines above scroll away on a long run, and a
@@ -362,6 +393,10 @@ public enum AgentboxCommand {
         case "assign" where rest.count >= 2:
             let project = try await resolve(rest[1], service: service)
             let names = Set(csv("--servers", in: args))
+            // `mcp assign` replaces the assignment, so a mistyped name must stop it rather than
+            // quietly become "no servers".
+            let unknown = names.subtracting(config.servers.map(\.name))
+            guard unknown.isEmpty else { throw SkillboxError.mcpConflict("nieznane serwery MCP: \(unknown.sorted().joined(separator: ", ")) — nic nie zmieniono") }
             try await service.setMCPServers(projectID: project.id, serverIDs: config.servers.filter { names.contains($0.name) }.map(\.id), tags: csv("--tags", in: args))
             return ["Przypisano serwery MCP"]
         case "preview" where rest.count >= 2:

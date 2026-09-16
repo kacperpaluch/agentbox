@@ -7,6 +7,7 @@ struct ProjectDefaultsEditor: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var model: AppModel
     @State private var selection = AttachmentSelection(tools: Tool.allCases)
+    @State private var error = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -16,16 +17,16 @@ struct ProjectDefaultsEditor: View {
                     Text("Ten zestaw pojawi się w formularzu przy tworzeniu pojedynczego projektu lub grupy projektów. Możesz go wtedy dowolnie zmienić; zapis tutaj nie wpływa na istniejące projekty.")
                         .foregroundStyle(.secondary)
                     AttachmentPicker(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, claudePlugins: model.claudePluginLibrary, selection: $selection)
+                    if !error.isEmpty {
+                        Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).textSelection(.enabled)
+                    }
                 }
                 .padding(24)
             }
             SheetFooter {
                 Button("Anuluj") { dismiss() }
                 Button("Zapisz domyślne") {
-                    Task {
-                        await model.saveProjectDefaults(selection)
-                        dismiss()
-                    }
+                    Task { if await model.saveProjectDefaults(selection) { dismiss() } else { error = model.message } }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(selection.tools.isEmpty || model.isWorking)
@@ -84,12 +85,15 @@ struct GlobalSelectionEditor: View {
             }.padding(24) }
             SheetFooter {
                 Button("Zamknij") { dismiss() }
-                Button("Zapisz wybór") { Task { await save(); await refresh() } }.buttonStyle(.bordered).disabled(model.isWorking)
-                Button("Zapisz i synchronizuj") { Task { await save(); if await model.syncGlobal() { dismiss() } } }
-                    .buttonStyle(.borderedProminent).disabled(selection.tools.isEmpty || model.isWorking)
+                Button("Zapisz wybór") { Task { if await save() { await refresh() } } }.buttonStyle(.bordered).disabled(model.isWorking)
+                // A failed save must not go on to apply the selection that was there before, and an
+                // empty selection is still worth applying while something managed is left to remove.
+                Button("Zapisz i synchronizuj") { Task { if await save() { if await model.syncGlobal() { dismiss() } else { error = model.message } } } }
+                    .buttonStyle(.borderedProminent).disabled((selection.tools.isEmpty && !hasSomethingToRemove) || model.isWorking)
             }
         }
         .sheetFrame(width: 700, height: 640)
+        .onChange(of: selection) { if loaded { Task { await refresh() } } }
         .task {
             guard !loaded else { return }
             loaded = true
@@ -98,12 +102,16 @@ struct GlobalSelectionEditor: View {
         }
     }
 
-    private func save() async {
-        await model.saveSelection(selection, for: .global, named: "skille globalne")
+    private var hasSomethingToRemove: Bool { previews.contains { !$0.removed.isEmpty } }
+
+    private func save() async -> Bool {
+        guard await model.saveSelection(selection, for: .global, named: "skille globalne") else { error = model.message; return false }
+        return true
     }
 
+    /// The preview follows the checkboxes, not the last saved choice.
     private func refresh() async {
-        do { previews = try await model.previewGlobalSync(); error = "" }
+        do { previews = try await model.previewGlobalSync(selection); error = "" }
         catch { previews = []; self.error = error.localizedDescription }
     }
 }

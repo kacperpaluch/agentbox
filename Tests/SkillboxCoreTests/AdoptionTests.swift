@@ -151,4 +151,87 @@ final class AdoptionTests: AgentboxTestCase {
         XCTAssertEqual(drifted.first?.isGitBacked, true, "użytkownik musi zobaczyć, dlaczego nie da się tego przejąć")
         await XCTAssertThrowsErrorAsync(try await service.adoptSkillChanges(drifted))
     }
+
+    /// A skill edited straight in the library folder keeps its `updatedAt`. It used to look like a
+    /// change made in the project, and adopting it put the old project copy over the new library.
+    func testLibraryEditedInAnEditorIsNotOfferedAsAProjectChange() async throws {
+        let (service, root) = try makeLibrary()
+        try await addSkill(service, root: root, id: "notes")
+        let project = try await addProject(service, root: root, name: "app", skills: ["notes"])
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        try "---\nname: notes\ndescription: Demo\n---\nedycja w bibliotece\n".write(to: root.appending(path: "data/skills/notes/SKILL.md"), atomically: true, encoding: .utf8)
+
+        let drift = try await service.driftedSkills()
+        XCTAssertTrue(drift.isEmpty, "zmiana w bibliotece to zwykła aktualizacja projektu, nie zmiana do przejęcia")
+    }
+
+    func testAdoptionRefusesWhenTheLibraryChangedAfterTheListWasMade() async throws {
+        let (service, root) = try makeLibrary()
+        try await addSkill(service, root: root, id: "notes")
+        let project = try await addProject(service, root: root, name: "app", skills: ["notes"])
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        try "---\nname: notes\ndescription: Demo\n---\nz projektu\n".write(to: projectCopy(root, project: "app", skill: "notes"), atomically: true, encoding: .utf8)
+        let drifted = try await service.driftedSkills()
+        XCTAssertEqual(drifted.count, 1)
+
+        try await service.saveSkillMarkdown(skillID: "notes", content: "---\nname: notes\ndescription: Demo\n---\nnowsza w bibliotece\n")
+        await XCTAssertThrowsErrorAsync(try await service.adoptSkillChanges(drifted))
+        let library = try await service.skillMarkdown(skillID: "notes")
+        XCTAssertTrue(library.contains("nowsza w bibliotece"), "nowsza wersja biblioteki zostaje")
+    }
+
+    /// The second skill fails to install, then — separately — the catalog save fails. Both times the
+    /// library must come back byte for byte, metadata included.
+    func testFailedAdoptionPutsEveryDirectoryAndTheCatalogBack() async throws {
+        let (service, root) = try makeLibrary()
+        try await addSkill(service, root: root, id: "alpha")
+        try await addSkill(service, root: root, id: "beta")
+        let project = try await addProject(service, root: root, name: "app", skills: ["alpha", "beta"])
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        for id in ["alpha", "beta"] {
+            try "---\nname: \(id)\ndescription: Demo\n---\nz projektu\n".write(to: projectCopy(root, project: "app", skill: id), atomically: true, encoding: .utf8)
+        }
+        let drifted = try await service.driftedSkills()
+        XCTAssertEqual(drifted.count, 2)
+        let skills = root.appending(path: "data/skills")
+        let before = try ["alpha", "beta"].map { try SkillTree.read(skills.appending(path: $0)) }
+        let catalogBefore = try Data(contentsOf: root.appending(path: "data/catalog.json"))
+        defer { SkillboxService.injectedFailure = nil }
+
+        for step in ["install:beta", "commit"] {
+            SkillboxService.injectedFailure = { if $0 == step { throw SkillboxError.commandFailed("wymuszony błąd") } }
+            await XCTAssertThrowsErrorAsync(try await service.adoptSkillChanges(drifted))
+            XCTAssertEqual(try ["alpha", "beta"].map { try SkillTree.read(skills.appending(path: $0)) }, before, "\(step): katalogi wracają")
+            XCTAssertEqual(try Data(contentsOf: root.appending(path: "data/catalog.json")), catalogBefore, "\(step): katalog metadanych bez zmian")
+        }
+    }
+
+    func testFailedGitReimportAndLocalImportLeaveTheLibraryAsItWas() async throws {
+        let (service, root) = try makeLibrary()
+        try await addSkill(service, root: root, id: "alpha")
+        let skills = root.appending(path: "data/skills")
+        let catalogBefore = try Data(contentsOf: root.appending(path: "data/catalog.json"))
+        defer { SkillboxService.injectedFailure = nil }
+        SkillboxService.injectedFailure = { if $0 == "commit" { throw SkillboxError.commandFailed("wymuszony błąd") } }
+        let source = root.appending(path: "source/gamma")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try "---\nname: gamma\ndescription: Demo\n---\n".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        await XCTAssertThrowsErrorAsync(try await service.addLocal(path: source.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: skills.appending(path: "gamma").path), "nieudany import nie zostawia katalogu")
+        XCTAssertEqual(try Data(contentsOf: root.appending(path: "data/catalog.json")), catalogBefore)
+    }
+
+    func testDamagedSkillManifestIsAnErrorNotAnEmptyManifest() async throws {
+        let (service, root) = try makeLibrary()
+        try await addSkill(service, root: root, id: "notes")
+        let project = try await addProject(service, root: root, name: "app", skills: ["notes"])
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        let manifest = root.appending(path: "app/.claude/skills/.skillbox.json")
+        for broken in ["{ nie json", "[\"notes\", \"notes\"]", "{\"version\": 99, \"skills\": {}}"] {
+            try broken.write(to: manifest, atomically: true, encoding: .utf8)
+            XCTAssertThrowsError(try SkillboxService.skillManifest(at: manifest.deletingLastPathComponent()), broken)
+            await XCTAssertThrowsErrorAsync(try await service.syncProjectTransaction(projectID: project.id))
+            XCTAssertEqual(try String(contentsOf: manifest, encoding: .utf8), broken, "uszkodzony manifest nie zostaje nadpisany")
+        }
+    }
 }

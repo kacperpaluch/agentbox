@@ -113,11 +113,13 @@ final class AppModelTests: XCTestCase {
             await model.addProject(Project(name: name, path: folder.path), selection: AttachmentSelection(tools: [.claude], skillIDs: ["demo"]))
         }
 
-        let first = await model.syncAllProjects()
+        let firstRun = await model.syncAllProjects()
+        let first = try XCTUnwrap(firstRun)
         XCTAssertEqual(first.filter { $0.state == .synced }.count, 2)
         XCTAssertTrue(model.message.contains("2"), "pierwszy przebieg zapisuje oba projekty: \(model.message)")
 
-        let second = await model.syncAllProjects()
+        let secondRun = await model.syncAllProjects()
+        let second = try XCTUnwrap(secondRun)
         XCTAssertEqual(second.filter { $0.state == .upToDate }.count, 2)
         XCTAssertTrue(model.message.contains("bez zmian"), "drugi przebieg nie ma nic do zapisania: \(model.message)")
     }
@@ -218,6 +220,36 @@ final class AppModelTests: XCTestCase {
     }
 
     // MARK: Błędy nie mogą wyglądać jak sukces
+
+    /// A damaged library makes every one of these fail. None of them may answer the way success
+    /// does: an empty list closed the sync sheet, `Void` let the global sheet sync the old choice,
+    /// and a failed lookup said "unused" right in the delete confirmation.
+    func testFailuresAreNotReportedInTheShapeOfSuccess() async throws {
+        let model = try await makeModel()
+        await model.addLocal(try makeSkill("demo"))
+        let folder = try makeProjectFolder("app")
+        await model.addProject(Project(name: "app", path: folder.path), selection: AttachmentSelection(tools: [.claude], skillIDs: ["demo"]))
+        try "{ zepsuty".write(to: root.appending(path: "library/selections.json"), atomically: true, encoding: .utf8)
+
+        let outcomes = await model.syncAllProjects()
+        XCTAssertNil(outcomes, "przebieg, który się nie zaczął, nie jest pustym sukcesem")
+        let savedSelection = await model.saveSelection(AttachmentSelection(tools: [.claude]), for: .global, named: "test")
+        XCTAssertFalse(savedSelection)
+        let savedDefaults = await model.saveProjectDefaults(AttachmentSelection(tools: [.claude]))
+        XCTAssertFalse(savedDefaults)
+        let usage = await model.usage(ofSkill: "demo")
+        XCTAssertFalse(usage.isUnused)
+        XCTAssertNotNil(usage.failure)
+        XCTAssertNotNil(usage.summary)
+    }
+
+    func testMissingMCPFieldsAreAnErrorNotAnEmptyForm() async throws {
+        let model = try await makeModel()
+        do {
+            _ = try await model.managedFields(for: MCPServer(name: "nieistniejacy", transport: .stdio, command: "npx"))
+            XCTFail("oczekiwano błędu")
+        } catch {}
+    }
 
     /// A failed update used to be swallowed into a green "Zaktualizowano 0 skilli" in the operation
     /// log. An error has to look like an error.

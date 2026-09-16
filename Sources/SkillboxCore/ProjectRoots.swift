@@ -137,6 +137,24 @@ extension SkillboxService {
     /// from scratch. Every project passed in joins the folder; `following` says which ones drop
     /// their own settings for the folder's, and the rest keep exactly what they synchronize today.
     @discardableResult
+    /// A project's opt-outs from a tool's own global servers are kept under its selection id, which
+    /// followers stop reading. The folder keeps what every follower hid — the rule the form already
+    /// applies to skill exclusions — and their own entries go. A folder nobody follows yet starts
+    /// from the defaults, like any new folder.
+    static func moveDisabledGlobalServers(_ mcp: inout MCPConfiguration, from keys: [String], to root: UUID) {
+        guard !keys.isEmpty else { applyDefaultDisabledGlobalServers(&mcp, selectionID: root); return }
+        var perSelection = mcp.projectDisabledGlobalServers ?? [:]
+        var shared: [String: [String]] = [:]
+        for tool in Tool.allCases.map(\.rawValue) {
+            let sets = keys.map { Set(perSelection[$0]?[tool] ?? []) }
+            let common = sets.dropFirst().reduce(sets[0]) { $0.intersection($1) }
+            if !common.isEmpty { shared[tool] = common.sorted() }
+        }
+        for key in keys { perSelection.removeValue(forKey: key) }
+        if !shared.isEmpty { perSelection[root.uuidString] = shared }
+        mcp.projectDisabledGlobalServers = perSelection.isEmpty ? nil : perSelection
+    }
+
     public func adoptProjectsIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], selection: AttachmentSelection, treatingExistingAsKnown: Bool = true) async throws -> ProjectRoot {
         var isDirectory: ObjCBool = false
         let rootURL = URL(fileURLWithPath: root.path).standardizedFileURL
@@ -157,8 +175,10 @@ extension SkillboxService {
         var stored = root
         stored.path = rootURL.path
         stored.ignoredPaths = Self.standardized(stored.ignoredPaths)
-        let mcp = try await store.mcpConfiguration()
+        var mcp = try await store.mcpConfiguration()
         let docs = try await store.docsConfiguration()
+        let followerKeys = config.projects.filter { followers.contains($0.id) }.map { config.selectionID(for: $0).uuidString }
+        Self.moveDisabledGlobalServers(&mcp, from: followerKeys, to: stored.id)
         for index in config.projects.indices {
             let id = config.projects[index].id
             guard followers.contains(id) || owners.contains(id) else { continue }

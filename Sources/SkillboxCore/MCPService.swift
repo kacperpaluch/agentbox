@@ -50,7 +50,10 @@ extension SkillboxService {
     public func managedFields(serverID: UUID) async throws -> [MCPManagedField] {
         let config = try await store.mcpConfiguration()
         guard let server = config.servers.first(where: { $0.id == serverID }) else { throw SkillboxError.mcpConflict("serwer MCP nie istnieje") }
-        let secrets = try await store.secrets()
+        return Self.managedFields(of: server, secrets: try await store.secrets())
+    }
+
+    static func managedFields(of server: MCPServer, secrets: [String: String]) -> [MCPManagedField] {
         var fields: [MCPManagedField] = []
         fields += server.environment.map { MCPManagedField(location: .environment, key: $0.key, value: "${\($0.value)}", classification: .literal) }
         fields += (server.literalEnvironment ?? [:]).map { MCPManagedField(location: .environment, key: $0.key, value: $0.value, classification: .literal) }
@@ -71,6 +74,13 @@ extension SkillboxService {
         let index = config.servers.firstIndex(where: { $0.id == server.id })
         guard server.name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil else { throw SkillboxError.invalidSkill("nazwa MCP może zawierać litery, cyfry, _ i -") }
         guard !config.servers.contains(where: { $0.id != server.id && $0.name == server.name }) else { throw SkillboxError.mcpConflict("serwer \(server.name) już istnieje") }
+        let updated = try Self.applyingFields(fields, to: server)
+        if let index { config.servers[index] = updated } else { config.servers.append(updated) }
+        try await store.save(config)
+    }
+
+    /// The server as the form describes it: its variables and headers replaced by `fields`.
+    static func applyingFields(_ fields: [MCPManagedField], to server: MCPServer) throws -> MCPServer {
         var updated = server
         updated.tags = updated.tags.map(SkillboxService.normalizedTags)
         updated.environment = [:]; updated.headers = [:]
@@ -90,8 +100,7 @@ extension SkillboxService {
             } else if field.location == .environment { updated.literalEnvironment?[key] = field.value }
             else { updated.literalHeaders?[key] = field.value }
         }
-        if let index { config.servers[index] = updated } else { config.servers.append(updated) }
-        try await store.save(config)
+        return updated
     }
 
     /// Adds tags to several servers at once, merging with whatever each one already has — the MCP
@@ -716,6 +725,37 @@ enum MCPRenderer {
         return String(decoding: data, as: UTF8.self) + "\n"
     }
 
+    /// The repository a project lives in — at its top or anywhere below it — with the directory
+    /// holding `info/exclude` and the project's path inside the repository ("" at the top).
+    ///
+    /// Only a `.git` directly in the project used to count, so a package inside a monorepo got its
+    /// MCP files written with no exclusion at all. Git itself looks upward, and so does this.
+    static func gitRepository(containing project: URL) throws -> (info: URL, relativePath: String)? {
+        let fm = FileManager.default
+        let resolved = project.resolvingSymlinksInPath().standardizedFileURL.path
+        var directory = resolved
+        while true {
+            if fm.fileExists(atPath: (directory as NSString).appendingPathComponent(".git")) {
+                guard let info = try gitInfoDirectory(URL(fileURLWithPath: directory)) else { return nil }
+                let relative = directory == resolved ? "" : String(resolved.dropFirst(directory == "/" ? 1 : directory.count + 1))
+                return (info, relative)
+            }
+            let parent = (directory as NSString).deletingLastPathComponent
+            guard !parent.isEmpty, parent != directory else { return nil }
+            directory = parent
+        }
+    }
+
+    /// A path written literally into a gitignore pattern.
+    static func gitignoreEscaped(_ path: String) -> String {
+        var out = ""
+        for character in path {
+            if "\\*?[".contains(character) { out.append("\\") }
+            out.append(character)
+        }
+        return out
+    }
+
     /// Where this repository keeps `info/exclude`, or `nil` when the project is not a repository.
     ///
     /// In a linked worktree — and in a submodule — `.git` is a *file* holding `gitdir: <path>`, not
@@ -796,16 +836,28 @@ enum MCPRenderer {
     /// secrets, it is Claude Code's own local-settings file, and Agentbox only ever adds a name to
     /// its `disabledMcpServers`. It is therefore excluded only once the project actually has such an
     /// opt-out, instead of being listed in every repository that merely has Claude Code ticked.
-    private static func protectGeneratedFiles(_ project: URL, previews: [MCPPreview]) throws {
-        guard let info = try gitInfoDirectory(project) else { return }
+    ///
+    /// Also called for a project whose files are already current: a repository initialized after
+    /// the last sync, or an exclude file someone tidied, must get the protection back even though
+    /// no managed byte changes.
+    static func protectGeneratedFiles(_ project: URL, previews: [MCPPreview]) throws {
+        guard let repository = try gitRepository(containing: project) else { return }
+        let info = repository.info
         try FileManager.default.createDirectory(at: info, withIntermediateDirectories: true)
         let url = info.appending(path: "exclude")
         var text = try SkillboxService.existingText(at: url)
+        // A project at the top of its repository keeps the patterns it always had. One deeper in a
+        // repository gets them anchored to its own folder: `.codex/config.toml` has a slash inside,
+        // so Git reads it relative to the repository root and it would never match the project's.
+        func entries(_ names: [String]) -> [String] {
+            guard !repository.relativePath.isEmpty else { return names }
+            return names.map { "/" + gitignoreEscaped(repository.relativePath) + "/" + $0 }
+        }
         var groups: [(marker: String, entries: [String])] = [
-            ("# Skillbox MCP configs (mogą zawierać lokalne sekrety)", [".mcp.json", ".codex/config.toml", "opencode.json", "opencode.jsonc", ".skillbox/"])
+            ("# Skillbox MCP configs (mogą zawierać lokalne sekrety)", entries([".mcp.json", ".codex/config.toml", "opencode.json", "opencode.jsonc", ".skillbox/"]))
         ]
         if previews.contains(where: { $0.disabledGlobalFile != nil && !($0.disabledGlobalContent ?? "").isEmpty }) {
-            groups.append(("# Skillbox: lokalne ustawienia Claude Code, nieprzeznaczone do współdzielenia", [".claude/settings.local.json"]))
+            groups.append(("# Skillbox: lokalne ustawienia Claude Code, nieprzeznaczone do współdzielenia", entries([".claude/settings.local.json"])))
         }
         let present = Set(text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) })
         var changed = false

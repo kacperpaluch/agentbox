@@ -316,11 +316,17 @@ import SkillboxCore
         SkillboxService.selection(for: target, config: localConfiguration, resolvingInheritance: resolvingInheritance)
     }
 
-    func saveSelection(_ selection: AttachmentSelection, for target: SelectionTarget, named name: String) async {
-        await perform { try await self.service?.setSelection(selection, for: target); self.message = "Zapisano ustawienia: \(name)" }
+    @discardableResult
+    func saveSelection(_ selection: AttachmentSelection, for target: SelectionTarget, named name: String) async -> Bool {
+        await performing { try await self.requireService().setSelection(selection, for: target); self.message = "Zapisano ustawienia: \(name)" }
     }
-    func saveProjectDefaults(_ selection: AttachmentSelection) async {
-        await perform { try await self.service?.setProjectDefaults(selection); self.message = "Zapisano domyślne ustawienia nowych projektów" }
+    @discardableResult
+    func saveProjectDefaults(_ selection: AttachmentSelection) async -> Bool {
+        await performing { try await self.requireService().setProjectDefaults(selection); self.message = "Zapisano domyślne ustawienia nowych projektów" }
+    }
+    private func requireService() throws -> SkillboxService {
+        guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
+        return service
     }
     func deleteProject(_ project: Project, removingFiles: Bool) async {
         await perform {
@@ -355,8 +361,9 @@ import SkillboxCore
 
     /// Both halves of "przejmij z projektu" as one action, so the sheet reports one result and the
     /// library takes one recovery snapshot for what the user thinks of as a single decision.
-    func adoptFromProject(newSkills: [AdoptableSkill], changes: [DriftedSkill]) async {
-        await perform {
+    @discardableResult
+    func adoptFromProject(newSkills: [AdoptableSkill], changes: [DriftedSkill]) async -> Bool {
+        await performing {
             var parts: [String] = []
             if !newSkills.isEmpty {
                 let adopted = try await self.service?.adoptSkills(newSkills) ?? []
@@ -375,10 +382,13 @@ import SkillboxCore
     }
     /// Where a library item actually lands. Read on demand — a confirmation dialog asking "usunąć?"
     /// without saying what it will reach is a question asked in the dark.
-    func usage(ofSkill id: String) async -> UsageReport { (try? await service?.usage(ofSkill: id)) ?? UsageReport() }
-    func usage(ofServer id: UUID) async -> UsageReport { (try? await service?.usage(ofServer: id)) ?? UsageReport() }
-    func usage(ofDoc id: String) async -> UsageReport { (try? await service?.usage(ofDoc: id)) ?? UsageReport() }
-    func usage(ofPlugin id: UUID) async -> UsageReport { (try? await service?.usage(ofPlugin: id)) ?? UsageReport() }
+    func usage(ofSkill id: String) async -> UsageReport { await usageReport { try await self.requireService().usage(ofSkill: id) } }
+    func usage(ofServer id: UUID) async -> UsageReport { await usageReport { try await self.requireService().usage(ofServer: id) } }
+    func usage(ofDoc id: String) async -> UsageReport { await usageReport { try await self.requireService().usage(ofDoc: id) } }
+    func usage(ofPlugin id: UUID) async -> UsageReport { await usageReport { try await self.requireService().usage(ofPlugin: id) } }
+    private func usageReport(_ load: () async throws -> UsageReport) async -> UsageReport {
+        do { return try await load() } catch { return UsageReport(failure: error.localizedDescription) }
+    }
 
     func loadFullBackups() async { do { fullBackups = try await service?.fullBackups() ?? [] } catch { reportError(error) } }
     func createFullBackup() async { await perform { guard let service = self.service else { throw SkillboxError.commandFailed("Brak usługi") }; let backup = try await service.createFullBackup(applicationVersion: AppVersion.short); self.message = "Utworzono pełny backup: \(backup.name)" }; await loadFullBackups() }
@@ -386,7 +396,9 @@ import SkillboxCore
     func deleteFullBackup(_ backup: FullBackupInfo) async { await perform { try await self.service?.deleteFullBackup(named: backup.name); self.message = "Usunięto pełny backup: \(backup.name)" }; await loadFullBackups() }
     func loadRecovery() async { do { librarySnapshots = try await service?.librarySnapshots() ?? [] } catch { reportError(error) } }
     func restoreLibrary(_ snapshot: LibrarySnapshot) async { await perform { let files = try await self.service?.restoreLibrarySnapshot(named: snapshot.name) ?? []; self.message = "Przywrócono snapshot biblioteki: \(files.joined(separator: ", "))" }; await loadRecovery() }
-    func managedFields(for server: MCPServer) async -> [MCPManagedField] { (try? await service?.managedFields(serverID: server.id)) ?? [] }
+    /// Throws rather than answering `[]`: saving the form rebuilds every variable and header from
+    /// this list, so an empty list after a failed read would have erased them.
+    func managedFields(for server: MCPServer) async throws -> [MCPManagedField] { try await requireService().managedFields(serverID: server.id) }
     func saveMCPServer(_ server: MCPServer, fields: [MCPManagedField]) async -> Bool {
         isWorking = true; defer { isWorking = false }
         do {
@@ -404,7 +416,9 @@ import SkillboxCore
     func deleteMCPServer(_ id: UUID) async { await perform { try await self.service?.deleteMCPServer(id: id); self.message = "Usunięto serwer MCP" } }
     @discardableResult
     func addMCPServerTags(_ ids: Set<UUID>, text: String) async -> Bool { await performing { try await self.service?.addMCPServerTags(serverIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) serwerów MCP" } }
-    func exportMCPServerJSON(_ id: UUID) async -> String { (try? await service?.exportMCPServerJSON(id)) ?? "" }
+    func exportMCPServerJSON(_ id: UUID) async throws -> String { try await requireService().exportMCPServerJSON(id) }
+    func mcpServerDraftJSON(_ server: MCPServer, fields: [MCPManagedField]) async throws -> String { try await requireService().mcpServerDraftJSON(server, fields: fields) }
+    func mcpServerDraft(fromJSON json: String, name: String) async throws -> (server: MCPServer, fields: [MCPManagedField]) { try await requireService().mcpServerDraft(fromJSON: json, name: name) }
     func exportMCPConfigurationJSON() async -> String { (try? await service?.exportMCPConfigurationJSON(mcp.servers)) ?? "" }
     func updateMCPServerJSON(_ id: UUID, name: String, json: String, enabled: Bool, tags: [String]) async -> Bool {
         isWorking = true; defer { isWorking = false }
@@ -575,7 +589,8 @@ import SkillboxCore
     @discardableResult
     func syncEverything(_ project: Project) async -> Bool { await performing { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille, MCP, dokumenty i pluginy dla \(project.name)" } }
     func previewAllProjectsSync() async throws -> [ProjectSyncPlan] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewAllProjectsSync() }
-    func syncAllProjects() async -> [ProjectSyncOutcome] {
+    /// `nil` when the run could not even start; an empty list is a run over no projects.
+    func syncAllProjects() async -> [ProjectSyncOutcome]? {
         isWorking = true
         defer { isWorking = false; progress = nil }
         do {
@@ -598,7 +613,7 @@ import SkillboxCore
             await reload()
             message = error.localizedDescription
             record(.error, message)
-            return []
+            return nil
         }
     }
     /// Review exact updates before running the full workflow.
@@ -619,7 +634,7 @@ import SkillboxCore
     // The global selection is read into `global` by `reload()` and written through `saveSelection`,
     // like every other place — only the preview stays a call of its own, because it inspects the
     // user's skill directories rather than the library.
-    func previewGlobalSync() async throws -> [SkillSyncPreview] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewGlobalSync() }
+    func previewGlobalSync(_ selection: AttachmentSelection? = nil) async throws -> [SkillSyncPreview] { try await requireService().previewGlobalSync(selection: selection) }
     func analyzeMCP(_ text: String, singleServerName: String? = nil) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.analyzeMCPJSON(text, singleServerName: singleServerName) }
     func generateMCP(_ instructions: String, apiKey: String, model: String) async throws -> String { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.generateMCPConfiguration(instructions: instructions, apiKey: apiKey, model: model) }
     /// `classifications` is what the import sheet shows the user; the store keeps a `${VAR}`

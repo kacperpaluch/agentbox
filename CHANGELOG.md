@@ -6,6 +6,40 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-09-16
+
+Wydanie domykające audyt bezpieczeństwa i trwałości danych: ochrona sekretów, transakcje biblioteki i uczciwe raportowanie błędów.
+
+### Bezpieczeństwo
+
+- Test klucza OpenAI używał prawdziwego wpisu z pęku kluczy i przy nieudanej asercji wypisywał jego wartość. Test działa teraz na jednorazowym koncie i nie pokazuje wartości. Zapis klucza sprawdza wynik operacji w pęku kluczy i aktualizuje istniejący wpis zamiast najpierw go usuwać, więc nieudany zapis nie kasuje poprzedniego klucza.
+- Projekt położony wewnątrz większego repozytorium (np. pakiet w monorepo) dostaje wykluczenia wygenerowanych plików MCP w `.git/info/exclude`, zakotwiczone do swojego folderu. Wcześniej ochrona działała tylko wtedy, gdy `.git` leżał bezpośrednio w projekcie.
+- Synchronizacja projektu z aktualnymi plikami nadal sprawdza i odtwarza wykluczenia Git — także po `git init` wykonanym po pierwszej synchronizacji.
+- Sprzątanie katalogów backupów z wersji ≤0.7.0 nie podąża za dowiązaniem `.skillbox` poza projekt i odbywa się dopiero po udanej synchronizacji.
+
+### Naprawiono
+
+- `Przejmij z projektu` nie proponuje już zmiany wprowadzonej bezpośrednio w pliku biblioteki jako zmiany z projektu. Manifest `.skillbox.json` zapamiętuje sumę kontrolną zapisanej treści, a przejęcie odmawia zapisu, gdy biblioteka lub projekt zmieniły się od przygotowania listy.
+- Przejęcie zmian, import lokalny, ponowny import z Git, przejęcie nowych skilli i zapis `SKILL.md` są transakcjami: błąd kolejnego kroku albo zapisu metadanych przywraca wszystkie katalogi i katalog skilli.
+- Uszkodzony, nieobsługiwany lub zdublowany manifest skilli albo dokumentów zatrzymuje operację z komunikatem, zamiast być traktowany jak brak manifestu i nadpisany. Stary manifest z powtórzonym identyfikatorem nie kończy już procesu awaryjnie.
+- Usunięcie przypisanego dokumentu odmawia, gdy pod nazwą `AGENTS.md`/`CLAUDE.md` stoi katalog, dowiązanie albo plik, którego nie da się odczytać jako tekst.
+- Plik `AGENTS.md` identyczny z przypisanym dokumentem jest przejmowany z manifestem, więc projekt nie wisi w stanie „do synchronizacji”.
+- Przywrócenie pełnego backupu lub snapshotu sprzed `selections.json` odtwarza zapisane w nim przypisania zamiast zachowywać obecne.
+- Zapis biblioteki odmawia, jeśli plik zmienił się od odczytu — w innym oknie, operacji albo w równolegle uruchomionym `agentbox`. Wcześniej późniejszy zapis mógł po cichu usunąć wcześniejszy.
+- Globalna synchronizacja skilli cofa klientów zapisanych wcześniej, gdy kolejny klient odmówi zapisu.
+- Import MCP odrzuca niepoprawne typy pól ze wskazaniem ścieżki JSON zamiast zapisywać puste ustawienia; wartość logiczna w `env` jest zapisywana jako `true`/`false`, a nie `1`. Wynik ponownego importu wskazuje identyfikatory faktycznie zapisanych serwerów.
+- Limit czasu procesów zewnętrznych obejmuje cały czas życia procesu, także po zamknięciu jego strumieni wyjścia.
+- `agentbox sync global --dry-run` niczego nie zapisuje, a `sync global` z `--skills`/`--tags` zachowuje wykluczenia z aplikacji.
+- `agentbox mcp assign` z nieznaną nazwą serwera odrzuca polecenie zamiast czyścić przypisanie.
+- `agentbox sync all` i `agentbox refresh` kończą się kodem 1, gdy któryś projekt został cofnięty lub pominięty.
+- Formularz i widok JSON serwera MCP edytują jeden szkic — przełączanie nie gubi niezapisanych zmian. Błąd wczytania zmiennych i nagłówków blokuje zapis formularza zamiast usuwać je przy zapisie.
+- Arkusze `Domyślne dla nowych projektów`, `Skille we wszystkich sesjach`, `Synchronizuj wszystko` i `Przejmij z projektu` zamykają się tylko po udanej operacji; błąd zostaje w arkuszu. `Zapisz i synchronizuj` nie synchronizuje starego wyboru po nieudanym zapisie.
+- Podgląd skilli globalnych odpowiada bieżącym zaznaczeniom, a pusty wybór można zsynchronizować, żeby usunąć wcześniej zarządzane skille.
+- `Wspólne ustawienia…` folderu nadrzędnego pokazuje zmiany narzędzi, dokumentów, pluginów i wyłączeń globalnych MCP, przenosi wybór pluginów i wymaga jawnej decyzji przy różnych dokumentach. Folder przejmuje wyłączenia globalnych serwerów wspólne dla przechodzących projektów.
+- Potwierdzenia usunięcia pokazują „nie udało się ustalić”, gdy nie można sprawdzić użycia, zamiast sugerować, że element jest nieużywany.
+- `Dodaj serwer → AI` ma przycisk `Usuń zapamiętany klucz`; dotychczas opisany sposób usunięcia klucza był niedostępny.
+- Dialog przywracania snapshotu mówi prawdę o `mcp.json`: przywracane są też zapisane w nim lokalne wartości MCP, w tym tokeny.
+
 ## [0.27.0] - 2026-09-13
 
 ### Dodano

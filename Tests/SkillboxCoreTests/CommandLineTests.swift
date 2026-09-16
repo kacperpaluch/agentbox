@@ -187,4 +187,69 @@ final class CommandLineTests: AgentboxTestCase {
         XCTAssertTrue(lines[0].hasPrefix("Użycie: agentbox plugin"), lines[0])
     }
 
+
+    private func cliLibrary() throws -> (SkillboxService, URL) {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return (try SkillboxService(root: root.appending(path: "data")), root)
+    }
+
+    /// A preview is a preview: the saved selection — exclusions included — stays as it was.
+    func testGlobalDryRunDoesNotSaveTheSelection() async throws {
+        let (service, root) = try cliLibrary()
+        let source = root.appending(path: "source/notes")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try "skill".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        _ = try await AgentboxCommand.run(["add", source.path], service: service)
+        let saved = AttachmentSelection(tools: [.claude], skillTags: ["x"], excludedSkillIDs: ["inny"])
+        try await service.setSelection(saved, for: .global)
+        let selections = root.appending(path: "data/selections.json")
+        let before = try Data(contentsOf: selections)
+
+        let lines = try await AgentboxCommand.run(["sync", "global", "--skills", "notes", "--dry-run"], service: service)
+        XCTAssertTrue(lines.contains { $0.contains("+1") }, "\(lines)")
+        XCTAssertEqual(try Data(contentsOf: selections), before)
+
+        _ = try await service.previewGlobalSync()
+        let kept = try await service.storedSelection(for: .global)
+        XCTAssertEqual(kept.excludedSkillIDs, ["inny"])
+    }
+
+    func testMCPAssignWithAnUnknownNameChangesNothing() async throws {
+        let (service, root) = try cliLibrary()
+        let folder = root.appending(path: "app")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        _ = try await AgentboxCommand.run(["project", "add", "app", folder.path, "--tools", "claude"], service: service)
+        _ = try await AgentboxCommand.run(["mcp", "server", "add", "context7", "--url", "https://example.test/mcp"], service: service)
+        _ = try await AgentboxCommand.run(["mcp", "assign", "app", "--servers", "context7"], service: service)
+        await XCTAssertThrowsErrorAsync(try await AgentboxCommand.run(["mcp", "assign", "app", "--servers", "contex7"], service: service))
+        let project = try await service.storedProjects().first { $0.name == "app" }
+        let selection = try await service.storedSelection(for: .project(try XCTUnwrap(project).id))
+        XCTAssertEqual(selection.serverIDs.count, 1, "literówka nie czyści przypisania")
+    }
+
+    /// Automation reads the exit status: a rolled-back project is a failure even though the command
+    /// printed its report.
+    func testSyncAllWithAFailedProjectIsAPartialFailure() async throws {
+        let (service, root) = try cliLibrary()
+        let folder = root.appending(path: "app")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        _ = try await AgentboxCommand.run(["project", "add", "app", folder.path, "--tools", "claude"], service: service)
+        let source = root.appending(path: "source/notes")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try "skill".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        _ = try await AgentboxCommand.run(["add", source.path], service: service)
+        _ = try await AgentboxCommand.run(["project", "set", "app", "--skills", "notes"], service: service)
+        // The plan can be made; the write cannot.
+        let locked = folder.appending(path: ".claude")
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: locked.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path) }
+        do {
+            _ = try await AgentboxCommand.run(["sync", "all"], service: service)
+            XCTFail("oczekiwano PartialFailure")
+        } catch let failure as AgentboxCommand.PartialFailure {
+            XCTAssertTrue(failure.lines.contains { $0.contains("app") }, "\(failure.lines)")
+        }
+    }
 }

@@ -54,6 +54,29 @@ final class RecoveryMigrationTests: AgentboxTestCase {
         XCTAssertEqual(selection.serverIDs, [server])
     }
 
+    /// A backup from before `selections.json` restores the assignments it recorded, not the ones
+    /// the library had when it was restored.
+    func testRestoringABackupWithoutSelectionsBringsBackItsOwnAssignments() async throws {
+        let (service, root, project, server) = try legacy()
+        try FileManager.default.createDirectory(at: root.appending(path: "skills"), withIntermediateDirectories: true)
+        try #"{"version":1,"skills":[]}"#.write(to: root.appending(path: "catalog.json"), atomically: true, encoding: .utf8)
+        // What an old version left in `backups/full`: the files in their own, pre-selections format.
+        let legacyFiles = try ["projects.local.json", "mcp.json", "docs.json"].map { ($0, try Data(contentsOf: root.appending(path: $0))) }
+        let backup = try await service.createFullBackup(applicationVersion: "test")
+        let package = root.appending(path: "backups/full/\(backup.name)")
+        try FileManager.default.removeItem(at: package.appending(path: "selections.json"))
+        for (name, data) in legacyFiles { try data.write(to: package.appending(path: name)) }
+
+        try await service.setMCPServers(projectID: project, serverIDs: [], tags: [])
+        try await service.setDocs(projectID: project, docIDs: [], tags: [])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appending(path: "selections.json").path))
+
+        try await service.restoreFullBackup(named: backup.name)
+        let selection = try await SkillboxService(root: root).storedSelection(for: .project(project))
+        XCTAssertEqual(selection.serverIDs, [server])
+        XCTAssertEqual(selection.docIDs, ["rules"])
+    }
+
     func testFailedMigrationDoesNotOverwriteLegacySources() async throws {
         let (service, root, _, _) = try legacy()
         let mcp = root.appending(path: "mcp.json"), local = root.appending(path: "projects.local.json")

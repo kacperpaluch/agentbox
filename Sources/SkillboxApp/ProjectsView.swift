@@ -414,7 +414,8 @@ struct AllProjectsSyncPreviewView: View {
                 if outcomes.isEmpty {
                     Button("Synchronizuj \(plans?.count ?? 0) projektów") {
                         Task {
-                            let result = await model.syncAllProjects()
+                            // A run that never started is not "everything succeeded": the sheet stays with the reason.
+                            guard let result = await model.syncAllProjects() else { error = model.message; return }
                             if result.allSatisfy({ $0.state == .synced || $0.state == .upToDate }) { dismiss() } else { outcomes = result }
                         }
                     }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || plans == nil || model.isWorking)
@@ -500,6 +501,8 @@ struct AdoptSkillsView: View {
     @State private var selected = Set<String>()
     @State private var selectedChanges = Set<String>()
     @State private var error = ""
+    /// A failed "Przejmij" keeps the sheet open with its reason, next to a freshly read list.
+    @State private var adoptError = ""
     /// Git-backed skills are listed so the user learns why they cannot be taken, but they are not
     /// selectable — `adoptSkillChanges` refuses them for the same reason.
     private var selectable: Int { (candidates?.count ?? 0) + (drifted?.filter { !$0.isGitBacked }.count ?? 0) }
@@ -507,6 +510,7 @@ struct AdoptSkillsView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Przejmij z projektu").font(.title2.bold())
             Text("Wszystko, co w \(project.name) czeka na przeniesienie do biblioteki: katalogi ze `SKILL.md`, których biblioteka jeszcze nie zna, oraz zarządzane skille zmienione tutaj po ostatniej synchronizacji. Nic nie znika z projektu.").font(.caption).foregroundStyle(.secondary)
+            if !adoptError.isEmpty { Label(adoptError, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).textSelection(.enabled) }
             if !error.isEmpty { Text(error).foregroundStyle(.red) }
             else if candidates == nil { ProgressView() }
             else if candidates?.isEmpty == true && drifted?.isEmpty == true { ContentUnavailableView("Brak kandydatów", systemImage: "checkmark.circle", description: Text("Wszystkie skille w tym projekcie są zarządzane i zgodne z biblioteką.")) }
@@ -557,16 +561,22 @@ struct AdoptSkillsView: View {
                 Button("Przejmij \(selected.count + selectedChanges.count)") {
                     let newSkills = (candidates ?? []).filter { selected.contains($0.id) }
                     let changes = (drifted ?? []).filter { selectedChanges.contains($0.id) }
-                    Task { await model.adoptFromProject(newSkills: newSkills, changes: changes); dismiss() }
+                    Task {
+                        adoptError = ""
+                        if await model.adoptFromProject(newSkills: newSkills, changes: changes) { dismiss() }
+                        else { adoptError = model.message; selected.removeAll(); selectedChanges.removeAll(); await load() }
+                    }
                 }.buttonStyle(.borderedProminent).disabled((selected.isEmpty && selectedChanges.isEmpty) || model.isWorking)
             }
         }
         .padding(24).sheetFrame(width: 640, height: 520)
-        .task {
-            do {
-                candidates = try await model.adoptableSkills(project)
-                drifted = try await model.driftedSkills(project)
-            } catch { self.error = error.localizedDescription }
-        }
+        .task { await load() }
+    }
+
+    private func load() async {
+        do {
+            candidates = try await model.adoptableSkills(project)
+            drifted = try await model.driftedSkills(project)
+        } catch { self.error = error.localizedDescription }
     }
 }

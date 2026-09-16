@@ -100,7 +100,7 @@ final class MCPTests: AgentboxTestCase {
         let service = try SkillboxService(root: root.appending(path: "data"))
         let imported = try await service.importMCPJSON(#"{"mixed":{"command":"npx","args":["-y","mixed"],"env":{"COUNT":3,"ENABLED":true}}}"#)
         XCTAssertEqual(imported.servers[0].literalEnvironment?["COUNT"], "3")
-        XCTAssertEqual(imported.servers[0].literalEnvironment?["ENABLED"], "1")
+        XCTAssertEqual(imported.servers[0].literalEnvironment?["ENABLED"], "true")
         let project = try await service.addProject(name: "open", path: projectURL.path, tools: [.opencode])
         try await service.setMCPServers(projectID: project.id, serverIDs: imported.servers.map(\.id), tags: [])
         let preview = try await service.previewMCP(projectID: project.id)[0]
@@ -109,6 +109,62 @@ final class MCPTests: AgentboxTestCase {
         XCTAssertNotNil(mcp["mixed"])
         XCTAssertNil(mcp["servers"])
     }
+    /// Valid JSON of the wrong shape used to become empty settings and replace a working server.
+    func testStructurallyWrongMCPImportIsRejectedWithItsPath() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let first = try await service.importMCPJSON(#"{"mcpServers":{"api":{"command":"npx","args":["-y","api"],"env":{"TOKEN":"dummy-secret"}}}}"#)
+        let before = try Data(contentsOf: root.appending(path: "data/mcp.json"))
+        let broken = [
+            (#"{"mcpServers":{"api":{"command":"npx","args":"-y api"}}}"#, "mcpServers.api.args"),
+            (#"{"mcpServers":{"api":{"command":"npx","args":["-y",3]}}}"#, "mcpServers.api.args[1]"),
+            (#"{"mcpServers":{"api":{"command":["npx"]}}}"#, "mcpServers.api.command"),
+            (#"{"mcpServers":{"api":{"command":"npx","env":["TOKEN"]}}}"#, "mcpServers.api.env"),
+            (#"{"mcpServers":{"api":{"command":"npx","env":{"TOKEN":{"a":1}}}}}"#, "mcpServers.api.env.TOKEN"),
+            (#"{"mcpServers":{"api":{"type":"http","url":"https://x.test","headers":"Bearer x"}}}"#, "mcpServers.api.headers"),
+            (#"{"mcpServers":{"api":{"args":["x"]}}}"#, "mcpServers.api.command"),
+            (#"{"mcpServers":{"api":"npx"}}"#, "mcpServers.api")
+        ]
+        for (json, path) in broken {
+            do {
+                _ = try await service.importMCPJSON(json)
+                XCTFail("oczekiwano błędu dla \(path)")
+            } catch {
+                XCTAssertTrue(error.localizedDescription.contains(path), "\(path): \(error.localizedDescription)")
+            }
+        }
+        XCTAssertEqual(try Data(contentsOf: root.appending(path: "data/mcp.json")), before, "nic nie zostało zapisane")
+
+        let again = try await service.importMCPJSON(#"{"mcpServers":{"api":{"command":"uvx"}}}"#)
+        let stored = try await service.mcpConfiguration().servers
+        XCTAssertEqual(again.servers.map(\.id), stored.map(\.id), "wynik importu wskazuje zapisane obiekty")
+        XCTAssertEqual(again.servers.first?.id, first.servers.first?.id)
+    }
+
+    /// The editor's two views share one draft: form → JSON → form keeps unsaved edits both ways.
+    func testMCPEditorDraftSurvivesSwitchingViews() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let server = MCPServer(name: "api", transport: .stdio, command: "npx", arguments: ["-y", "api"])
+        try await service.saveMCPServer(server)
+        var draft = server
+        draft.command = "uvx"
+        let fields = [MCPManagedField(location: .environment, key: "TOKEN", value: "dummy-secret", classification: .literal),
+                      MCPManagedField(location: .environment, key: "HOME_DIR", value: "${HOME}", classification: .literal)]
+
+        let json = try await service.mcpServerDraftJSON(draft, fields: fields)
+        XCTAssertTrue(json.contains("uvx"), "JSON pokazuje niezapisany formularz")
+        XCTAssertTrue(json.contains("dummy-secret"))
+
+        let edited = json.replacingOccurrences(of: "\"-y\"", with: "\"--quiet\"")
+        let back = try await service.mcpServerDraft(fromJSON: edited, name: "api")
+        XCTAssertEqual(back.server.command, "uvx")
+        XCTAssertEqual(back.server.arguments, ["--quiet", "api"])
+        XCTAssertEqual(Set(back.fields.map { "\($0.key)=\($0.value)" }), ["TOKEN=dummy-secret", "HOME_DIR=${HOME}"])
+        let saved = try await service.mcpConfiguration().servers.first
+        XCTAssertEqual(saved?.command, "npx", "przełączanie widoków niczego nie zapisuje")
+    }
+
     func testGoldenMCPFilesForAllToolsWithEnvironmentAndSecret() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let projectURL = root.appending(path: "project")
@@ -408,12 +464,19 @@ final class MCPTests: AgentboxTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: projectURL.appending(path: "opencode.json").path), "opencode.json zawierał tylko wpisy Agentbox, więc znika w całości")
     }
 
-    func testOpenAIKeySurvivesRoundTripAndClearsWhenEmptied() {
-        let previous = OpenAIKeyStore.load()
-        defer { OpenAIKeyStore.save(previous) }
-        OpenAIKeyStore.save("  sk-test-123  ")
-        XCTAssertEqual(OpenAIKeyStore.load(), "sk-test-123", "klucz zapisuje się bez otaczających spacji i wraca przy kolejnym otwarciu okna")
-        OpenAIKeyStore.save("")
-        XCTAssertEqual(OpenAIKeyStore.load(), "", "wyczyszczone pole usuwa wpis z pęku kluczy")
+    /// Never the production entry, and never a value in an assertion message: a failure here once
+    /// printed the user's real key.
+    func testOpenAIKeySurvivesRoundTripAndDeletes() throws {
+        let account = "agentbox-test-\(UUID().uuidString)"
+        defer { try? OpenAIKeyStore.delete(account: account) }
+        try OpenAIKeyStore.save("  dummy-secret-1  ", account: account)
+        XCTAssertTrue(OpenAIKeyStore.load(account: account) == "dummy-secret-1", "klucz zapisuje się bez otaczających spacji")
+        try OpenAIKeyStore.save("dummy-secret-2", account: account)
+        XCTAssertTrue(OpenAIKeyStore.load(account: account) == "dummy-secret-2", "drugi zapis aktualizuje istniejący wpis")
+        try OpenAIKeyStore.save("", account: account)
+        XCTAssertTrue(OpenAIKeyStore.load(account: account) == "dummy-secret-2", "pusty klucz nie usuwa wpisu — od tego jest delete")
+        try OpenAIKeyStore.delete(account: account)
+        XCTAssertTrue(OpenAIKeyStore.load(account: account).isEmpty, "delete usuwa wpis")
+        try OpenAIKeyStore.delete(account: account)
     }
 }
