@@ -41,7 +41,7 @@ Każdy obraz aktualizacji jest weryfikowany kluczem EdDSA osadzonym w aplikacji.
 
 W `Biblioteka → Skille` kliknij `Sprawdź aktualizacje`. Agentbox pyta najpierw o głowę każdego repozytorium; te, które się nie ruszyły, nie są w ogóle pobierane. Pozostałe pobiera raz i porównuje zawartość poszczególnych skilli, więc commit dotyczący innego skilla albo README repozytorium nie oznacza aktualizacji niezmienionych skilli. Kopię biblioteczną zmienioną lokalnie, bez nowego commitu w źródle, pokazuje `Aktualizuj` przy konkretnym skillu.
 
-Zaznacz aktualizacje do przyjęcia i rozwiń zmienione pliki. Podgląd obejmuje dodania, usunięcia, tekstowe różnice, pliki binarne, uprawnienia skryptów i względne dowiązania wewnątrz skilla. `.git` oraz `.DS_Store` nie są zasobami skilla. Dowiązania wychodzące poza jego katalog i nieobsługiwane typy plików zatrzymują przygotowanie danego skilla z komunikatem.
+Zaznacz aktualizacje do przyjęcia i rozwiń zmienione pliki. Podgląd obejmuje dodania, usunięcia, tekstowe różnice, pliki binarne, uprawnienia skryptów i względne dowiązania wewnątrz skilla. `.git` oraz `.DS_Store` nie są zasobami skilla — nie są też kopiowane przy imporcie, więc skill leżący w korzeniu repozytorium nie zabiera ze sobą jego `.git` (ani do biblioteki, ani do projektów). Folder wskazany przez dowiązanie symboliczne jest kopiowany do biblioteki w całości, a nie jako dowiązanie. Dowiązania wychodzące poza jego katalog i nieobsługiwane typy plików zatrzymują przygotowanie danego skilla z komunikatem.
 
 Przy każdym skillu widać projekty, które go używają. `Przyjmij wybrane` najpierw tworzy pełny backup, a potem zapisuje dokładnie obejrzane wersje. Nowy commit w repozytorium nie zmienia już otwartego podglądu. Jeśli w międzyczasie zmieniła się kopia biblioteczna albo definicja skilla, zapis zostanie zatrzymany — użyj `Sprawdź ponownie`. Wybrane aktualizacje są zapisywane razem; błąd zapisu przywraca wcześniejsze katalogi. Nieudane cofnięcie jest zgłaszane ze ścieżką zachowanej kopii.
 
@@ -49,7 +49,9 @@ Zwykła aktualizacja nie synchronizuje projektów. `Narzędzia → Odśwież bib
 
 ## Wartości MCP
 
-Podczas analizy JSON Agentbox proponuje typ każdej zmiennej środowiskowej i każdego nagłówka. Przed importem można zmienić propozycję.
+Podczas analizy JSON Agentbox pokazuje, jak zapisze każdą zmienną środowiskową i każdy nagłówek. `${NAZWA}` jest odwołaniem do zmiennej systemowej — do plików projektu trafia samo odwołanie. W nagłówku `Authorization` odwołaniem jest postać `Bearer ${NAZWA}`; samo `${NAZWA}` bez `Bearer` zostaje zapisane dosłownie, tak jak je wpisano. Każda inna wartość — także token — jest wartością lokalną: zostaje zapisana w `mcp.json` i trafia wprost do plików projektów, do których serwer jest przypisany. Agentbox nie rozpoznaje sekretów automatycznie.
+
+Obsługiwane transporty to lokalny STDIO oraz zdalne HTTP i SSE. `"type": "sse"` jest zachowywany przy imporcie i zapisywany w `.mcp.json` Claude Code jako `sse`; OpenCode i Codex mają jeden rodzaj serwera zdalnego, więc dla nich SSE wygląda tak samo jak HTTP.
 
 Importer przyjmuje zarówno mapę `mcpServers`, jak i pojedynczą definicję, na przykład obiekt zawierający `command`, `args` i `env`. W tym drugim przypadku wpisz nazwę serwera w polu nad przyciskiem „Analizuj” albo zaakceptuj nazwę zaproponowaną z argumentów; `env` nigdy nie jest wtedy traktowane jako osobny serwer. Jeśli macOS wstawi typograficzne cudzysłowy zamiast znaków JSON-a, Agentbox spróbuje je automatycznie poprawić podczas importu.
 
@@ -177,6 +179,8 @@ Projekt może wciągać skille tagiem i jednocześnie pomijać wybrane pozycje. 
 
 Usunięcie projektu daje dwie możliwości. `Usuń tylko z Agentbox` zostawia folder projektu nietknięty. `Usuń i posprzątaj pliki w projekcie` dodatkowo kasuje katalogi skilli, wpisy MCP i dokument `AGENTS.md`/`CLAUDE.md` wymienione w manifestach Agentbox — wyłącznie je. Plik konfiguracyjny, który w całości pochodził z Agentbox, znika razem z wpisami; ręcznie dodane skille, serwery MCP i pliki dokumentów zostają. Przed sprzątaniem powstaje tymczasowa kopia do cofnięcia operacji w razie błędu. Po sukcesie jest usuwana; nie trafia na listę odzyskiwania. Aby odtworzyć pliki z biblioteki, dodaj projekt ponownie, wybierz jego konfigurację i zsynchronizuj. Ręcznych zmian w usuniętych kopiach projektu nie odtwarza ponowna synchronizacja.
 
+Zmiana folderu projektu w jego edytorze najpierw sprząta w ten sam sposób pliki Agentbox w starym folderze, a dopiero potem zapisuje nową ścieżkę. Jeśli stary folder już nie istnieje (został przeniesiony), nie ma czego sprzątać — pliki przeniosły się razem z nim.
+
 Pliki i manifesty powstają tylko wtedy, gdy projekt ma co synchronizować — projekt bez wybranych skilli, serwerów MCP i dokumentu pozostaje nietknięty, a odznaczenie narzędzia sprząta jego pliki skilli/MCP przy kolejnej synchronizacji.
 
 ### Ochrona przez .gitignore projektu
@@ -302,7 +306,7 @@ Folder `backups/` jest lokalny i nie jest wysyłany przez Agentbox do Gita. Peł
 
 ## Pliki projektu i Git
 
-Agentbox dopisuje generowane konfiguracje MCP oraz `.skillbox/` do lokalnego `.git/info/exclude`. Dotyczy to także projektu położonego głębiej w większym repozytorium (np. `packages/app` w monorepo) — wpisy wskazują wtedy dokładnie folder projektu. Wykluczenia są sprawdzane przy każdej synchronizacji, również gdy pliki są już aktualne, więc repozytorium zainicjalizowane po pierwszej synchronizacji dostaje ochronę przy następnej. Nie usuwa to pliku, który został wcześniej dodany do indeksu Git. Po pierwszej synchronizacji sprawdź:
+Agentbox dopisuje generowane konfiguracje MCP oraz `.skillbox/` do lokalnego `.git/info/exclude`. Dotyczy to także projektu położonego głębiej w większym repozytorium (np. `packages/app` w monorepo) — wpisy wskazują wtedy dokładnie folder projektu. Wykluczenia są sprawdzane przy każdej synchronizacji, również gdy pliki są już aktualne, więc repozytorium zainicjalizowane po pierwszej synchronizacji dostaje ochronę przy następnej. Nie usuwa to pliku, który został wcześniej dodany do indeksu Git — dlatego, gdy przypisany serwer ma wartości lokalne (np. token), a docelowy plik (`.mcp.json`, `.codex/config.toml`, `opencode.json(c)`) jest już śledzony przez Git, synchronizacja projektu zatrzymuje się z komunikatem zamiast zapisać sekret do repozytorium. Zamień wartość na `${ZMIENNA}` albo usuń plik z indeksu (`git rm --cached <plik>`). Wygenerowane pliki MCP są zapisywane z uprawnieniami `0600` (tylko właściciel). Po pierwszej synchronizacji sprawdź:
 
 ```bash
 git status

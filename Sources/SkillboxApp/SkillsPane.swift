@@ -251,6 +251,7 @@ struct SkillDetail: View {
                 Text("Zapis oznacza projekty z tym skillem jako nieaktualne.").rowMetadata()
             } else if isEditable {
                 Button { draft = model.markdown; isEditing = true } label: { Label("Edytuj SKILL.md", systemImage: "square.and.pencil") }.buttonStyle(.bordered)
+                    .disabled(model.markdownSkillID != skill.id)
                 Spacer()
             } else {
                 Label("Skill z Git — edycja w aplikacji jest wyłączona, bo aktualizacja zastąpiłaby zmiany.", systemImage: "lock")
@@ -265,7 +266,7 @@ struct SkillDetail: View {
         if isEditing {
             TextEditor(text: $draft).font(.system(.body, design: .monospaced)).padding(6)
         } else {
-            ScrollView { Text(model.markdown).font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding() }
+            ScrollView { Text(model.markdownSkillID == skill.id ? model.markdown : "").font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding() }
         }
     }
 }

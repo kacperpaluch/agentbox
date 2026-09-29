@@ -101,6 +101,9 @@ public actor SkillboxService {
             do {
                 // Two candidates resolving to one id would install one over the other.
                 guard !copies.contains(where: { $0.id == skillID }) else { throw SkillboxError.duplicateSkill(skillID) }
+                // A skill that cannot be installed as a tree (a link leading outside it) is skipped
+                // here with its reason, instead of failing the whole batch at install time.
+                _ = try SkillTree.read(candidate)
                 if let index = catalog.skills.firstIndex(where: { $0.id == skillID }) {
                     guard catalog.skills[index].source.kind == .git, Self.sameGitLocation(catalog.skills[index].source.location, input.url) else { throw SkillboxError.duplicateSkill(skillID) }
                     guard fm.fileExists(atPath: candidate.appending(path: "SKILL.md").path) else { throw SkillboxError.invalidSkill("brak SKILL.md w \(candidate.path)") }
@@ -164,7 +167,12 @@ public actor SkillboxService {
         for (index, item) in items.enumerated() {
             guard Self.isSafeSkillID(item.id) else { throw SkillboxError.unsafePath(item.id) }
             guard fm.fileExists(atPath: item.source.path) else { throw SkillboxError.invalidSkill(item.source.path) }
-            try fm.copyItem(at: item.source, to: scratch.appending(path: "new/\(index)"))
+            // Read as a skill tree rather than copied as a file-system item. `copyItem` took a
+            // repository's `.git` along with a skill at its root — which then reached every project
+            // as an embedded repository — and turned a symlinked folder into a symlink in the
+            // library instead of a copy of what it points at. `SkillTree` is what updates already
+            // use: no `.git`, and no link that leads outside the skill.
+            try SkillTree.read(item.source.resolvingSymlinksInPath()).write(to: scratch.appending(path: "new/\(index)"))
         }
         try fm.createDirectory(at: library, withIntermediateDirectories: true)
         var moved: [(target: URL, saved: URL?)] = []
@@ -436,6 +444,15 @@ public actor SkillboxService {
         guard !config.projects.contains(where: { $0.id != project.id && $0.name.caseInsensitiveCompare(project.name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(project.name) już istnieje") }
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
+        // Pointing a project at another folder used to leave everything Agentbox had written in the
+        // old one, with nothing left that knew about it. The old folder is cleaned up through its
+        // manifests first — the same `unsyncProject` a removal uses. A folder that was moved no
+        // longer exists at the old path, and its files travelled with it to the new one.
+        let previousPath = config.projects[index].path
+        if URL(fileURLWithPath: previousPath).standardizedFileURL.path != URL(fileURLWithPath: project.path).standardizedFileURL.path,
+           fm.fileExists(atPath: previousPath, isDirectory: &isDirectory), isDirectory.boolValue {
+            _ = try await unsyncProject(id: project.id)
+        }
         config.projects[index] = project
         // A project following its parent folder reads the folder's selection, so writing one under
         // its own id would only leave a record nothing ever uses.
@@ -878,6 +895,10 @@ public actor SkillboxService {
         let staging = destination.deletingLastPathComponent().appending(path: ".skillbox-stage-\(UUID().uuidString)")
         try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fm.copyItem(at: source, to: staging)
+        // A library written before 0.29.0 can still hold a repository's `.git` inside a skill; it
+        // must not reach the project, where Git records it as an embedded repository.
+        let embedded = staging.appending(path: ".git")
+        if fm.fileExists(atPath: embedded.path) { try fm.removeItem(at: embedded) }
         let previous = destination.deletingLastPathComponent().appending(path: ".skillbox-previous-\(UUID().uuidString)")
         let existed = fm.fileExists(atPath: destination.path)
         if existed { try fm.moveItem(at: destination, to: previous) }

@@ -138,7 +138,7 @@ extension SkillboxService {
             else { updates.append(preview) }
         }
         for skill in targets where skill.source.kind == .local {
-            do { record(try await inspectedUpdate(skill, source: URL(fileURLWithPath: skill.source.location), revision: nil)) }
+            do { record(try await inspectedUpdate(skill, source: URL(fileURLWithPath: skill.source.location).resolvingSymlinksInPath(), revision: nil)) }
             catch { failed.append(SkippedSkill(id: skill.id, reason: error.localizedDescription)) }
         }
         let groups = Dictionary(grouping: targets.filter { $0.source.kind == .git }) { "\($0.source.location)|\($0.source.branch ?? "")" }

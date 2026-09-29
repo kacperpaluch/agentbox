@@ -130,6 +130,17 @@ struct OperationHistoryView: View {
 struct WorkingOverlay: View {
     let progress: SyncProgress?
     var body: some View {
+        // The backdrop covers the whole window and takes every click. The panel alone left the rest
+        // of the window live, so a second action could start while the first was still writing —
+        // two transactions on the same project interleaving on the service actor, and the first one
+        // to finish clearing `isWorking` for both.
+        ZStack {
+            Color.black.opacity(0.08).ignoresSafeArea().contentShape(Rectangle()).onTapGesture {}
+            panel
+        }
+    }
+
+    private var panel: some View {
         VStack(spacing: 10) {
             if let progress, progress.total > 1 {
                 ProgressView(value: Double(progress.done), total: Double(progress.total))

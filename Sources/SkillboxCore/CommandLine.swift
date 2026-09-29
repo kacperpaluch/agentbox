@@ -76,7 +76,10 @@ public enum AgentboxCommand {
             let plan = try await service.previewSkillUpdates(ids: target == "--all" ? nil : [target])
             if args.contains("--dry-run") { return updatePreviewLines(plan) }
             let updated = try await service.applySkillUpdates(plan.updates)
-            return updateLines(SkillUpdateResult(updated: updated, failed: plan.failed, unchanged: plan.unchanged))
+            let lines = updateLines(SkillUpdateResult(updated: updated, failed: plan.failed, unchanged: plan.unchanged))
+            // A skill whose repository could not be reached was not updated; automation must see that.
+            guard plan.failed.isEmpty else { throw PartialFailure(lines: lines, errorDescription: "nie udało się zaktualizować \(plan.failed.count) skilli") }
+            return lines
         case "delete" where rest.count >= 1:
             try await service.deleteSkill(skillID: rest[0])
             return ["Usunięto skill \(rest[0])"]
@@ -401,7 +404,8 @@ public enum AgentboxCommand {
             return ["Przypisano serwery MCP"]
         case "preview" where rest.count >= 2:
             let project = try await resolve(rest[1], service: service)
-            return try await service.previewMCP(projectID: project.id).flatMap { ["--- \($0.file)", $0.content] }
+            return ["Uwaga: podgląd pokazuje wartości wprost, łącznie z tokenami — nie wklejaj go w publicznych miejscach."]
+                + (try await service.previewMCP(projectID: project.id).flatMap { ["--- \($0.file)", $0.content] })
         case "sync" where rest.count >= 2:
             let project = try await resolve(rest[1], service: service)
             _ = try await service.syncMCP(projectID: project.id)

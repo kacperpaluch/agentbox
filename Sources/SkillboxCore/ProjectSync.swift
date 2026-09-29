@@ -35,13 +35,15 @@ extension SkillboxService {
             guard !failed else { outcomes.append(ProjectSyncOutcome(plan: plan, state: .skipped)); continue }
             await progress?(SyncProgress(done: outcomes.count, total: plans.count, label: "Synchronizuję \(plan.project.name)"))
             do {
-                // The plan's preview is handed straight to the write, instead of every project being
-                // previewed a second time here and a third time inside the transaction.
-                let result = try await applySync(projectID: plan.project.id, preview: plan.preview)
+                // Previewed again right before its own write. The plans above were all computed first
+                // so a blocked project stops the run before anything is written, but by the time the
+                // tenth project is written its plan is as old as nine synchronizations — writing it,
+                // and backing up only the targets it named, would apply a library that has moved on.
+                let result = try await applySync(projectID: plan.project.id)
                 // `wasUpToDate` answers about files only, because that is what decides whether a
                 // backup is worth taking. A missing plugin is still work done, so the reported
                 // outcome asks about it separately instead of claiming the project was untouched.
-                let upToDate = result.wasUpToDate && plan.preview.missingPlugins.isEmpty
+                let upToDate = result.wasUpToDate && result.preview.missingPlugins.isEmpty
                 outcomes.append(ProjectSyncOutcome(plan: plan, state: upToDate ? .upToDate : .synced))
             } catch {
                 outcomes.append(ProjectSyncOutcome(plan: plan, state: .failed(error.localizedDescription)))
@@ -299,18 +301,14 @@ extension SkillboxService {
 
     @discardableResult
     public func syncProjectTransaction(projectID: UUID) async throws -> ProjectSyncPreview {
-        try await applySync(projectID: projectID, preview: nil).preview
+        try await applySync(projectID: projectID).preview
     }
 
     /// The body of `syncProjectTransaction`, plus the one extra answer the all-projects run needs:
     /// were the files already current? Working that out means comparing every managed skill
     /// directory byte for byte, and the caller used to do it a second time on its own.
-    ///
-    /// `preview` is the plan already computed for this project. Passing it keeps the invariant —
-    /// the preview is still made before anything is written — without previewing the project again.
-    private func applySync(projectID: UUID, preview suppliedPreview: ProjectSyncPreview?) async throws -> (preview: ProjectSyncPreview, wasUpToDate: Bool) {
-        let preview: ProjectSyncPreview
-        if let suppliedPreview { preview = suppliedPreview } else { preview = try await previewProjectSync(projectID: projectID) }
+    private func applySync(projectID: UUID) async throws -> (preview: ProjectSyncPreview, wasUpToDate: Bool) {
+        let preview = try await previewProjectSync(projectID: projectID)
         let config = try await store.configuration()
         guard let project = config.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
         let projectURL = URL(fileURLWithPath: project.path)

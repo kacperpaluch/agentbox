@@ -24,7 +24,14 @@ struct RollbackReport {
     func error(after original: Error, keeping path: String? = nil) -> Error {
         guard !succeeded else { return original }
         var text = "\(original.localizedDescription) — a cofanie zmian też się nie powiodło: \(failures.joined(separator: "; "))"
-        if let path { text += ". Kopia sprzed zmiany została zachowana w \(path)" }
+        if let path {
+            text += ". Kopia sprzed zmiany została zachowana w \(path)"
+            // Scratch copies live in the temporary directory, which macOS empties on its own after a
+            // few days — "zachowana" alone promised more than that.
+            if path.hasPrefix(FileManager.default.temporaryDirectory.path) || path.hasPrefix(FileManager.default.temporaryDirectory.resolvingSymlinksInPath().path) {
+                text += " (katalog tymczasowy — przenieś ją w bezpieczne miejsce, macOS usuwa go po kilku dniach)"
+            }
+        }
         return SkillboxError.commandFailed(text)
     }
 }

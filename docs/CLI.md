@@ -32,7 +32,7 @@ agentbox usage nazwa-skilla
 
 `add` kopiuje lokalny skill albo importuje wszystkie znalezione `SKILL.md` z Git. `tag` zastępuje listę tagów wskazanego skilla. `update` działa dla skilli pochodzących z Git. `delete` usuwa skill z biblioteki i jego bezpośrednie przypisania do projektów — tak samo jak `Usuń` w szczegółach skilla; nie rusza katalogu źródłowego ani repozytorium.
 
-`agentbox update --all` pyta najpierw `git ls-remote` o głowę każdego repozytorium i pomija te, które odpowiadają zapisanym rewizjom. Pozostałe pobiera (po jednym klonie na repozytorium i branch), porównuje właściwe katalogi i aktualizuje tylko te, których zawartość się zmieniła. `agentbox update <skill>` zawsze pobiera źródło i porównuje bajty, więc widzi też kopię biblioteczną zmienioną lokalnie bez nowego commitu. Lokalne skille można odświeżyć przez `agentbox update <skill>`. Przed przyjęciem zmian powstaje pełny backup. Błąd pobrania jest wypisany przy danym skillu; poprawnie przygotowane aktualizacje są zapisywane razem, z rollbackiem katalogów przy nieudanym zapisie. Aktualizacja nie zmienia projektów.
+`agentbox update --all` pyta najpierw `git ls-remote` o głowę każdego repozytorium i pomija te, które odpowiadają zapisanym rewizjom. Pozostałe pobiera (po jednym klonie na repozytorium i branch), porównuje właściwe katalogi i aktualizuje tylko te, których zawartość się zmieniła. `agentbox update <skill>` zawsze pobiera źródło i porównuje bajty, więc widzi też kopię biblioteczną zmienioną lokalnie bez nowego commitu. Lokalne skille można odświeżyć przez `agentbox update <skill>`. Przed przyjęciem zmian powstaje pełny backup. Błąd pobrania jest wypisany przy danym skillu; poprawnie przygotowane aktualizacje są zapisywane razem, z rollbackiem katalogów przy nieudanym zapisie. Jeśli któregoś skilla nie udało się zaktualizować, polecenie kończy się kodem błędu 1, więc skrypt nie weźmie częściowego przebiegu za sukces. Aktualizacja nie zmienia projektów.
 
 `agentbox update --all --dry-run` oraz `agentbox update <skill> --dry-run` wypisują zmienione pliki, różnice tekstowe, zmiany uprawnień i informacje o zasobach binarnych. Nic nie zapisują. Podgląd może zawierać prywatną treść plików. Uruchomienie aktualizacji osobnym poleceniem sprawdza źródła ponownie — do zatwierdzania dokładnie obejrzanej wersji w jednym przebiegu służy okno aktualizacji w GUI.
 
@@ -156,7 +156,7 @@ agentbox mcp sync sklep
 agentbox mcp server remove docsearch
 ```
 
-`mcp assign` zastępuje bezpośrednie serwery i tagi MCP projektu. Nieznana nazwa w `--servers` odrzuca całe polecenie i niczego nie zmienia. Wartości `--env` i `--headers` są odwołaniami do zmiennych systemowych, nie lokalnymi sekretami. Pełną klasyfikacją sekretów istniejącego MCP zarządza obecnie interfejs aplikacji.
+`mcp assign` zastępuje bezpośrednie serwery i tagi MCP projektu. Nieznana nazwa w `--servers` odrzuca całe polecenie i niczego nie zmienia. Wartości `--env` i `--headers` są odwołaniami do zmiennych systemowych, nie lokalnymi sekretami. Wartościami lokalnymi istniejącego MCP zarządza interfejs aplikacji. `mcp preview` wypisuje pliki tak, jak zostaną zapisane — łącznie z tokenami zapisanymi jako wartości lokalne — i zaczyna od ostrzeżenia o tym.
 
 `mcp server remove` usuwa serwer z biblioteki, jego bezpośrednie przypisania do projektów i jego wartości z lokalnego pliku sekretów — tak samo jak `Usuń` przy serwerze w aplikacji.
 

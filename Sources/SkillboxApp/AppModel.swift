@@ -93,7 +93,7 @@ import SkillboxCore
     // tags), so it recomputes them here too. That is the only place callers need to remember to
     // call — a skill tag edit or a new tagged MCP server no longer leaves the Projects tab showing
     // a stale "synced" badge until someone happens to touch a project directly.
-    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); docs = try await service?.docsConfiguration() ?? DocsConfiguration(); claudePluginLibrary = try await service?.libraryClaudePlugins() ?? []; selections = try await service?.allSelections() ?? [:]; projectDefaults = try await service?.projectDefaults() ?? AttachmentSelection(tools: Tool.allCases); if selection == nil { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses() }
+    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); docs = try await service?.docsConfiguration() ?? DocsConfiguration(); claudePluginLibrary = try await service?.libraryClaudePlugins() ?? []; selections = try await service?.allSelections() ?? [:]; projectDefaults = try await service?.projectDefaults() ?? AttachmentSelection(tools: Tool.allCases); if !skills.contains(where: { $0.id == selection }) { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses() }
 
     // MARK: Parent folders
 
@@ -160,11 +160,13 @@ import SkillboxCore
     func saveRoot(_ root: ProjectRoot, selection: AttachmentSelection) async -> Bool { await performing { try await self.service?.updateProjectRoot(root, selection: selection); self.message = "Zapisano ustawienia folderu \(root.name)" } }
     func deleteRoot(_ root: ProjectRoot) async { await perform { try await self.service?.deleteProjectRoot(id: root.id); self.message = "Usunięto ustawienia folderu \(root.name); projekty zachowały to, co dziedziczyły" } }
     func clearIgnoredFolders(_ root: ProjectRoot) async { await perform { try await self.service?.clearIgnoredFolders(rootID: root.id); self.message = "Wyczyszczono pominięte podfoldery w \(root.name)" } }
-    func ignoreDetected(_ folders: [DetectedProjectFolder]) async { await perform { try await self.service?.ignoreDetectedFolders(folders); self.message = "Pominięto \(folders.count) podfolderów" } }
+    @discardableResult
+    func ignoreDetected(_ folders: [DetectedProjectFolder]) async -> Bool { await performing { try await self.service?.ignoreDetectedFolders(folders); self.message = "Pominięto \(folders.count) podfolderów" } }
     /// Adds the detected subfolders and — when asked — synchronizes them right away, which is the
     /// point of the question: a new project in a known folder should end up ready to use.
-    func addDetected(_ folders: [DetectedProjectFolder], synchronizing: Bool) async {
-        await perform {
+    @discardableResult
+    func addDetected(_ folders: [DetectedProjectFolder], synchronizing: Bool) async -> Bool {
+        await performing {
             let added = try await self.service?.addDetectedFolders(folders) ?? []
             guard synchronizing else { self.message = "Dodano \(added.count) projektów"; return }
             var synced = 0
@@ -178,7 +180,24 @@ import SkillboxCore
                 : "Dodano \(added.count) projektów, zsynchronizowano \(synced). Nie udało się: \(failures.joined(separator: "; "))"
         }
     }
-    func loadMarkdown() async { guard let selection else { markdown = ""; return }; markdown = (try? await service?.skillMarkdown(skillID: selection)) ?? "" }
+    /// Which skill `markdown` belongs to. The selection changes at once while the text arrives later,
+    /// so without this the editor could open — and save — one skill's text under another's name.
+    @Published var markdownSkillID: String?
+    /// Only the answer for the skill still selected lands. Clicking through the list starts several
+    /// reads, and they do not have to finish in order. A read that fails leaves no text to edit,
+    /// instead of an empty one that saving would write over the real file.
+    func loadMarkdown() async {
+        guard let id = selection else { markdown = ""; markdownSkillID = nil; return }
+        do {
+            let text = try await requireService().skillMarkdown(skillID: id)
+            guard selection == id else { return }
+            markdown = text; markdownSkillID = id
+        } catch {
+            guard selection == id else { return }
+            markdown = ""; markdownSkillID = nil
+            reportError(error)
+        }
+    }
     func addLocal(_ url: URL) async { await perform { _ = try await self.service?.addLocal(path: url.path); self.message = "Dodano skill z dysku" } }
     @discardableResult
     func createSkill(_ draft: NewSkillDraft) async -> Bool {

@@ -30,7 +30,7 @@ extension SkillboxService {
             else { config.servers.append(server); written.append(server) }
         }
         try await store.save(config)
-        return MCPImportSummary(servers: written, secretCount: 0, stdioCount: written.filter { $0.transport == .stdio }.count, httpCount: written.filter { $0.transport == .http }.count, fields: parsed.summary.fields.filter { chosen.contains($0.serverName) }, isSingleServerInput: parsed.summary.isSingleServerInput)
+        return MCPImportSummary(servers: written, secretCount: 0, stdioCount: written.filter { $0.transport == .stdio }.count, httpCount: written.filter { $0.transport != .stdio }.count, fields: parsed.summary.fields.filter { chosen.contains($0.serverName) }, isSingleServerInput: parsed.summary.isSingleServerInput)
     }
 
     /// A single server's `command`/`args`/`url`/`env`/`headers` as hand-editable JSON, with every
@@ -111,7 +111,7 @@ extension SkillboxService {
             let raw = secrets[account] ?? ""
             headers[key] = key.lowercased() == "authorization" ? "Bearer \(raw)" : raw
         }
-        var value: [String: Any] = ["type": "http", "url": server.url]
+        var value: [String: Any] = ["type": server.transport.rawValue, "url": server.url]
         if !headers.isEmpty { value["headers"] = headers }
         return value
     }
@@ -137,7 +137,7 @@ extension SkillboxService {
             let parsed = try Self.parseEntry(name: name, value: value)
             servers.append(parsed.server); fields += parsed.fields; secrets.merge(parsed.secrets) { _, new in new }
         }
-        return (MCPImportSummary(servers: servers, secretCount: 0, stdioCount: servers.filter { $0.transport == .stdio }.count, httpCount: servers.filter { $0.transport == .http }.count, fields: fields, isSingleServerInput: isSingleServerInput), secrets)
+        return (MCPImportSummary(servers: servers, secretCount: 0, stdioCount: servers.filter { $0.transport == .stdio }.count, httpCount: servers.filter { $0.transport != .stdio }.count, fields: fields, isSingleServerInput: isSingleServerInput), secrets)
     }
 
     /// macOS can replace JSON delimiters with typographic quotes while typing or pasting. Keep a
@@ -189,9 +189,11 @@ extension SkillboxService {
                 return text
             }
         }
-        let transport: MCPTransport = type == "http" || value["url"] != nil ? .http : .stdio
+        // `sse` is its own transport in Claude Code; reading it as `http` produced a configuration
+        // that spoke the wrong protocol to the server.
+        let transport: MCPTransport = type == "sse" ? .sse : type == "http" || value["url"] != nil ? .http : .stdio
         if transport == .stdio, command.trimmingCharacters(in: .whitespaces).isEmpty { throw schemaError("\(path).command", "niepusty tekst") }
-        if transport == .http, url.trimmingCharacters(in: .whitespaces).isEmpty { throw schemaError("\(path).url", "niepusty tekst") }
+        if transport != .stdio, url.trimmingCharacters(in: .whitespaces).isEmpty { throw schemaError("\(path).url", "niepusty tekst") }
         let env = try stringMap(value["env"], at: "\(path).env")
         let headers = try stringMap(value["headers"], at: "\(path).headers")
         var environmentRefs: [String: String] = [:], headerRefs: [String: String] = [:]
@@ -208,22 +210,12 @@ extension SkillboxService {
             }
         }
         for (key, rawValue) in headers.sorted(by: { $0.key < $1.key }) {
-            let withoutBearer = rawValue.replacingOccurrences(of: "Bearer ", with: "", options: [.caseInsensitive, .anchored])
-            let detected: MCPValueClassification = environmentReference(withoutBearer) != nil ? .environment : .literal
-            let field = MCPImportField(serverName: name, location: .header, key: key, displayValue: rawValue, classification: detected)
-            fields.append(field)
-            switch field.classification {
-            case .environment: headerRefs[key] = environmentReference(withoutBearer) ?? key
-            case .literal: literalHeaders[key] = rawValue
-            }
+            let reference = headerReference(key: key, value: rawValue)
+            fields.append(MCPImportField(serverName: name, location: .header, key: key, displayValue: rawValue, classification: reference != nil ? .environment : .literal))
+            if let reference { headerRefs[key] = reference } else { literalHeaders[key] = rawValue }
         }
         let server = MCPServer(name: name, transport: transport, command: command, arguments: arguments, url: url, environment: environmentRefs, headers: headerRefs, literalEnvironment: literalEnv.isEmpty ? nil : literalEnv, literalHeaders: literalHeaders.isEmpty ? nil : literalHeaders, secretEnvironment: secretEnv.isEmpty ? nil : secretEnv, secretHeaders: secretHeaders.isEmpty ? nil : secretHeaders)
         return (server, fields, secrets)
-    }
-
-    private static func environmentReference(_ value: String) -> String? {
-        guard value.hasPrefix("${"), value.hasSuffix("}"), value.count > 3 else { return nil }
-        return String(value.dropFirst(2).dropLast())
     }
 
     private static func stringMap(_ raw: Any?, at path: String) throws -> [String: String] {

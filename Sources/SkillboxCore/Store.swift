@@ -427,9 +427,11 @@ public actor SkillboxStore {
     private static let sensitiveFiles = ["mcp.json", "mcp-secrets.json"]
 
     /// Sensitive data is private from the first byte, including when recovery creates a lost file.
-    static func writeData(_ data: Data, to url: URL) throws {
+    /// `restricted` overrides the name rule for files outside the library that can hold a secret too,
+    /// like a project's generated MCP configuration.
+    static func writeData(_ data: Data, to url: URL, restricted: Bool? = nil) throws {
         let fm = FileManager.default
-        guard sensitiveFiles.contains(url.lastPathComponent) else {
+        guard restricted ?? sensitiveFiles.contains(url.lastPathComponent) else {
             try data.write(to: url, options: .atomic)
             return
         }

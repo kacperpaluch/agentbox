@@ -154,7 +154,7 @@ Usunięcie projektu usuwa jedynie wpis i przypisania MCP z Agentbox. Folder proj
 
 ### Serwery i tagi
 
-Obsługiwane są lokalne serwery STDIO i zdalne HTTP, argumenty, zmienne środowiskowe, nagłówki, wartości lokalne oraz odwołania do zmiennych systemowych. Każdy serwer może mieć tagi. Projekt wybiera dowolne pojedyncze serwery albo wszystkie serwery oznaczone wskazanym tagiem; serwery `n8n` i `n8n-tailscale` mogą działać równocześnie.
+Obsługiwane są lokalne serwery STDIO i zdalne HTTP oraz SSE, argumenty, zmienne środowiskowe, nagłówki, wartości lokalne oraz odwołania do zmiennych systemowych. Każdy serwer może mieć tagi. Projekt wybiera dowolne pojedyncze serwery albo wszystkie serwery oznaczone wskazanym tagiem; serwery `n8n` i `n8n-tailscale` mogą działać równocześnie.
 
 Usunięcie serwera usuwa jego bezpośrednie przypisania i kasuje jego wartości z lokalnego pliku sekretów. Wynikowe pliki projektów są aktualizowane podczas kolejnej synchronizacji.
 
@@ -230,7 +230,7 @@ opencode.json
 opencode.jsonc
 ```
 
-Nie usuwa to pliku, który został już wcześniej dodany do Git. Zawsze warto sprawdzić `git status` oraz historię repozytorium.
+Nie usuwa to pliku, który został już wcześniej dodany do Git. Dlatego, gdy serwer ma wartości lokalne (np. token), a docelowy plik jest już śledzony przez Git, synchronizacja zatrzymuje się zamiast zapisać sekret do repozytorium — zamień wartość na `${ZMIENNA}` albo usuń plik z indeksu (`git rm --cached`). Wygenerowane pliki MCP mają uprawnienia `0600`. Zawsze warto sprawdzić `git status` oraz historię repozytorium.
 
 ### OAuth
 

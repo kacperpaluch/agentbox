@@ -251,7 +251,9 @@ public struct SyncResult: Sendable {
     public init() {}
 }
 
-public enum MCPTransport: String, Codable, CaseIterable, Sendable { case stdio, http }
+/// `sse` is the older remote transport Claude Code still names separately. OpenCode and Codex have
+/// one remote kind, so for them it renders exactly like `http`.
+public enum MCPTransport: String, Codable, CaseIterable, Sendable { case stdio, http, sse }
 
 public struct MCPServer: Codable, Identifiable, Hashable, Sendable {
     public var id: UUID

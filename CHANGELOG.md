@@ -6,6 +6,31 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-09-29
+
+Wydanie z poprawkami z przeglądu kodu 0.28.0: sekrety MCP w plikach śledzonych przez Git, import skilli z repozytoriów i dowiązań, transport SSE.
+
+### Bezpieczeństwo
+
+- Synchronizacja nie zapisuje już wartości lokalnej (np. tokenu) do pliku MCP, który repozytorium już śledzi — `.git/info/exclude` takiego pliku nie chroni, więc kolejny `git commit -a` opublikowałby sekret. Projekt jest wtedy zablokowany z komunikatem, co zrobić. Odwołania `${ZMIENNA}` nadal są zapisywane.
+- Wygenerowane pliki MCP w projektach są zapisywane z uprawnieniami `0600`.
+- Edytor konfiguracji MCP nie twierdzi już, że wartości wyglądające na tokeny „zostają tylko na tym Macu” — automatycznej klasyfikacji nie ma od 0.18.0. Ostrzeżenie w podglądzie synchronizacji wyjaśnia, że exclude nie chroni plików śledzonych.
+- `agentbox mcp preview` ostrzega, że pokazuje wartości wprost, łącznie z tokenami.
+
+### Naprawiono
+
+- Skill leżący w korzeniu repozytorium Git był importowany razem z jego `.git`, który trafiał do każdego projektu — Git zapisywał wtedy skill jako zagnieżdżone repozytorium i klony projektu nie dostawały jego treści. Import pomija `.git`, a synchronizacja nie kopiuje go do projektów także z bibliotek zapisanych przez starsze wersje.
+- Dodanie lub przejęcie folderu skilla, który jest dowiązaniem symbolicznym, tworzyło w bibliotece dowiązanie zamiast kopii. Teraz kopiowana jest treść; dowiązania prowadzące poza skill są odrzucane, tak jak przy aktualizacjach.
+- Edytor `SKILL.md` mógł po szybkim przełączeniu skilla otworzyć — i zapisać — treść poprzednio wybranego. Treść pamięta, do którego skilla należy, a nieczytelny plik nie trafia do edytora jako pusty tekst.
+- Serwery MCP typu `sse` były importowane jako HTTP i zapisywane z niewłaściwym transportem. SSE jest teraz osobnym transportem, także w formularzu serwera.
+- Nagłówek `Authorization: ${TOKEN}` bez `Bearer` był zapisywany z dopisanym `Bearer`, a `Bearer ${K}` w innym nagłówku tracił prefiks. Odwołaniem są teraz tylko te postacie, które renderery odtwarzają; pozostałe zostają dosłowne. Codex rozpoznaje `Authorization` bez względu na wielkość liter.
+- Nakładka „pracuję” blokuje całe okno, więc druga operacja nie może wystartować w trakcie pierwszej.
+- `Synchronizuj wszystko` sprawdza każdy projekt ponownie tuż przed zapisem, zamiast zapisywać plan wyliczony na początku całego przebiegu.
+- Zmiana folderu projektu sprząta pliki Agentbox w starym folderze.
+- `agentbox update <skill>` kończy się kodem błędu, gdy aktualizacja się nie powiodła.
+- Komunikat o kopii zachowanej po nieudanym cofnięciu mówi, że leży ona w katalogu tymczasowym czyszczonym przez macOS.
+- Arkusz nowych podfolderów zamyka się dopiero po udanej operacji, a nieudany odczyt wyboru pluginów blokuje zapis zamiast czyścić wybór.
+
 ## [0.28.0] - 2026-09-16
 
 Wydanie domykające audyt bezpieczeństwa i trwałości danych: ochrona sekretów, transakcje biblioteki i uczciwe raportowanie błędów.

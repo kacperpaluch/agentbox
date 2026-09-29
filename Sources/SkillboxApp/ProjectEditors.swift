@@ -449,14 +449,16 @@ struct DetectedFoldersView: View {
                 }
             }
             HStack {
-                Button("Pomijaj zaznaczone") { let folders = chosen; Task { await model.ignoreDetected(folders) }; dismiss() }.disabled(selected.isEmpty)
+                // The sheet closes only once the action reported success; a failure stays visible here.
+                Button("Pomijaj zaznaczone") { let folders = chosen; Task { if await model.ignoreDetected(folders) { dismiss() } } }.disabled(selected.isEmpty || model.isWorking)
                 Spacer()
                 Button("Później") { dismiss() }
-                Button("Dodaj bez synchronizacji") { let folders = chosen; Task { await model.addDetected(folders, synchronizing: false) }; dismiss() }.disabled(selected.isEmpty)
-                Button("Dodaj i synchronizuj") { let folders = chosen; Task { await model.addDetected(folders, synchronizing: true) }; dismiss() }.buttonStyle(.borderedProminent).disabled(selected.isEmpty)
+                Button("Dodaj bez synchronizacji") { let folders = chosen; Task { if await model.addDetected(folders, synchronizing: false) { dismiss() } } }.disabled(selected.isEmpty || model.isWorking)
+                Button("Dodaj i synchronizuj") { let folders = chosen; Task { if await model.addDetected(folders, synchronizing: true) { dismiss() } } }.buttonStyle(.borderedProminent).disabled(selected.isEmpty || model.isWorking)
             }
         }
         .padding(24)
+        .overlay { if model.isWorking { WorkingOverlay(progress: model.progress) } }
         .sheetFrame(width: 680, height: 520)
         .onAppear { selected = Set(model.detectedFolders.map(\.path)) }
     }

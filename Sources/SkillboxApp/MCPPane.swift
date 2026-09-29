@@ -152,7 +152,7 @@ private struct MCPServerRow: View {
             VStack(alignment: .leading, spacing: Space.tight) {
                 HStack(spacing: Space.row) {
                     Text(server.name).rowTitle()
-                    MetaBadge(text: server.transport == .stdio ? "Lokalny" : "HTTP")
+                    MetaBadge(text: server.transport == .stdio ? "Lokalny" : server.transport.rawValue.uppercased())
                     ForEach(server.tags ?? [], id: \.self) { TagPill(tag: $0) }
                 }
                 Text("\(server.arguments.count) argumentów · \(variableCount) zmiennych\(secretCount > 0 ? " · \(secretCount) sekretów lokalnych" : "")").rowMetadata()
@@ -183,7 +183,7 @@ struct MCPBulkJSONView: View {
     @State private var working = false
     var body: some View { VStack(alignment: .leading, spacing: 14) {
         Text("Edytuj konfigurację MCP jako JSON").font(.title2.bold())
-        Text("Wartości wprost, łącznie z sekretami. Zapis nadpisuje po nazwie serwery obecne w tekście, resztę zostawia bez zmian — usunięcie serwera z tekstu go tu nie kasuje. Klucze wyglądające na token/hasło/API key automatycznie zostają tylko na tym Macu.").font(.caption).foregroundStyle(.secondary)
+        Text("Wartości wprost, łącznie z sekretami. Zapis nadpisuje po nazwie serwery obecne w tekście, resztę zostawia bez zmian — usunięcie serwera z tekstu go tu nie kasuje. Wartość `${ZMIENNA}` przekazuje zmienną systemową; każda inna wartość — także token — zostaje zapisana w mcp.json i trafia do plików projektów, do których serwer jest przypisany.").font(.caption).foregroundStyle(.secondary)
         TextEditor(text: $text).font(.system(.body, design: .monospaced)).frame(minHeight: 420).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
         if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
         HStack { if working { ProgressView() }; Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { Task { await save() } }.buttonStyle(.borderedProminent).disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working) }
@@ -220,7 +220,7 @@ struct MCPServerEditor: View {
             Text("Pełna konfiguracja tego serwera, wartości wprost. Zapis `${VAR}` oznacza odczyt zmiennej systemowej; pozostałe wartości są przechowywane lokalnie w bibliotece.").font(.caption).foregroundStyle(.secondary)
             TextEditor(text: $jsonText).font(.system(.body, design: .monospaced)).frame(height: 340).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
         } else {
-            Picker("Transport", selection: $transport) { Text("Lokalny STDIO").tag(MCPTransport.stdio); Text("Zdalny HTTP").tag(MCPTransport.http) }.pickerStyle(.segmented)
+            Picker("Transport", selection: $transport) { Text("Lokalny STDIO").tag(MCPTransport.stdio); Text("Zdalny HTTP").tag(MCPTransport.http); Text("Zdalny SSE").tag(MCPTransport.sse) }.pickerStyle(.segmented)
             if transport == .stdio { TextField("Polecenie, np. npx", text: $command); Text("Argumenty — jeden na linię").font(.caption).foregroundStyle(.secondary); TextEditor(text: $arguments).font(.system(.body, design: .monospaced)).frame(height: 75) } else { TextField("URL", text: $url) }
         }
         // The JSON view already shows env/header values in plain text, so showing this section too
@@ -377,7 +377,7 @@ struct MCPPreviewView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Synchronizacja · \(project.name)").font(.title2.bold())
             Text("Poniżej znajduje się pełny plan zmian skilli i konfiguracji MCP. Całość zostanie wycofana, jeśli którykolwiek zapis się nie powiedzie.").font(.caption).foregroundStyle(.secondary)
-            Label("Pliki projektu mogą zawierać jawne sekrety. Agentbox doda je do lokalnego .git/info/exclude, ale nie szyfruje ich na dysku.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
+            Label("Pliki projektu mogą zawierać jawne sekrety. Agentbox doda je do lokalnego .git/info/exclude i zapisze z uprawnieniami tylko dla właściciela, ale nie szyfruje ich. Exclude nie chroni plików już śledzonych przez Git — dlatego wartości lokalnych nie zapisuje do takiego pliku.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
             if preview?.mcp.contains(where: { $0.file.hasSuffix(".jsonc") }) == true { Label("W pliku OpenCode JSONC podmieniany jest wyłącznie zarządzany klucz `mcp`. Komentarze i pozostałe klucze zostają bez zmian.", systemImage: "text.badge.checkmark").font(.caption).foregroundStyle(.secondary) }
             if !error.isEmpty { Text(error).foregroundStyle(.red) }
             else if preview == nil { ProgressView() }

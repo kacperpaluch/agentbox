@@ -94,7 +94,7 @@ extension SkillboxService {
             guard seen.insert(identity).inserted else { throw SkillboxError.mcpConflict("pole \(key) występuje więcej niż raz") }
             let value = field.value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.isEmpty else { throw SkillboxError.mcpConflict("podaj wartość dla \(key)") }
-            let reference = Self.environmentReference(field.location == .header ? value.replacingOccurrences(of: "Bearer ", with: "", options: [.caseInsensitive, .anchored]) : value)
+            let reference = field.location == .header ? Self.headerReference(key: key, value: value) : Self.environmentReference(value)
             if let reference {
                 if field.location == .environment { updated.environment[key] = reference } else { updated.headers[key] = reference }
             } else if field.location == .environment { updated.literalEnvironment?[key] = field.value }
@@ -187,9 +187,19 @@ extension SkillboxService {
         return mcp.servers.filter { serverIDs.contains($0.id) || !tags.isDisjoint(with: ($0.tags ?? []).map { $0.lowercased() }) }.filter(\.enabled)
     }
 
-    private static func environmentReference(_ value: String) -> String? {
+    static func environmentReference(_ value: String) -> String? {
         guard value.hasPrefix("${"), value.hasSuffix("}"), value.count > 3 else { return nil }
         return String(value.dropFirst(2).dropLast())
+    }
+
+    /// A header that only forwards a system variable. The renderers write an `Authorization`
+    /// reference back as `Bearer ${VAR}` and every other header as `${VAR}`, so only those exact
+    /// shapes are references. `Authorization: ${TOKEN}` used to come back with a `Bearer ` it never
+    /// had, and `X-Key: Bearer ${K}` lost its prefix; any other shape now stays a literal.
+    static func headerReference(key: String, value: String) -> String? {
+        guard key.lowercased() == "authorization" else { return environmentReference(value) }
+        guard value.range(of: "Bearer ", options: [.caseInsensitive, .anchored]) != nil else { return nil }
+        return environmentReference(String(value.dropFirst("Bearer ".count)))
     }
 
     /// MCP servers found declared globally (outside Agentbox) for the tools of one selection — a
@@ -340,7 +350,26 @@ enum MCPRenderer {
                 if cleaned != (try? String(contentsOf: json, encoding: .utf8)) { stale = (json.path, cleaned) }
             }
         }
+        try refuseLocalValuesInTrackedFile(file, project: project, servers: servers)
         return MCPPreview(tool: tool, file: file.path, content: content, added: Array(Set(names).subtracting(previous)).sorted(), removed: Array(Set(previous).subtracting(names)).sorted(), staleFile: stale?.path, staleContent: stale?.content, disabledGlobalFile: disabledGlobal?.file.path, disabledGlobalContent: disabledGlobal?.content, disabledGlobalAdded: disabledGlobal?.added ?? [], disabledGlobalRemoved: disabledGlobal?.removed ?? [])
+    }
+
+    /// A value stored in `mcp.json` itself — typically a token — is written into the project file as
+    /// is. `.git/info/exclude` keeps an untracked file out of Git, but a file the repository already
+    /// tracks (`.mcp.json` is commonly shared with the team) is not protected by it at all: the next
+    /// `git commit -a` would publish the token. Such a write is refused up front, in the preview, so
+    /// the project shows as blocked instead of the secret landing in the working tree.
+    static func refuseLocalValuesInTrackedFile(_ file: URL, project: URL, servers: [MCPServer]) throws {
+        let local = servers.filter { server in
+            [server.literalEnvironment, server.literalHeaders, server.secretEnvironment, server.secretHeaders].contains { !($0 ?? [:]).isEmpty }
+        }
+        guard !local.isEmpty, try gitRepository(containing: project) != nil else { return }
+        // Relative to the project: every managed file is built as `project + name`, and an absolute
+        // path spelled through `/tmp` instead of `/private/tmp` is "outside the repository" to Git.
+        let relative = String(file.path.dropFirst(project.path.count + 1))
+        let tracked = try ProcessRunner.run("/usr/bin/git", ["-C", project.path, "ls-files", "--", relative])
+        guard !tracked.isEmpty else { return }
+        throw SkillboxError.mcpConflict("\(file.lastPathComponent) jest śledzony przez Git, a serwery \(local.map(\.name).sorted().joined(separator: ", ")) mają wartości lokalne (np. tokeny), które trafiłyby do repozytorium. Zamień je na ${ZMIENNA} albo usuń plik z repozytorium (git rm --cached \(file.lastPathComponent))")
     }
 
     /// The full new content of one managed JSON file, or "" when it should not exist.
@@ -447,7 +476,8 @@ enum MCPRenderer {
         } else {
             try fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             guard let data = content.data(using: .utf8) else { throw SkillboxError.mcpConflict("nie można zakodować \(file.lastPathComponent)") }
-            try data.write(to: file, options: .atomic)
+            // Resolved local values (tokens) end up here, so the file is private like `mcp.json`.
+            try SkillboxStore.writeData(data, to: file, restricted: true)
         }
     }
 
@@ -627,7 +657,7 @@ enum MCPRenderer {
             if !env.isEmpty { value["environment"] = env }
             return value
         }
-        var value: [String: Any] = ["type": tool == .claude ? "http" : "remote", "url": server.url]
+        var value: [String: Any] = ["type": tool == .claude ? server.transport.rawValue : "remote", "url": server.url]
         var headers = resolvedHeaders
         headers.merge(Dictionary(uniqueKeysWithValues: server.headers.map { key, env in
                 let reference = tool == .claude ? "${\(env)}" : "{env:\(env)}"
@@ -671,7 +701,10 @@ enum MCPRenderer {
             } else {
                 block.append("url = \(toml(server.url))")
                 var headers = server.headers
-                if let bearer = headers.removeValue(forKey: "Authorization") { block.append("bearer_token_env_var = \(toml(bearer))") }
+                // Matched case-insensitively, like the JSON renderers: HTTP header names are.
+                if let key = headers.keys.first(where: { $0.lowercased() == "authorization" }), let bearer = headers.removeValue(forKey: key) {
+                    block.append("bearer_token_env_var = \(toml(bearer))")
+                }
                 if !headers.isEmpty { block.append("env_http_headers = { \(headers.sorted { $0.key < $1.key }.map { "\(tomlKey($0.key)) = \(toml($0.value))" }.joined(separator: ", ")) }") }
                 var literal = try resolved(server.literalHeaders, secretRefs: server.secretHeaders, secrets: secrets, server: server.name)
                 if let account = server.secretHeaders?["Authorization"], let token = secrets[account] { literal["Authorization"] = "Bearer \(token)" }

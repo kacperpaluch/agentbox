@@ -42,6 +42,28 @@ final class AppModelTests: XCTestCase {
         return folder
     }
 
+    // MARK: Skill text
+
+    /// The editor copies `markdown` into its draft, so the text must say which skill it belongs to,
+    /// and a file that cannot be read must leave nothing to edit rather than an empty text that
+    /// saving would write over it.
+    func testSkillTextBelongsToTheSkillItWasReadFor() async throws {
+        let model = try await makeModel()
+        await model.addLocal(try makeSkill("alfa", content: "tekst alfa"))
+        await model.addLocal(try makeSkill("beta", content: "tekst beta"))
+
+        model.selection = "beta"
+        await model.loadMarkdown()
+        XCTAssertEqual(model.markdownSkillID, "beta")
+        XCTAssertTrue(model.markdown.contains("tekst beta"))
+
+        try Data([0xFF, 0xFE, 0x00]).write(to: root.appending(path: "library/skills/alfa/SKILL.md"))
+        model.selection = "alfa"
+        await model.loadMarkdown()
+        XCTAssertNil(model.markdownSkillID, "nieczytelny SKILL.md nie może trafić do edytora jako pusty tekst")
+        XCTAssertEqual(model.operationLog.first?.kind, .error)
+    }
+
     // MARK: Reload
 
     func testReloadPublishesEverythingAViewReads() async throws {

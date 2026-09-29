@@ -329,6 +329,9 @@ struct ClaudePluginsView: View {
     @State private var uninstalling: ClaudePlugin?
     @State private var error = ""
     @State private var selectedLibraryPlugins = Set<UUID>()
+    /// Set when the stored choice could not be read. Saving is blocked then: the checkboxes would
+    /// show nothing selected, and saving that would clear the real selection.
+    @State private var selectionError = ""
     private var inheritsRoot: Bool { model.inheritsRoot(project) }
 
     var body: some View {
@@ -347,7 +350,8 @@ struct ClaudePluginsView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     ForEach(model.claudePluginLibrary) { item in Toggle(item.name, isOn: Binding(get: { selectedLibraryPlugins.contains(item.id) }, set: { enabled in if enabled { selectedLibraryPlugins.insert(item.id) } else { selectedLibraryPlugins.remove(item.id) } })).toggleStyle(.checkbox).help(item.plugin).disabled(inheritsRoot) }
-                    HStack { Spacer(); Button("Zapisz wybór") { Task { await model.saveClaudePluginSelection(project: project, ids: Array(selectedLibraryPlugins)); await reloadSelection() } }.buttonStyle(.bordered).disabled(model.isWorking || inheritsRoot) }
+                    if !selectionError.isEmpty { Label("Nie udało się wczytać wyboru: \(selectionError)", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+                    HStack { Spacer(); Button("Zapisz wybór") { Task { await model.saveClaudePluginSelection(project: project, ids: Array(selectedLibraryPlugins)); await reloadSelection() } }.buttonStyle(.bordered).disabled(model.isWorking || inheritsRoot || !selectionError.isEmpty) }
                 }.padding(6) }
             }
             GroupBox("Zainstaluj plugin") {
@@ -390,7 +394,8 @@ struct ClaudePluginsView: View {
     /// Read back instead of assumed: removing a plugin also drops it from the selection, and the
     /// checkboxes have to show what is actually stored.
     private func reloadSelection() async {
-        selectedLibraryPlugins = Set((try? await model.selectedClaudePluginIDs(for: project)) ?? [])
+        do { selectedLibraryPlugins = Set(try await model.selectedClaudePluginIDs(for: project)); selectionError = "" }
+        catch { selectedLibraryPlugins = []; selectionError = error.localizedDescription }
     }
 }
 
