@@ -256,11 +256,11 @@ CLI rozdziela synchronizację skilli (`agentbox sync project`) i MCP (`agentbox 
 
 Zakładka `Dokumenty` w `Bibliotece` zbiera współdzielone teksty, przypisywane do projektów wprost albo przez tag — dokładnie tak samo jak skille i serwery MCP. Każdy dokument ma swój tekst, zapisywany raz.
 
-Zsynchronizowany dokument trafia zawsze jako **para plików w katalogu głównym projektu**: `AGENTS.md` z pełną treścią i `CLAUDE.md` wygenerowany automatycznie jako jedna linijka — `@AGENTS.md`. To udokumentowany mechanizm importu plików w Claude Code (Claude Code czyta `CLAUDE.md`, nie czyta `AGENTS.md` samodzielnie), więc jeden tekst obsługuje oba bez ręcznego duplikowania go. `CLAUDE.md` nie jest edytowalny osobno.
+Zsynchronizowany dokument trafia zawsze jako **para plików w katalogu głównym projektu**: `AGENTS.md` z pełną treścią i `CLAUDE.md` wygenerowany automatycznie jako jedna linijka — `@AGENTS.md`. To udokumentowany mechanizm importu plików w Claude Code. Nowsze wersje Claude Code czytają `AGENTS.md` samodzielnie, ale tylko wtedy, gdy nie ma żadnego `CLAUDE.md` ani `CLAUDE.local.md` — import działa zawsze i nie dubluje treści, więc jeden tekst obsługuje oba narzędzia. `CLAUDE.md` nie jest edytowalny osobno.
 
 Do jednego projektu może pasować tylko jeden dokument naraz — `AGENTS.md` ma jedną treść. Więcej niż jedno dopasowanie przez tagi zatrzymuje synchronizację jako konflikt, zamiast wybierać dowolne.
 
-Synchronizacja nadpisuje cały plik, tak jak katalog skilla. Ręcznie napisany `AGENTS.md` albo `CLAUDE.md`, którym Agentbox jeszcze nie zarządza, blokuje zapis zamiast zostać nadpisany — ten sam mechanizm ochrony co przy nieznanym katalogu skilla czy ręcznym wpisie MCP. Wyjątkiem jest plik identyczny bajt w bajt z treścią dokumentu: zostaje przejęty bez pytania.
+Synchronizacja nadpisuje cały plik, tak jak katalog skilla. Ręcznie napisany `AGENTS.md`, którym Agentbox jeszcze nie zarządza, blokuje zapis zamiast zostać nadpisany — ten sam mechanizm ochrony co przy nieznanym katalogu skilla czy ręcznym wpisie MCP. Wyjątkiem jest plik identyczny bajt w bajt z treścią dokumentu: zostaje przejęty bez pytania. Własny `CLAUDE.md` projektu nie blokuje synchronizacji: Agentbox dopisuje na jego końcu oznaczony blok z importem `@AGENTS.md` (znacznik jest komentarzem HTML, który Claude Code pomija przy wczytywaniu), a resztę pliku zostawia bajt w bajt. Plik, który już importuje `AGENTS.md`, zostaje bez zmian. Odpięcie dokumentu albo sprzątanie projektu usuwa tylko ten blok — a wygenerowany w całości `CLAUDE.md` znika razem z `AGENTS.md`.
 
 ```bash
 swift run agentbox docs new standard --tags backend --file agents.md

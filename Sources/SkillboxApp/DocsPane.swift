@@ -53,7 +53,7 @@ struct DocsPane: View {
             Button("Usuń", role: .destructive) { if let docToDelete { Task { await model.deleteDoc(docToDelete.id) } }; docToDelete = nil }
             Button("Anuluj", role: .cancel) { docToDelete = nil }
         } message: { Text((usageForDeletion?.summary).map { "Używany przez: \($0). " } ?? "")
-            + Text("Dokument zniknie z biblioteki i z przypisań projektów. AGENTS.md i wygenerowany CLAUDE.md znikną z projektów, które go używały, przy kolejnej synchronizacji.") }
+            + Text("Dokument zniknie z biblioteki i z przypisań projektów. AGENTS.md i wygenerowany CLAUDE.md (albo dopisany do własnego CLAUDE.md import) znikną z projektów, które go używały, przy kolejnej synchronizacji.") }
         .task(id: docToDelete?.id) { usageForDeletion = docToDelete == nil ? nil : await model.usage(ofDoc: docToDelete!.id) }
     }
 
@@ -130,7 +130,7 @@ struct NewDocView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Nowy dokument").font(.title2.bold())
-            Text("Treść trafia jako AGENTS.md do projektów, które dostaną ten dokument. CLAUDE.md w tych projektach Agentbox generuje sam jako import @AGENTS.md — nie trzeba pisać go osobno.").font(.callout).foregroundStyle(.secondary)
+            Text("Treść trafia jako AGENTS.md do projektów, które dostaną ten dokument. CLAUDE.md w tych projektach Agentbox generuje sam jako import @AGENTS.md, a do istniejącego CLAUDE.md dopisuje tylko ten import — nie trzeba pisać go osobno.").font(.callout).foregroundStyle(.secondary)
             HStack { TextField("Nazwa", text: $name); TextField("Identyfikator", text: Binding(get: { identifierEdited ? identifier : suggestedID }, set: { identifier = $0; identifierEdited = true })) }
             if !effectiveID.isEmpty && !idValid { Label("Identyfikator może zawierać tylko małe litery, cyfry i pojedyncze myślniki.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }
             if idTaken { Label("Dokument o tym identyfikatorze już jest w bibliotece.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }

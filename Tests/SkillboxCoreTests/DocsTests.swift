@@ -271,4 +271,62 @@ final class DocsTests: AgentboxTestCase {
         await XCTAssertThrowsErrorAsync(try await service.syncProjectTransaction(projectID: project.id))
         XCTAssertEqual(try String(contentsOf: manifest, encoding: .utf8), "{ zepsuty")
     }
+
+    // MARK: A CLAUDE.md the user wrote
+
+    private func docProject(claude: String?) async throws -> (SkillboxService, Project, URL) {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+        if let claude { try claude.write(to: projectURL.appending(path: "CLAUDE.md"), atomically: true, encoding: .utf8) }
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let project = try await service.addProject(name: "p", path: projectURL.path, tools: [.claude])
+        let doc = try await service.createDoc(id: "standard", content: "# Zasady\n")
+        try await service.setDocs(projectID: project.id, docIDs: [doc.id], tags: [])
+        return (service, project, projectURL)
+    }
+
+    /// Claude Code reads AGENTS.md on its own only while no CLAUDE.md exists, so a user's own
+    /// CLAUDE.md gets the import appended instead of blocking the whole synchronization.
+    func testOwnClaudeFileGetsTheImportAppendedAndKeepsItsContent() async throws {
+        let (service, project, url) = try await docProject(claude: "# Moje zasady\nUżywaj pnpm.")
+
+        try await service.syncProjectTransaction(projectID: project.id)
+
+        let text = try String(contentsOf: url.appending(path: "CLAUDE.md"), encoding: .utf8)
+        XCTAssertEqual(text, "# Moje zasady\nUżywaj pnpm.\n\n" + DocsRenderer.claudeImportBlock)
+        let statuses = try await service.projectStatuses()
+        XCTAssertEqual(statuses.first?.state, .synced, "dopisany import nie może wisieć jako zmiana do zrobienia")
+    }
+
+    func testClaudeFileThatAlreadyImportsAgentsIsLeftUntouched() async throws {
+        let own = "# Moje zasady\n\n@AGENTS.md\n"
+        let (service, project, url) = try await docProject(claude: own)
+
+        try await service.syncProjectTransaction(projectID: project.id)
+
+        XCTAssertEqual(try String(contentsOf: url.appending(path: "CLAUDE.md"), encoding: .utf8), own)
+    }
+
+    /// Removing the document takes only what Agentbox added; the user's text stays byte for byte.
+    func testUnsyncRemovesOnlyTheAppendedImport() async throws {
+        let own = "# Moje zasady\nUżywaj pnpm.\n"
+        let (service, project, url) = try await docProject(claude: own)
+        try await service.syncProjectTransaction(projectID: project.id)
+
+        try await service.unsyncProject(id: project.id)
+
+        XCTAssertEqual(try String(contentsOf: url.appending(path: "CLAUDE.md"), encoding: .utf8), own)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.appending(path: "AGENTS.md").path))
+    }
+
+    func testUnreadableClaudeFileStillStopsTheSync() async throws {
+        let (service, project, url) = try await docProject(claude: nil)
+        try Data([0xFF, 0xFE, 0x00]).write(to: url.appending(path: "CLAUDE.md"))
+
+        await XCTAssertThrowsErrorAsync(try await service.syncProjectTransaction(projectID: project.id))
+
+        XCTAssertEqual(try Data(contentsOf: url.appending(path: "CLAUDE.md")), Data([0xFF, 0xFE, 0x00]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.appending(path: "AGENTS.md").path))
+    }
 }

@@ -94,7 +94,7 @@ struct AttachmentPicker: View {
     @ViewBuilder private var docSection: some View {
         GroupBox("Dokument (AGENTS.md / CLAUDE.md)") {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Ten sam tekst trafia jako AGENTS.md; CLAUDE.md jest generowany osobno jako import @AGENTS.md. Oba pliki zawsze idą razem.").font(.caption).foregroundStyle(.secondary)
+                Text("Ten sam tekst trafia jako AGENTS.md; CLAUDE.md jest generowany jako import @AGENTS.md, a do istniejącego CLAUDE.md projektu Agentbox tylko dopisuje ten import.").font(.caption).foregroundStyle(.secondary)
                 Picker("Dokument", selection: docBinding) {
                     Text("Brak").tag(String?.none)
                     ForEach(docs.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { doc in Text(doc.name).tag(Optional(doc.id)) }

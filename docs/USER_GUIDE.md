@@ -139,7 +139,7 @@ Jeśli w projekcie leży ręcznie napisany katalog ze `SKILL.md`, którego nie m
 
 ### Skille, których Agentbox nie zarządza
 
-Agentbox usuwa i zastępuje wyłącznie katalogi wymienione w swoim manifeście `.skillbox.json`. Jeśli w katalogu docelowym leży katalog skilla o tej samej nazwie, którego w manifeście nie ma — na przykład skill napisany ręcznie w projekcie — synchronizacja zatrzymuje się z komunikatem `Konflikt skilla` i nie zapisuje niczego. Usuń ten katalog albo zmień nazwę skilla w bibliotece, jeśli ma go zastąpić. Ta sama zasada chroni ręcznie dodane serwery MCP oraz ręcznie napisane `AGENTS.md`/`CLAUDE.md` — z jednym wyjątkiem: plik identyczny bajt w bajt z treścią przypisanego dokumentu jest przejmowany bez pytania, zamiast blokować synchronizację.
+Agentbox usuwa i zastępuje wyłącznie katalogi wymienione w swoim manifeście `.skillbox.json`. Jeśli w katalogu docelowym leży katalog skilla o tej samej nazwie, którego w manifeście nie ma — na przykład skill napisany ręcznie w projekcie — synchronizacja zatrzymuje się z komunikatem `Konflikt skilla` i nie zapisuje niczego. Usuń ten katalog albo zmień nazwę skilla w bibliotece, jeśli ma go zastąpić. Ta sama zasada chroni ręcznie dodane serwery MCP oraz ręcznie napisany `AGENTS.md` — z jednym wyjątkiem: plik identyczny bajt w bajt z treścią przypisanego dokumentu jest przejmowany bez pytania, zamiast blokować synchronizację. Ręcznie napisany `CLAUDE.md` nie blokuje — zobacz [Wybór dokumentu w projekcie](#wybór-dokumentu-w-projekcie).
 
 ### Wynik synchronizacji wszystkich projektów
 
@@ -169,7 +169,7 @@ Przy nazwie każdego serwera są też dwa linki — `Wyłącz wszędzie` i `Wł�
 
 Dokument wybiera się jednym z dwóch sposobów: wprost z listy albo dynamicznie przez tag — nigdy oboma naraz w sposób, który dawałby więcej niż jedno dopasowanie. `AGENTS.md` ma tylko jedną treść, więc jeśli tagi wciągnęłyby dwa różne dokumenty do tego samego projektu, synchronizacja zatrzymuje się z komunikatem `Konflikt dokumentu` zamiast wybierać dowolny z nich — edytor projektu ostrzega o tym już przy zaznaczaniu tagów.
 
-Zsynchronizowany dokument ląduje jako `AGENTS.md` (pełna treść) i `CLAUDE.md` (jednolinijkowy, wygenerowany import `@AGENTS.md`) w katalogu głównym projektu, niezależnie od tego, jakie narzędzia (Claude/Codex/OpenCode) ma projekt zaznaczone. `CLAUDE.md` nie edytuje się osobno — Claude Code czyta go i przez import wczytuje treść `AGENTS.md`, więc jeden tekst wystarcza obu.
+Zsynchronizowany dokument ląduje jako `AGENTS.md` (pełna treść) i `CLAUDE.md` (jednolinijkowy, wygenerowany import `@AGENTS.md`) w katalogu głównym projektu, niezależnie od tego, jakie narzędzia (Claude/Codex/OpenCode) ma projekt zaznaczone. `CLAUDE.md` nie edytuje się osobno — Claude Code przez import wczytuje treść `AGENTS.md`, więc jeden tekst wystarcza obu. Claude Code od v2.1.277 potrafi czytać `AGENTS.md` sam, ale tylko wtedy, gdy w projekcie ani wyżej nie ma żadnego `CLAUDE.md` ani `CLAUDE.local.md`; import działa zawsze i nie powoduje podwójnego wczytania. Własny `CLAUDE.md` projektu nie blokuje synchronizacji: Agentbox dopisuje na jego końcu oznaczony blok z importem `@AGENTS.md` (znacznik jest komentarzem HTML, który Claude Code pomija przy wczytywaniu), a resztę pliku zostawia bajt w bajt. Plik, który już importuje `AGENTS.md`, zostaje bez zmian. Odpięcie dokumentu albo sprzątanie projektu usuwa tylko ten blok — a wygenerowany w całości `CLAUDE.md` znika razem z `AGENTS.md`.
 
 ### Wykluczenia w projekcie
 

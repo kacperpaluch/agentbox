@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.29.1] - 2026-09-29
+
+### Zmieniono
+
+- Własny `CLAUDE.md` projektu nie blokuje już synchronizacji całego projektu. Agentbox dopisuje na jego końcu oznaczony blok z importem `@AGENTS.md` i nie zmienia reszty pliku; plik, który już importuje `AGENTS.md`, zostaje nietknięty. Samo odblokowanie nie wystarczało: Claude Code czyta `AGENTS.md` bez importu tylko wtedy, gdy w projekcie nie ma żadnego `CLAUDE.md`. Odpięcie dokumentu i sprzątanie projektu usuwają wyłącznie dopisany blok.
+
 ## [0.29.0] - 2026-09-29
 
 Wydanie z poprawkami z przeglądu kodu 0.28.0: sekrety MCP w plikach śledzonych przez Git, import skilli z repozytoriów i dowiązań, transport SSE.

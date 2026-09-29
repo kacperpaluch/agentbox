@@ -140,11 +140,10 @@ enum DocsRenderer {
         let agents = project.appending(path: "AGENTS.md")
         let claude = project.appending(path: "CLAUDE.md")
         let agentsDesired = doc.map { $0.content.hasSuffix("\n") ? $0.content : $0.content + "\n" }
-        let claudeDesired: String? = doc != nil ? "@AGENTS.md\n" : nil
         let added: [String] = (doc != nil && doc?.id != previousID) ? [doc!.id] : []
         let removed: [String] = (previousID != nil && previousID != doc?.id) ? [previousID!] : []
         let agentsContent = try renderedFile(file: agents, desired: agentsDesired, previouslyManaged: managed)
-        let claudeContent = try renderedFile(file: claude, desired: claudeDesired, previouslyManaged: managed)
+        let claudeContent = try renderedClaudeImport(file: claude, importing: doc != nil, previouslyManaged: managed)
         return [
             DocPreview(file: agents.path, content: agentsContent ?? "", added: added, removed: removed, leaveAsIs: agentsContent == nil),
             DocPreview(file: claude.path, content: claudeContent ?? "", added: added, removed: removed, leaveAsIs: claudeContent == nil)
@@ -187,6 +186,50 @@ enum DocsRenderer {
             }
         }
         return desired
+    }
+
+    static let claudeImport = "@AGENTS.md\n"
+    /// The block Agentbox appends to a `CLAUDE.md` the user wrote. Claude Code strips HTML comments
+    /// before loading the file, so the marker costs no context.
+    static let claudeImportBlock = "<!-- Agentbox: import dokumentu projektu -->\n@AGENTS.md\n"
+
+    /// `CLAUDE.md` exists only to make Claude Code read `AGENTS.md`: it reads `AGENTS.md` on its own
+    /// only while no `CLAUDE.md` exists, so a project with one of its own needs the import in it.
+    ///
+    /// Blocking the whole synchronization over a `CLAUDE.md` the user wrote — what this used to do —
+    /// left the project without its skills and servers too, and simply not writing it would have
+    /// left `AGENTS.md` unread. So a user's file gets a marked import block appended and keeps every
+    /// other byte; a file that already imports `AGENTS.md` is left as it is. When the document goes
+    /// away, only what Agentbox wrote goes with it: the whole file if it is exactly the generated
+    /// import, just the block otherwise. Returns `nil` for a file to leave alone entirely.
+    private static func renderedClaudeImport(file: URL, importing: Bool, previouslyManaged: Bool) throws -> String? {
+        let fm = FileManager.default
+        let exists = fm.fileExists(atPath: file.path) || (try? fm.attributesOfItem(atPath: file.path)) != nil
+        guard exists else { return importing ? claudeImport : "" }
+        guard importing || previouslyManaged else {
+            // Not ours and nothing to add: the unmanaged-file rule `renderedFile` applies.
+            guard isRegularFile(file), let existing = try? String(contentsOf: file, encoding: .utf8) else { return nil }
+            return existing
+        }
+        try requireOwnable(file)
+        let existing = try SkillboxService.existingText(at: file)
+        if importing {
+            guard !importsAgents(existing) else { return existing }
+            let separator = existing.isEmpty ? "" : existing.hasSuffix("\n") ? "\n" : "\n\n"
+            return existing + separator + claudeImportBlock
+        }
+        if existing == claudeImport { return "" }
+        guard let range = existing.range(of: claudeImportBlock) else { return existing }
+        var stripped = existing
+        stripped.removeSubrange(range)
+        // The blank line that separated the block goes with it.
+        while stripped.hasSuffix("\n\n") { stripped.removeLast() }
+        return stripped.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : stripped
+    }
+
+    /// Whether a line of the file already is the `@AGENTS.md` import, written by anyone.
+    private static func importsAgents(_ text: String) -> Bool {
+        text.split(whereSeparator: \.isNewline).contains { $0.trimmingCharacters(in: .whitespaces) == "@AGENTS.md" }
     }
 
     private static func isRegularFile(_ file: URL) -> Bool {
