@@ -828,6 +828,30 @@ final class ProjectTests: AgentboxTestCase {
         XCTAssertEqual(ids.sorted(), ["gotowy", "moje-notatki"])
     }
 
+    func testSkillAddedFromDiskTakesItsDeclaredNameBeforeTheFolderName() async throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appending(path: UUID().uuidString)
+        func folder(_ path: String, _ markdown: String) throws -> String {
+            let url = root.appending(path: path)
+            try fm.createDirectory(at: url, withIntermediateDirectories: true)
+            try markdown.write(to: url.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+            return url.path
+        }
+        let service = try SkillboxService(root: root.appending(path: "data"))
+
+        let named = try await service.addLocal(path: try folder("mealie/SKILL", "---\nname: mealie\ndescription: x\n---\n\nTreść.\n"))
+        XCTAssertEqual(named.id, "mealie")
+        XCTAssertTrue(fm.fileExists(atPath: root.appending(path: "data/skills/mealie/SKILL.md").path))
+        // No header, or a name that cannot be an identifier, falls back to the folder as before.
+        let plain = try await service.addLocal(path: try folder("notatki", "Sama treść."))
+        XCTAssertEqual(plain.id, "notatki")
+        let odd = try await service.addLocal(path: try folder("zapas", "---\nname: \"Coś: dziwnego!\"\n---\n"))
+        XCTAssertEqual(odd.id, "zapas")
+        // An explicit identifier still wins over both.
+        let forced = try await service.addLocal(path: try folder("inny", "---\nname: z-naglowka\n---\n"), id: "wybrany")
+        XCTAssertEqual(forced.id, "wybrany")
+    }
+
     func testSkillWrittenInTheAppCarriesScriptsIntoProjects() async throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appending(path: UUID().uuidString)

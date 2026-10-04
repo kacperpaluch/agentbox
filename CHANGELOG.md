@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-10-04
+
+### Naprawiono
+
+- Skill dodany z dysku dostaje identyfikator z pola `name` w nagłówku `SKILL.md`, a dopiero gdy go brak lub nie nadaje się na identyfikator — z nazwy folderu. Skill trzymany jako `mealie/SKILL/SKILL.md` trafiał do biblioteki jako „skill”. `--id` w CLI nadal ma pierwszeństwo.
+
 ## [0.30.0] - 2026-10-04
 
 ### Dodano

@@ -135,12 +135,26 @@ public actor SkillboxService {
     /// together with the rest of its batch, in `replacingLibrarySkills`.
     private func plannedImport(from sourceURL: URL, source: SkillSource, suppliedID: String?, into catalog: inout Catalog) throws -> Skill {
         guard fm.fileExists(atPath: sourceURL.appending(path: "SKILL.md").path) else { throw SkillboxError.invalidSkill("brak SKILL.md w \(sourceURL.path)") }
-        let id = suppliedID ?? sourceURL.lastPathComponent.lowercased().replacingOccurrences(of: " ", with: "-")
-        guard id.range(of: "^[a-z0-9]+(?:-[a-z0-9]+)*$", options: .regularExpression) != nil else { throw SkillboxError.invalidSkill(id) }
+        // With no identifier given, the `name` the skill declares for itself wins over the folder it
+        // happens to sit in: a skill kept as `mealie/SKILL/SKILL.md` used to arrive as "skill".
+        let folder = sourceURL.lastPathComponent
+        let declared = suppliedID == nil ? try Self.declaredName(in: sourceURL.appending(path: "SKILL.md")) : nil
+        let candidates = (suppliedID.map { [$0] } ?? [declared, folder].compactMap { $0?.lowercased().replacingOccurrences(of: " ", with: "-") })
+        guard let id = candidates.first(where: { $0.range(of: "^[a-z0-9]+(?:-[a-z0-9]+)*$", options: .regularExpression) != nil }) else { throw SkillboxError.invalidSkill(candidates.last ?? folder) }
         guard !catalog.skills.contains(where: { $0.id == id }) else { throw SkillboxError.duplicateSkill(id) }
         let skill = Skill(id: id, name: id, source: source)
         catalog.skills.append(skill)
         return skill
+    }
+
+    /// The `name` from a `SKILL.md` front matter block, or nil when the file declares none.
+    /// A file that cannot be read is an error, not a skill without a name.
+    static func declaredName(in file: URL) throws -> String? {
+        let lines = try String(contentsOf: file, encoding: .utf8).split(separator: "\n", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+        guard lines.first == "---", let end = lines.dropFirst().firstIndex(of: "---") else { return nil }
+        guard let line = lines[1..<end].first(where: { $0.hasPrefix("name:") }) else { return nil }
+        let value = line.dropFirst(5).trimmingCharacters(in: CharacterSet(charactersIn: " \"'"))
+        return value.isEmpty ? nil : value
     }
 
     /// Test hook: called with `install:<id>` before each library directory is replaced and with
