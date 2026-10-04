@@ -6,6 +6,14 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-10-04
+
+### Dodano
+
+- Skill tworzony w aplikacji może mieć skrypty i inne pliki dodatkowe. Okno `Nowy skill` ma przycisk `Dodaj skrypty i pliki…`, a szczegóły skilla lokalnego — `Dodaj pliki…`. Folder trafia do skilla pod swoją nazwą (np. `scripts/`), plik — obok `SKILL.md`; uprawnienia, w tym bit wykonywalności, są zachowane. Zastąpienie istniejącego pliku wymaga potwierdzenia.
+- Szczegóły każdego skilla, także z Git, pokazują listę plików dodatkowych z rozmiarem i oznaczeniem plików wykonywalnych oraz przycisk `Pokaż w Finderze`.
+- CLI: `agentbox attach <skill> <plik|folder...> [--replace]` i `agentbox files <skill>`.
+
 ## [0.29.1] - 2026-09-29
 
 ### Zmieniono

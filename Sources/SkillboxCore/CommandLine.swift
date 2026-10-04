@@ -10,6 +10,7 @@ public enum AgentboxCommand {
       agentbox add <folder|git-url> [--path subdir] [--branch main] [--id name]
       agentbox list | tag <skill> <tag...> | update <skill|--all> [--dry-run]
       agentbox new <id> [--name x] [--description y] [--tags a,b] [--file plik|-]
+      agentbox attach <skill> <plik|folder...> [--replace] | files <skill>
       agentbox delete <skill> | usage <skill>
       agentbox project add|set|list|status|explain|adopt|adopt-changes|unsync|remove ...
       agentbox project root-add|root-adopt|roots|scan|adopt-new|ignore-new ...
@@ -57,6 +58,12 @@ public enum AgentboxCommand {
             }
             let skill = try await service.createSkill(id: rest[0], name: option("--name", in: args) ?? "", description: option("--description", in: args) ?? "", content: content, tags: csv("--tags", in: args))
             return ["Utworzono skill \(skill.id)"]
+        case "attach" where rest.count >= 2:
+            let files = rest.dropFirst().filter { $0 != "--replace" }.map { URL(fileURLWithPath: $0) }
+            try await service.addSkillFiles(skillID: rest[0], files: files, replacing: args.contains("--replace"))
+            return ["Dodano do \(rest[0]): \(files.map(\.lastPathComponent).joined(separator: ", "))"]
+        case "files" where rest.count >= 1:
+            return try await service.skillFiles(skillID: rest[0]).map { "\($0.path)\t\($0.size)\t\($0.isExecutable ? "x" : "-")" }
         case "add":
             guard let value = rest.first else { throw SkillboxError.invalidSkill("podaj ścieżkę lub URL") }
             let subpath = option("--path", in: args), branch = option("--branch", in: args), id = option("--id", in: args)

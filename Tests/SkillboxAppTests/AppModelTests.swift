@@ -301,6 +301,22 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(created, "poprawny zapis nadal zwraca sukces")
     }
 
+    func testNewSkillShowsItsScriptsAndAFailedAddKeepsTheList() async throws {
+        let model = try await makeModel()
+        let script = root.appending(path: "run.sh")
+        try "echo".write(to: script, atomically: true, encoding: .utf8)
+
+        let created = await model.createSkill(NewSkillDraft(id: "ze-skryptem", content: "treść", attachments: [script]))
+        XCTAssertTrue(created)
+        XCTAssertEqual(model.skillFiles.map(\.path), ["run.sh"])
+
+        let repeated = await model.addSkillFiles("ze-skryptem", files: [script])
+        XCTAssertFalse(repeated, "istniejąca nazwa bez zgody na zastąpienie to porażka, nie cichy sukces")
+        let replaced = await model.addSkillFiles("ze-skryptem", files: [script], replacing: true)
+        XCTAssertTrue(replaced)
+        XCTAssertEqual(model.skillFiles.map(\.path), ["run.sh"])
+    }
+
     // MARK: Library watcher
 
     func testCreatingAGroupRootReportsFailureAndThenSuccess() async throws {

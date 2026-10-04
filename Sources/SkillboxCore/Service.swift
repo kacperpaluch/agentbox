@@ -243,7 +243,7 @@ public actor SkillboxService {
     /// from. The library copy is the original, so the source is local and points at the library
     /// itself — exactly what `saveSkillMarkdown` needs to keep the skill editable afterwards.
     @discardableResult
-    public func createSkill(id: String, name: String = "", description: String = "", content: String, tags: [String] = []) async throws -> Skill {
+    public func createSkill(id: String, name: String = "", description: String = "", content: String, tags: [String] = [], attachments: [URL] = []) async throws -> Skill {
         let id = id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().replacingOccurrences(of: " ", with: "-")
         guard id.range(of: "^[a-z0-9]+(?:-[a-z0-9]+)*$", options: .regularExpression) != nil else {
             throw SkillboxError.invalidSkill("identyfikator może zawierać tylko małe litery, cyfry i pojedyncze myślniki: \(id)")
@@ -254,19 +254,76 @@ public actor SkillboxService {
         let document = Self.skillDocument(name: displayName, description: description, body: content)
         let directory = try await skillDirectory(id)
         guard !fm.fileExists(atPath: directory.path) else { throw SkillboxError.duplicateSkill(id) }
-        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
-        do {
-            try document.write(to: directory.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
-            let skill = Skill(id: id, name: displayName, tags: Self.normalizedTags(tags), source: SkillSource(kind: .local, location: directory.path))
-            catalog.skills.append(skill)
-            try await store.save(catalog)
-            return skill
-        } catch {
-            // The catalog is the source of truth. A directory left behind after a failed save would
-            // block the next attempt with the same identifier.
-            try? fm.removeItem(at: directory)
-            throw error
+        let skill = Skill(id: id, name: displayName, tags: Self.normalizedTags(tags), source: SkillSource(kind: .local, location: directory.path))
+        catalog.skills.append(skill)
+        // Built aside and moved in together with the catalog save: a script that cannot be copied
+        // or a failed save leaves no directory behind to block the next attempt with the same id.
+        let stage = Self.scratchDirectory()
+        defer { try? fm.removeItem(at: stage) }
+        try fm.createDirectory(at: stage, withIntermediateDirectories: true)
+        try document.write(to: stage.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        try attach(attachments, to: stage, replacing: false)
+        let updated = catalog
+        try await replacingLibrarySkills([(stage, id)]) { try await store.save(updated) }
+        return skill
+    }
+
+    /// Copies files and folders the user picked — scripts, templates, reference documents — into a
+    /// skill directory being prepared in `stage`. A folder arrives under its own name with
+    /// everything inside it, a file lands next to `SKILL.md`. Nothing in the library is touched
+    /// here; `replacingLibrarySkills` reads the stage as a skill tree afterwards, which is what
+    /// refuses a link leading outside the skill.
+    private func attach(_ files: [URL], to stage: URL, replacing: Bool) throws {
+        // Lowercased, because the default macOS volume would let `Run.sh` overwrite `run.sh`.
+        let names = files.map { $0.lastPathComponent.lowercased() }
+        guard Set(names).count == names.count else { throw SkillboxError.invalidSkill("dwa dodawane pliki mają tę samą nazwę") }
+        for file in files {
+            let name = file.lastPathComponent
+            guard name.lowercased() != "skill.md" else { throw SkillboxError.invalidSkill("SKILL.md nie jest plikiem dodatkowym — jego treść edytuje się osobno") }
+            // The skill tree drops these without a word; a file the user chose is refused instead.
+            guard name != ".git", name != ".DS_Store" else { throw SkillboxError.invalidSkill("\(name) nie jest zasobem skilla") }
+            let source = file.resolvingSymlinksInPath()
+            guard fm.fileExists(atPath: source.path) else { throw SkillboxError.invalidSkill("brak pliku \(file.path)") }
+            let target = stage.appending(path: name)
+            if fm.fileExists(atPath: target.path) {
+                guard replacing else { throw SkillboxError.invalidSkill("skill ma już \(name)") }
+                try fm.removeItem(at: target)
+            }
+            try fm.copyItem(at: source, to: target)
         }
+    }
+
+    /// Adds scripts and other resources to a skill that lives in the library, and bumps
+    /// `updatedAt` so projects holding the skill report as outdated.
+    ///
+    /// Local skills only, for the reason `saveSkillMarkdown` gives: a Git update replaces the whole
+    /// directory. An existing name is refused unless `replacing` — the caller asks the user first.
+    public func addSkillFiles(skillID: String, files: [URL], replacing: Bool = false) async throws {
+        var catalog = try await store.catalog()
+        guard let index = catalog.skills.firstIndex(where: { $0.id == skillID }) else { throw SkillboxError.skillNotFound(skillID) }
+        guard catalog.skills[index].source.kind == .local else {
+            throw SkillboxError.invalidSkill("skille z Git są zastępowane przy aktualizacji, więc nie można dodawać do nich plików")
+        }
+        guard Self.isSafeSkillID(skillID) else { throw SkillboxError.unsafePath(skillID) }
+        guard !files.isEmpty else { return }
+        let stage = Self.scratchDirectory()
+        defer { try? fm.removeItem(at: stage) }
+        try SkillTree.read(try await skillDirectory(skillID)).write(to: stage)
+        try attach(files, to: stage, replacing: replacing)
+        catalog.skills[index].updatedAt = .now
+        let updated = catalog
+        try await replacingLibrarySkills([(stage, skillID)]) { try await store.save(updated) }
+    }
+
+    /// Everything a skill carries besides `SKILL.md`, so the app can show that a skill comes with
+    /// scripts before an agent is allowed to run them.
+    public func skillFiles(skillID: String) async throws -> [SkillFile] {
+        guard try await store.catalog().skills.contains(where: { $0.id == skillID }) else { throw SkillboxError.skillNotFound(skillID) }
+        guard Self.isSafeSkillID(skillID) else { throw SkillboxError.unsafePath(skillID) }
+        return try SkillTree.read(try await skillDirectory(skillID)).entries
+            .filter { $0.value.kind != .directory && $0.key != "SKILL.md" }
+            .map { SkillFile(path: $0.key, size: $0.value.data.count, isExecutable: $0.value.permissions & 0o111 != 0) }
+            .sorted { $0.path < $1.path }
     }
 
     /// Wraps written text in the YAML front matter a `SKILL.md` needs. Content that already starts

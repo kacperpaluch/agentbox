@@ -572,3 +572,12 @@ public struct SyncProgress: Sendable, Equatable {
 }
 
 public typealias SyncProgressHandler = @Sendable (SyncProgress) async -> Void
+
+/// One file a skill carries next to its `SKILL.md` — a script, a template, a reference document.
+public struct SkillFile: Sendable, Equatable, Identifiable {
+    /// Relative to the skill directory, e.g. `scripts/run.sh`.
+    public let path: String
+    public let size: Int
+    public let isExecutable: Bool
+    public var id: String { path }
+}

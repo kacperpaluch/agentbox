@@ -827,6 +827,72 @@ final class ProjectTests: AgentboxTestCase {
         let ids = try await service.listSkills().map(\.id)
         XCTAssertEqual(ids.sorted(), ["gotowy", "moje-notatki"])
     }
+
+    func testSkillWrittenInTheAppCarriesScriptsIntoProjects() async throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectFolder = root.appending(path: "project"), source = root.appending(path: "source")
+        try fm.createDirectory(at: projectFolder, withIntermediateDirectories: true)
+        try fm.createDirectory(at: source.appending(path: "scripts"), withIntermediateDirectories: true)
+        try "#!/bin/sh\necho raz\n".write(to: source.appending(path: "scripts/run.sh"), atomically: true, encoding: .utf8)
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: source.appending(path: "scripts/run.sh").path)
+        try "szablon".write(to: source.appending(path: "template.txt"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let library = root.appending(path: "data/skills")
+
+        _ = try await service.createSkill(id: "ze-skryptem", content: "Uruchom scripts/run.sh.", attachments: [source.appending(path: "scripts")])
+        let created = try await service.skillFiles(skillID: "ze-skryptem")
+        XCTAssertEqual(created.map(\.path), ["scripts/run.sh"])
+        XCTAssertTrue(created[0].isExecutable)
+
+        let project = try await service.addProject(name: "sample", path: projectFolder.path, tools: [.claude])
+        try await service.configureProject(id: project.id, skillIDs: ["ze-skryptem"], tags: [])
+        _ = try await service.syncProject(id: project.id)
+        let synced = projectFolder.appending(path: ".claude/skills/ze-skryptem")
+        XCTAssertTrue(fm.isExecutableFile(atPath: synced.appending(path: "scripts/run.sh").path))
+
+        // A file added later lands next to SKILL.md and reaches the project with the next sync.
+        try await service.addSkillFiles(skillID: "ze-skryptem", files: [source.appending(path: "template.txt")])
+        _ = try await service.syncProject(id: project.id)
+        XCTAssertEqual(try String(contentsOf: synced.appending(path: "template.txt"), encoding: .utf8), "szablon")
+        XCTAssertTrue(fm.fileExists(atPath: synced.appending(path: "SKILL.md").path))
+
+        // An existing name is refused until the caller says to replace it, and nothing changes.
+        try "#!/bin/sh\necho dwa\n".write(to: source.appending(path: "scripts/run.sh"), atomically: true, encoding: .utf8)
+        do { try await service.addSkillFiles(skillID: "ze-skryptem", files: [source.appending(path: "scripts")]); XCTFail("oczekiwano błędu") }
+        catch { XCTAssertTrue("\(error.localizedDescription)".contains("scripts"), "\(error)") }
+        XCTAssertTrue(try String(contentsOf: library.appending(path: "ze-skryptem/scripts/run.sh"), encoding: .utf8).contains("raz"))
+        try await service.addSkillFiles(skillID: "ze-skryptem", files: [source.appending(path: "scripts")], replacing: true)
+        XCTAssertTrue(try String(contentsOf: library.appending(path: "ze-skryptem/scripts/run.sh"), encoding: .utf8).contains("dwa"))
+
+        // SKILL.md cannot be swapped out through the side door.
+        try "podmiana".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        do { try await service.addSkillFiles(skillID: "ze-skryptem", files: [source.appending(path: "SKILL.md")], replacing: true); XCTFail("oczekiwano błędu") } catch {}
+        let markdown = try await service.skillMarkdown(skillID: "ze-skryptem")
+        XCTAssertTrue(markdown.contains("Uruchom scripts/run.sh."))
+
+        // A link leading outside the skill stops the creation and leaves no skill behind.
+        try fm.createSymbolicLink(at: source.appending(path: "scripts/leak"), withDestinationURL: root)
+        do { _ = try await service.createSkill(id: "z-dowiazaniem", content: "x", attachments: [source.appending(path: "scripts")]); XCTFail("oczekiwano błędu") } catch {}
+        XCTAssertFalse(fm.fileExists(atPath: library.appending(path: "z-dowiazaniem").path))
+        let ids = try await service.listSkills().map(\.id)
+        XCTAssertEqual(ids, ["ze-skryptem"])
+
+        // A failed catalog save puts the previous directory back.
+        try fm.removeItem(at: source.appending(path: "scripts/leak"))
+        try "nowy".write(to: source.appending(path: "extra.txt"), atomically: true, encoding: .utf8)
+        SkillboxService.injectedFailure = { if $0 == "commit" { throw SkillboxError.invalidSkill("wstrzyknięty błąd") } }
+        defer { SkillboxService.injectedFailure = nil }
+        do { try await service.addSkillFiles(skillID: "ze-skryptem", files: [source.appending(path: "extra.txt")]); XCTFail("oczekiwano błędu") } catch {}
+        SkillboxService.injectedFailure = nil
+        let files = try await service.skillFiles(skillID: "ze-skryptem")
+        XCTAssertEqual(files.map(\.path), ["scripts/run.sh", "template.txt"])
+
+        let lines = try await AgentboxCommand.run(["attach", "ze-skryptem", source.appending(path: "extra.txt").path], service: service)
+        XCTAssertTrue(lines[0].contains("extra.txt"))
+        let listed = try await AgentboxCommand.run(["files", "ze-skryptem"], service: service)
+        XCTAssertEqual(listed.map { $0.split(separator: "\t").first.map(String.init) }, ["extra.txt", "scripts/run.sh", "template.txt"])
+    }
     /// Projects added before parent folders existed must be able to get one, otherwise the shared
     /// settings are reachable only for folders created from scratch.
     func testExistingProjectsCanBeTurnedIntoAParentFolderWithSharedSettings() async throws {

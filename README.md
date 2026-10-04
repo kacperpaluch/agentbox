@@ -90,6 +90,8 @@ swift run agentbox add https://github.com/user/repo.git --path skills/seo --bran
 
 Skille dodane z dysku można edytować w aplikacji przyciskiem `Edytuj SKILL.md`; zapis oznacza projekty z tym skillem jako nieaktualne. Skille z Git są tylko do odczytu, bo `Aktualizuj` zastąpiłoby zmiany zawartością repozytorium.
 
+Skill może mieć skrypty i inne pliki obok `SKILL.md`. Przy tworzeniu skilla w aplikacji dodaje je `Dodaj skrypty i pliki…`, później — `Dodaj pliki…` w szczegółach skilla albo `agentbox attach <skill> <plik|folder...>`. Szczegóły skilla pokazują listę takich plików; synchronizacja kopiuje je do projektów razem z uprawnieniami.
+
 Skill poprawiony wprost w folderze projektu — tam, gdzie pracujesz — można oddać z powrotem do biblioteki przez `⋯ → Przejmij z projektu…` albo `agentbox project adopt-changes <nazwa> --yes`. Wersja z projektu zastępuje kopię biblioteczną, a pozostałe projekty dostają ją przy swojej synchronizacji. Dwa projekty, które zmieniły ten sam skill inaczej, zatrzymują operację, zamiast po cichu wybierać jedną wersję.
 
 Ręcznie napisany katalog ze `SKILL.md`, który leży w projekcie i blokuje synchronizację, można przejąć do biblioteki w tym samym oknie albo przez `agentbox project adopt <nazwa> --yes`. Po przejęciu katalog w projekcie jest identyczny z kopią biblioteczną, więc pierwsza synchronizacja przejmuje go pod zarząd Agentbox — przejęty skill można od razu przypisać i synchronizować także w projekcie, z którego pochodzi.

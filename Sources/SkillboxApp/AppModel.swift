@@ -183,18 +183,21 @@ import SkillboxCore
     /// Which skill `markdown` belongs to. The selection changes at once while the text arrives later,
     /// so without this the editor could open — and save — one skill's text under another's name.
     @Published var markdownSkillID: String?
+    /// What the skill in `markdownSkillID` carries besides `SKILL.md`; loaded and cleared with it.
+    @Published var skillFiles: [SkillFile] = []
     /// Only the answer for the skill still selected lands. Clicking through the list starts several
     /// reads, and they do not have to finish in order. A read that fails leaves no text to edit,
     /// instead of an empty one that saving would write over the real file.
     func loadMarkdown() async {
-        guard let id = selection else { markdown = ""; markdownSkillID = nil; return }
+        guard let id = selection else { markdown = ""; markdownSkillID = nil; skillFiles = []; return }
         do {
             let text = try await requireService().skillMarkdown(skillID: id)
+            let files = try await requireService().skillFiles(skillID: id)
             guard selection == id else { return }
-            markdown = text; markdownSkillID = id
+            markdown = text; markdownSkillID = id; skillFiles = files
         } catch {
             guard selection == id else { return }
-            markdown = ""; markdownSkillID = nil
+            markdown = ""; markdownSkillID = nil; skillFiles = []
             reportError(error)
         }
     }
@@ -202,7 +205,7 @@ import SkillboxCore
     @discardableResult
     func createSkill(_ draft: NewSkillDraft) async -> Bool {
         await performing {
-            let skill = try await self.service?.createSkill(id: draft.id, name: draft.name, description: draft.description, content: draft.content, tags: draft.tags)
+            let skill = try await self.service?.createSkill(id: draft.id, name: draft.name, description: draft.description, content: draft.content, tags: draft.tags, attachments: draft.attachments)
             if let skill { self.selection = skill.id }
             self.message = "Utworzono skill \(draft.id)"
         }
@@ -277,6 +280,8 @@ import SkillboxCore
             await reload(); return true
         } catch { message = error.localizedDescription; record(.error, message); return false }
     }
+    @discardableResult
+    func addSkillFiles(_ id: String, files: [URL], replacing: Bool = false) async -> Bool { await performing { try await self.service?.addSkillFiles(skillID: id, files: files, replacing: replacing); self.message = "Dodano do \(id): \(files.map(\.lastPathComponent).joined(separator: ", "))" } }
     func saveTags(_ id: String, text: String) async { await perform { try await self.service?.setTags(skillID: id, tags: Self.csv(text)); self.message = "Zapisano tagi" } }
     @discardableResult
     func addTags(_ ids: Set<String>, text: String) async -> Bool { await performing { try await self.service?.addTags(skillIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) skilli" } }

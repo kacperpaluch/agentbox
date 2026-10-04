@@ -192,6 +192,9 @@ struct SkillDetail: View {
     @State private var isEditing = false
     @State private var draft = ""
     private var isEditable: Bool { skill.source.kind == .local }
+    /// Files picked for this skill whose names it already has; they wait here for a confirmation.
+    @State private var replacement: [URL] = []
+    private var libraryDirectory: URL { URL(fileURLWithPath: model.rootPath).appending(path: "skills").appending(path: skill.id) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -199,8 +202,13 @@ struct SkillDetail: View {
             Divider()
             editorBar
             Divider()
+            files
             content
         }
+        .confirmationDialog("Zastąpić istniejące pliki skilla?", isPresented: Binding(get: { !replacement.isEmpty }, set: { if !$0 { replacement = [] } })) {
+            Button("Zastąp", role: .destructive) { let files = replacement; Task { await model.addSkillFiles(skill.id, files: files, replacing: true) } }
+            Button("Anuluj", role: .cancel) {}
+        } message: { Text("Skill ma już: \(existing(in: replacement).joined(separator: ", ")). Obecna zawartość zostanie zastąpiona wybraną.") }
         .onAppear { tags = skill.tags.joined(separator: ", ") }
         .onChange(of: skill.id) { tags = skill.tags.joined(separator: ", "); isEditing = false; draft = "" }
         .confirmationDialog("Usunąć skill \(skill.name)?", isPresented: $confirmDelete) {
@@ -252,6 +260,9 @@ struct SkillDetail: View {
             } else if isEditable {
                 Button { draft = model.markdown; isEditing = true } label: { Label("Edytuj SKILL.md", systemImage: "square.and.pencil") }.buttonStyle(.bordered)
                     .disabled(model.markdownSkillID != skill.id)
+                Button { addFiles() } label: { Label("Dodaj pliki…", systemImage: "doc.badge.plus") }.buttonStyle(.bordered)
+                    .disabled(model.markdownSkillID != skill.id || model.isWorking)
+                    .help("Skrypty i zasoby kopiowane do skilla. Folder trafia pod swoją nazwą, plik — obok SKILL.md.")
                 Spacer()
             } else {
                 Label("Skill z Git — edycja w aplikacji jest wyłączona, bo aktualizacja zastąpiłaby zmiany.", systemImage: "lock")
@@ -260,6 +271,44 @@ struct SkillDetail: View {
             }
         }
         .padding(.horizontal, Space.section).padding(.vertical, Space.row)
+    }
+
+    /// Top-level names among `urls` that the skill already holds.
+    private func existing(in urls: [URL]) -> [String] {
+        let present = Set(model.skillFiles.map { String($0.path.prefix { $0 != "/" }).lowercased() })
+        return urls.map(\.lastPathComponent).filter { present.contains($0.lowercased()) }
+    }
+
+    private func addFiles() {
+        let urls = chooseSkillFiles()
+        guard !urls.isEmpty else { return }
+        if existing(in: urls).isEmpty { Task { await model.addSkillFiles(skill.id, files: urls) } } else { replacement = urls }
+    }
+
+    @ViewBuilder private var files: some View {
+        if model.markdownSkillID == skill.id, !model.skillFiles.isEmpty {
+            VStack(alignment: .leading, spacing: Space.tight) {
+                HStack {
+                    Text("Pliki dodatkowe (\(model.skillFiles.count))").font(.caption.bold())
+                    Spacer()
+                    Button("Pokaż w Finderze") { NSWorkspace.shared.activateFileViewerSelecting([libraryDirectory]) }.buttonStyle(.link).font(.caption)
+                }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(model.skillFiles) { file in
+                            HStack {
+                                Text(file.path).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                                if file.isExecutable { MetaBadge(text: "wykonywalny", tint: .green) }
+                                Spacer()
+                                Text(ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file)).rowMetadata()
+                            }
+                        }
+                    }
+                }.frame(maxHeight: 110)
+            }
+            .padding(.horizontal, Space.section).padding(.vertical, Space.row)
+            Divider()
+        }
     }
 
     @ViewBuilder private var content: some View {

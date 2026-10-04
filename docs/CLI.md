@@ -24,11 +24,15 @@ agentbox add https://github.com/user/repo.git [--path skills] [--branch main] [-
 agentbox tag nazwa-skilla seo audit
 agentbox update nazwa-skilla
 agentbox update --all
+agentbox attach nazwa-skilla ./scripts ./szablon.txt [--replace]
+agentbox files nazwa-skilla
 agentbox delete nazwa-skilla
 agentbox usage nazwa-skilla
 ```
 
 `new` tworzy skill prosto w bibliotece z podanej treści. `--file` wskazuje plik, a `--file -` czyta standardowe wejście, więc skill można podać potokiem. Bez `--file` powstaje krótki szkic do uzupełnienia. Treść zaczynająca się od bloku `---` jest zapisywana bez zmian; w pozostałych przypadkach Agentbox dopisuje nagłówek YAML z `--name` i `--description`.
+
+`attach` kopiuje pliki i foldery do skilla lokalnego: folder pod swoją nazwą, plik obok `SKILL.md`, z zachowaniem uprawnień. Istniejąca nazwa jest odrzucana bez `--replace`; `SKILL.md` nie można podmienić tą drogą. `files` wypisuje pliki dodatkowe skilla: ścieżkę, rozmiar w bajtach i `x` dla pliku wykonywalnego.
 
 `add` kopiuje lokalny skill albo importuje wszystkie znalezione `SKILL.md` z Git. `tag` zastępuje listę tagów wskazanego skilla. `update` działa dla skilli pochodzących z Git. `delete` usuwa skill z biblioteki i jego bezpośrednie przypisania do projektów — tak samo jak `Usuń` w szczegółach skilla; nie rusza katalogu źródłowego ani repozytorium.
 

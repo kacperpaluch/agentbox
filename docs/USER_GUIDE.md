@@ -105,6 +105,10 @@ Tak utworzony skill jest lokalny, więc później można go poprawiać w aplikac
 
 Skille dodane z dysku i napisane w aplikacji można edytować bezpośrednio w aplikacji: wybierz skill i kliknij `Edytuj SKILL.md`. Zapis aktualizuje kopię w bibliotece i od razu oznacza wszystkie projekty z tym skillem jako nieaktualne, więc widać, gdzie trzeba uruchomić synchronizację.
 
+Skill to cały katalog, nie tylko `SKILL.md`: skrypty, szablony i dokumenty pomocnicze są kopiowane do projektów razem z nim, z zachowaniem uprawnień (w tym bitu wykonywalności). W oknie `Nowy skill` wybierasz je przyciskiem `Dodaj skrypty i pliki…`, a do istniejącego skilla lokalnego dodajesz przyciskiem `Dodaj pliki…`. Wybrany folder trafia do skilla pod swoją nazwą, np. `scripts/`; pojedynczy plik ląduje obok `SKILL.md`. Jeśli skill ma już plik lub folder o tej nazwie, Agentbox pyta przed zastąpieniem. `SKILL.md` nie da się podmienić tą drogą, a dowiązanie prowadzące poza skill zatrzymuje operację. Do skilli z Git plików dodać nie można — zastąpiłaby je aktualizacja.
+
+Sekcja `Pliki dodatkowe` w szczegółach skilla wymienia wszystko, co skill niesie poza `SKILL.md`, z rozmiarem i oznaczeniem plików wykonywalnych — warto do niej zajrzeć przed przypisaniem cudzego skilla, bo to kod, który agent może uruchomić. `Pokaż w Finderze` otwiera katalog skilla w bibliotece; zmiany wprowadzone tam ręcznie (usunięcie lub edycja pliku) Agentbox wykrywa i oznacza projekty jako nieaktualne. Skill dodany z folderu na dysku jest przy `Aktualizuj` porównywany z tym folderem, więc pliki dodane tylko w bibliotece pojawią się w podglądzie jako usunięcia.
+
 Checkbox przy nagłówku grupy zaznacza wszystkie widoczne w niej skille. Po zaznaczeniu możesz dodać im wspólne tagi albo wybrać `Usuń`; Agentbox prosi o potwierdzenie, usuwa je z biblioteki i odłącza od przypisań projektów. Skille znikną z katalogów projektów przy ich następnej synchronizacji.
 
 Skille pochodzące z Git są tylko do odczytu. `Aktualizuj` zastępuje taki skill zawartością repozytorium, więc zmiana zrobiona w aplikacji zniknęłaby przy najbliższej aktualizacji. Aby zmienić taki skill, zmodyfikuj repozytorium źródłowe.

@@ -33,6 +33,13 @@ struct NewSkillDraft {
     var description = ""
     var content = ""
     var tags: [String] = []
+    /// Scripts and other resources copied in next to `SKILL.md`.
+    var attachments: [URL] = []
+}
+/// Asks for the files and folders a skill should carry besides `SKILL.md`.
+@MainActor func chooseSkillFiles() -> [URL] {
+    let panel = NSOpenPanel(); panel.canChooseFiles = true; panel.canChooseDirectories = true; panel.allowsMultipleSelection = true; panel.prompt = "Dodaj"
+    return panel.runModal() == .OK ? panel.urls : []
 }
 struct NewSkillView: View {
     @Environment(\.dismiss) private var dismiss
@@ -48,6 +55,7 @@ struct NewSkillView: View {
     @State private var description = ""
     @State private var tags = ""
     @State private var content = ""
+    @State private var attachments: [URL] = []
 
     /// Content pasted with its own YAML block is a finished `SKILL.md`, so the name and description
     /// fields would be a lie — Agentbox saves such a paste untouched and says so.
@@ -73,7 +81,16 @@ struct NewSkillView: View {
                  ? "Wykryto nagłówek YAML, więc Agentbox nie dopisuje własnego."
                  : "Agentbox dopisze nagłówek YAML z nazwą i opisem. Wklej gotowy plik z blokiem `---`, aby zachować własny nagłówek.")
                 .font(.caption).foregroundStyle(.secondary)
-            HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Utwórz skill") { Task { saving = true; defer { saving = false }; if await onCreate(NewSkillDraft(id: effectiveID, name: name, description: description, content: content, tags: AppModel.csv(tags))) { dismiss() } } }.buttonStyle(.borderedProminent).disabled(saving || !idValid || idTaken || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+            HStack {
+                Button("Dodaj skrypty i pliki…") { for url in chooseSkillFiles() where !attachments.contains(url) { attachments.append(url) } }
+                Text(attachments.isEmpty
+                     ? "Opcjonalnie. Folder trafia do skilla pod swoją nazwą (np. `scripts/`), plik — obok `SKILL.md`."
+                     : attachments.map(\.lastPathComponent).joined(separator: ", "))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Spacer()
+                if !attachments.isEmpty { Button("Wyczyść") { attachments = [] } }
+            }
+            HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Utwórz skill") { Task { saving = true; defer { saving = false }; if await onCreate(NewSkillDraft(id: effectiveID, name: name, description: description, content: content, tags: AppModel.csv(tags), attachments: attachments)) { dismiss() } } }.buttonStyle(.borderedProminent).disabled(saving || !idValid || idTaken || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
         }
         .padding(24)
         .sheetFrame(width: 720, height: 640)
