@@ -252,4 +252,17 @@ final class CommandLineTests: AgentboxTestCase {
             XCTAssertTrue(failure.lines.contains { $0.contains("app") }, "\(failure.lines)")
         }
     }
+
+    /// `docs/CLI.md` documents `--args=-y,pkg`; that form used to save a server without arguments.
+    func testOptionsAcceptTheEqualsForm() async throws {
+        let (service, _) = try cliLibrary()
+        _ = try await AgentboxCommand.run(["mcp", "server", "add", "context7", "--command", "npx", "--args=-y,@upstash/context7-mcp", "--env=TOKEN=CONTEXT7_TOKEN", "--tags=seo,docs"], service: service)
+        _ = try await AgentboxCommand.run(["mcp", "server", "add", "spaced", "--command", "npx", "--args", "-y,pkg"], service: service)
+        let servers = try await service.mcpConfiguration().servers
+        let context7 = try XCTUnwrap(servers.first { $0.name == "context7" })
+        XCTAssertEqual(context7.arguments, ["-y", "@upstash/context7-mcp"])
+        XCTAssertEqual(context7.environment, ["TOKEN": "CONTEXT7_TOKEN"])
+        XCTAssertEqual(context7.tags, ["docs", "seo"])
+        XCTAssertEqual(servers.first { $0.name == "spaced" }?.arguments, ["-y", "pkg"])
+    }
 }

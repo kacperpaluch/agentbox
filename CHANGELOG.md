@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.30.2] - 2026-10-10
+
+### Naprawiono
+
+- CLI przyjmuje opcje także w zapisie `--nazwa=wartość`, którego używa `docs/CLI.md`. Dotąd `agentbox mcp server add … --args=-y,pakiet` zapisywało serwer bez argumentów i nie zgłaszało błędu; to samo dotyczyło `--env`, `--headers` i `--tags`.
+
 ## [0.30.1] - 2026-10-04
 
 ### Naprawiono

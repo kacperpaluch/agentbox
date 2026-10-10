@@ -618,7 +618,10 @@ public enum AgentboxCommand {
             + preview.docs.map { "  dokument: +\($0.added.count) -\($0.removed.count) → \($0.file)" }
     }
 
+    /// Accepts `--name value` and `--name=value`. The second form used to be ignored without an
+    /// error, so `--args=-y,pkg` saved a server with no arguments.
     static func option(_ name: String, in args: [String]) -> String? {
+        if let inline = args.first(where: { $0.hasPrefix(name + "=") }) { return String(inline.dropFirst(name.count + 1)) }
         guard let index = args.firstIndex(of: name), index + 1 < args.count else { return nil }
         return args[index + 1]
     }
