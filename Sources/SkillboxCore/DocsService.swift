@@ -143,7 +143,7 @@ enum DocsRenderer {
         let added: [String] = (doc != nil && doc?.id != previousID) ? [doc!.id] : []
         let removed: [String] = (previousID != nil && previousID != doc?.id) ? [previousID!] : []
         let agentsContent = try renderedFile(file: agents, desired: agentsDesired, previouslyManaged: managed)
-        let claudeContent = try renderedClaudeImport(file: claude, importing: doc != nil, previouslyManaged: managed)
+        let claudeContent = try renderedClaudeImport(file: claude, document: agentsDesired, previouslyManaged: managed)
         return [
             DocPreview(file: agents.path, content: agentsContent ?? "", added: added, removed: removed, leaveAsIs: agentsContent == nil),
             DocPreview(file: claude.path, content: claudeContent ?? "", added: added, removed: removed, leaveAsIs: claudeContent == nil)
@@ -199,10 +199,14 @@ enum DocsRenderer {
     /// Blocking the whole synchronization over a `CLAUDE.md` the user wrote — what this used to do —
     /// left the project without its skills and servers too, and simply not writing it would have
     /// left `AGENTS.md` unread. So a user's file gets a marked import block appended and keeps every
-    /// other byte; a file that already imports `AGENTS.md` is left as it is. When the document goes
-    /// away, only what Agentbox wrote goes with it: the whole file if it is exactly the generated
-    /// import, just the block otherwise. Returns `nil` for a file to leave alone entirely.
-    private static func renderedClaudeImport(file: URL, importing: Bool, previouslyManaged: Bool) throws -> String? {
+    /// other byte; a file that already imports `AGENTS.md` is left as it is. A file that holds only
+    /// the document's own text (with or without that block) becomes the plain import instead: that
+    /// is what moving a `CLAUDE.md` into the library leaves behind, and appending to it made Claude
+    /// Code read the same text twice. When the document goes away, only what Agentbox wrote goes
+    /// with it: the whole file if it is exactly the generated import, just the block otherwise.
+    /// Returns `nil` for a file to leave alone entirely.
+    private static func renderedClaudeImport(file: URL, document: String?, previouslyManaged: Bool) throws -> String? {
+        let importing = document != nil
         let fm = FileManager.default
         let exists = fm.fileExists(atPath: file.path) || (try? fm.attributesOfItem(atPath: file.path)) != nil
         guard exists else { return importing ? claudeImport : "" }
@@ -213,7 +217,9 @@ enum DocsRenderer {
         }
         try requireOwnable(file)
         let existing = try SkillboxService.existingText(at: file)
-        if importing {
+        if let document {
+            let ownText = existing.replacingOccurrences(of: claudeImportBlock, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if ownText == document.trimmingCharacters(in: .whitespacesAndNewlines) { return claudeImport }
             guard !importsAgents(existing) else { return existing }
             let separator = existing.isEmpty ? "" : existing.hasSuffix("\n") ? "\n" : "\n\n"
             return existing + separator + claudeImportBlock

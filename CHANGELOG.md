@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.30.3] - 2026-10-16
+
+### Naprawiono
+
+- `CLAUDE.md`, który powtarza tylko treść przypisanego dokumentu, synchronizacja zastępuje samym `@AGENTS.md` zamiast dopisywać do niego import. Tak zostawał plik po przeniesieniu własnego `CLAUDE.md` do biblioteki, a Claude Code wczytywał wtedy tę samą treść dwa razy. Projekty, w których import już został dopisany do takiej kopii, naprawia kolejna synchronizacja.
+
 ## [0.30.2] - 2026-10-10
 
 ### Naprawiono

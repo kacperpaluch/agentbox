@@ -308,6 +308,28 @@ final class DocsTests: AgentboxTestCase {
         XCTAssertEqual(try String(contentsOf: url.appending(path: "CLAUDE.md"), encoding: .utf8), own)
     }
 
+    /// A CLAUDE.md that only repeats the document — what moving it into the library leaves behind —
+    /// would make Claude Code read the text twice if the import were appended to it.
+    func testClaudeFileRepeatingTheDocumentBecomesThePlainImport() async throws {
+        let (service, project, url) = try await docProject(claude: "# Zasady")
+
+        try await service.syncProjectTransaction(projectID: project.id)
+
+        XCTAssertEqual(try String(contentsOf: url.appending(path: "CLAUDE.md"), encoding: .utf8), "@AGENTS.md\n")
+        let statuses = try await service.projectStatuses()
+        XCTAssertEqual(statuses.first?.state, .synced)
+    }
+
+    /// The same text with the block an earlier version appended is collapsed too, so projects
+    /// already left that way are repaired by the next synchronization.
+    func testClaudeFileRepeatingTheDocumentWithAppendedImportIsRepaired() async throws {
+        let (service, project, url) = try await docProject(claude: "# Zasady\n\n" + DocsRenderer.claudeImportBlock)
+
+        try await service.syncProjectTransaction(projectID: project.id)
+
+        XCTAssertEqual(try String(contentsOf: url.appending(path: "CLAUDE.md"), encoding: .utf8), "@AGENTS.md\n")
+    }
+
     /// Removing the document takes only what Agentbox added; the user's text stays byte for byte.
     func testUnsyncRemovesOnlyTheAppendedImport() async throws {
         let own = "# Moje zasady\nUżywaj pnpm.\n"
