@@ -385,6 +385,25 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(model.operationLog.contains { $0.kind == .error && $0.text.contains("Automatyczny backup") })
     }
 
+    func testSkillWrittenIntoTheLibraryFolderIsOfferedAndRegisteredOnRequest() async throws {
+        let model = try await makeModel()
+        let skills = root.appending(path: "library/skills")
+        for (folder, name) in [("raport", "raport"), ("zly", "inna-nazwa")] {
+            try FileManager.default.createDirectory(at: skills.appending(path: folder), withIntermediateDirectories: true)
+            try "---\nname: \(name)\n---\nTreść\n".write(to: skills.appending(path: "\(folder)/SKILL.md"), atomically: true, encoding: .utf8)
+        }
+
+        await model.reload()
+        XCTAssertEqual(model.unregisteredSkills.map(\.id), ["raport", "zly"])
+        XCTAssertTrue(model.skills.isEmpty, "samo wykrycie niczego nie rejestruje")
+
+        await model.registerUnregisteredSkills()
+        XCTAssertEqual(model.skills.map(\.id), ["raport"])
+        XCTAssertEqual(model.unregisteredSkills.map(\.id), ["zly"], "folder z problemem zostaje na banerze razem z powodem")
+        XCTAssertNotNil(model.unregisteredSkills.first?.problem)
+        XCTAssertEqual(model.operationLog.first?.kind, .success)
+    }
+
     func testFailedReviewedUpdateStaysOpenAndKeepsLocalEdit() async throws {
         let model = try await makeModel()
         await model.addLocal(try makeSkill("demo"))

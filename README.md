@@ -84,7 +84,10 @@ swift run agentbox new moje-notatki --name "Moje notatki" --description "Zasady 
 swift run agentbox add ./my-skill
 swift run agentbox add https://github.com/user/repo.git --path skills
 swift run agentbox add https://github.com/user/repo.git --path skills/seo --branch main
+swift run agentbox adopt-library --yes
 ```
+
+Skill zapisany bezpośrednio w folderze `skills/` biblioteki (np. przez asystenta AI albo w edytorze) nie ma jeszcze wpisu w katalogu. Agentbox wykrywa taki folder i pokazuje go na banerze nad listą skilli z przyciskiem `Dodaj do biblioteki`; w CLI listuje go `agentbox adopt-library`, a dodaje `agentbox adopt-library --yes`. Folder musi mieć `SKILL.md`, nazwę złożoną z małych liter, cyfr i myślników, a pole `name` w nagłówku — jeśli jest — musi się z nią zgadzać. Folder, który tych warunków nie spełnia, zostaje na banerze z opisem problemu.
 
 ### Edycja i przejmowanie
 

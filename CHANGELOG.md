@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-10-17
+
+### Dodano
+
+- Skill zapisany bezpośrednio w folderze `skills/` biblioteki — np. przez asystenta AI — jest wykrywany i pokazywany na banerze nad listą skilli z przyciskiem `Dodaj do biblioteki`. Dotąd taki folder był dla Agentbox niewidoczny, bo nie miał wpisu w `catalog.json`. Folder z niepoprawną nazwą, z polem `name` innym niż nazwa folderu albo będący dowiązaniem symbolicznym zostaje na banerze z opisem problemu. W CLI: `agentbox adopt-library [--yes]`.
+
 ## [0.30.3] - 2026-10-16
 
 ### Naprawiono

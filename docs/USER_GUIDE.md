@@ -101,6 +101,18 @@ Skill liczy się jako nieaktualny, gdy jego wersja w bibliotece jest nowsza niż
 
 Tak utworzony skill jest lokalny, więc później można go poprawiać w aplikacji jak każdy skill dodany z dysku.
 
+### Skill zapisany prosto do folderu biblioteki
+
+Skill można też utworzyć poza Agentbox, zapisując jego katalog bezpośrednio w `skills/` w folderze biblioteki — tak zwykle robi asystent AI, któremu wskaże się ten folder. Agentbox zauważa taki katalog sam (biblioteka jest obserwowana), ale nie dopisuje go do katalogu bez pytania, bo w chwili wykrycia plik może być jeszcze w trakcie zapisu. Nad listą skilli pojawia się baner `Nowe skille w folderze biblioteki` z przyciskiem `Dodaj do biblioteki`; po kliknięciu skill staje się zwykłym skillem lokalnym, który można edytować i przypisywać.
+
+Folder trafia na baner, gdy zawiera `SKILL.md`. Dodać da się go, gdy:
+
+- nazwa folderu składa się z małych liter, cyfr i pojedynczych myślników — ona staje się identyfikatorem skilla,
+- pole `name` w nagłówku `SKILL.md`, jeśli jest, zgadza się z nazwą folderu,
+- folder nie jest dowiązaniem symbolicznym (taki skill dodaj przez `Dodaj skill → Z folderu na dysku`, wskazując jego cel).
+
+Folder, który nie spełnia któregoś warunku, zostaje na banerze z opisem problemu; po poprawce znika z niego sam. Z terminala to samo robi `agentbox adopt-library` (lista) i `agentbox adopt-library --yes` (dodanie wszystkich poprawnych). Jeśli któryś folder trzeba było pominąć, polecenie kończy się błędem, żeby skrypt to zauważył.
+
 ### Edycja skilli
 
 Skille dodane z dysku i napisane w aplikacji można edytować bezpośrednio w aplikacji: wybierz skill i kliknij `Edytuj SKILL.md`. Zapis aktualizuje kopię w bibliotece i od razu oznacza wszystkie projekty z tym skillem jako nieaktualne, więc widać, gdzie trzeba uruchomić synchronizację.

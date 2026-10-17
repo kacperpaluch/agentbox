@@ -136,3 +136,81 @@ extension SkillboxService {
         return adopted
     }
 }
+
+/// A folder inside the library's `skills/` that `catalog.json` does not list — typically a skill
+/// written straight into the library by an assistant or an editor.
+public struct UnregisteredSkill: Identifiable, Hashable, Sendable {
+    /// The folder name, which is also the identifier it would be registered under.
+    public var id: String
+    public var path: String
+    /// Why it cannot be registered as it is; nil when it can.
+    public var problem: String?
+}
+
+extension SkillboxService {
+    /// Skill folders in the library that the catalog does not know about.
+    ///
+    /// Listed, never registered on the spot: the library watcher reports a folder while it is still
+    /// being written, and only the user can tell a finished skill from a half-saved one. A folder
+    /// without `SKILL.md` is not a skill yet and is left out; anything else that stands in the way —
+    /// a name the identifier rules refuse, a `name:` that disagrees with the folder, a symlink —
+    /// is reported with the reason instead of being skipped silently.
+    public func unregisteredSkills() async throws -> [UnregisteredSkill] {
+        let fm = FileManager.default
+        let library = await store.skillsDirectory
+        guard fm.fileExists(atPath: library.path) else { return [] }
+        let known = Set(try await store.catalog().skills.map(\.id))
+        var found: [UnregisteredSkill] = []
+        let entries = try fm.contentsOfDirectory(at: library, includingPropertiesForKeys: [.isSymbolicLinkKey, .isDirectoryKey], options: [.skipsHiddenFiles])
+        for entry in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            let folder = entry.lastPathComponent
+            guard !known.contains(folder) else { continue }
+            let values = try entry.resourceValues(forKeys: [.isSymbolicLinkKey, .isDirectoryKey])
+            if values.isSymbolicLink == true {
+                // Registering means rewriting the folder as a plain copy, which would cut the link
+                // the user made on purpose.
+                found.append(UnregisteredSkill(id: folder, path: entry.path, problem: "folder jest dowiązaniem symbolicznym — dodaj jego cel przez „Dodaj skill → Z folderu na dysku”"))
+                continue
+            }
+            guard values.isDirectory == true, fm.fileExists(atPath: entry.appending(path: "SKILL.md").path) else { continue }
+            found.append(UnregisteredSkill(id: folder, path: entry.path, problem: Self.registrationProblem(folder: folder, skillFile: entry.appending(path: "SKILL.md"))))
+        }
+        return found
+    }
+
+    /// Adds the given library folders to the catalog. Every folder is checked again first, and one
+    /// that cannot be registered refuses the whole operation, so nothing is half-added.
+    @discardableResult
+    public func registerUnregisteredSkills(_ ids: [String]) async throws -> [Skill] {
+        let candidates = Dictionary(try await unregisteredSkills().map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var catalog = try await store.catalog()
+        var registered: [Skill] = []
+        var copies: [(source: URL, id: String)] = []
+        for id in ids {
+            guard let candidate = candidates[id] else { throw SkillboxError.invalidSkill("w bibliotece nie ma niezarejestrowanego folderu \(id)") }
+            if let problem = candidate.problem { throw SkillboxError.invalidSkill("\(id): \(problem)") }
+            let directory = URL(fileURLWithPath: candidate.path)
+            let skill = Skill(id: id, name: id, source: SkillSource(kind: .local, location: directory.path))
+            catalog.skills.append(skill)
+            registered.append(skill)
+            // Rewritten through the same path as every import: no `.git`, no link leading outside
+            // the skill, and the original folder put back if the catalog save fails.
+            copies.append((directory, id))
+        }
+        let updated = catalog
+        try await replacingLibrarySkills(copies) { try await self.store.save(updated) }
+        return registered
+    }
+
+    static func registrationProblem(folder: String, skillFile: URL) -> String? {
+        guard folder.range(of: "^[a-z0-9]+(?:-[a-z0-9]+)*$", options: .regularExpression) != nil else {
+            return "nazwa folderu może zawierać tylko małe litery, cyfry i pojedyncze myślniki"
+        }
+        let declared: String?
+        do { declared = try declaredName(in: skillFile) } catch { return "nie można odczytać SKILL.md: \(error.localizedDescription)" }
+        if let declared, declared.lowercased().replacingOccurrences(of: " ", with: "-") != folder {
+            return "pole name w SKILL.md („\(declared)”) różni się od nazwy folderu — zmień jedno z nich, aby się zgadzały"
+        }
+        return nil
+    }
+}

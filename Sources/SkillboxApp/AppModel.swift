@@ -43,6 +43,8 @@ import SkillboxCore
     /// What this Mac itself gets. A view onto `selections`, so `Projekty` can list it as a row.
     var global: AttachmentSelection { selections[SelectionTarget.global.storageKey] ?? AttachmentSelection() }
     @Published var detectedFolders: [DetectedProjectFolder] = []
+    /// Skill folders written straight into the library that the catalog does not list yet.
+    @Published var unregisteredSkills: [UnregisteredSkill] = []
     /// Set when the library folder cannot be opened at all (missing disk, no permissions).
     /// The UI then explains the situation instead of showing an empty library that looks like
     /// lost data.
@@ -93,7 +95,7 @@ import SkillboxCore
     // tags), so it recomputes them here too. That is the only place callers need to remember to
     // call — a skill tag edit or a new tagged MCP server no longer leaves the Projects tab showing
     // a stale "synced" badge until someone happens to touch a project directly.
-    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); docs = try await service?.docsConfiguration() ?? DocsConfiguration(); claudePluginLibrary = try await service?.libraryClaudePlugins() ?? []; selections = try await service?.allSelections() ?? [:]; projectDefaults = try await service?.projectDefaults() ?? AttachmentSelection(tools: Tool.allCases); if !skills.contains(where: { $0.id == selection }) { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses() }
+    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); docs = try await service?.docsConfiguration() ?? DocsConfiguration(); claudePluginLibrary = try await service?.libraryClaudePlugins() ?? []; selections = try await service?.allSelections() ?? [:]; projectDefaults = try await service?.projectDefaults() ?? AttachmentSelection(tools: Tool.allCases); if !skills.contains(where: { $0.id == selection }) { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; do { unregisteredSkills = try await service?.unregisteredSkills() ?? [] } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses() }
 
     // MARK: Parent folders
 
@@ -401,7 +403,14 @@ import SkillboxCore
         }
     }
 
-    func adoptSkills(_ items: [AdoptableSkill]) async {
+    /// Registers the library folders that can be registered as they are. The ones with a problem
+    /// stay in the banner with their reason, so nothing is left out without a word.
+    func registerUnregisteredSkills() async {
+        let ids = unregisteredSkills.filter { $0.problem == nil }.map(\.id)
+        guard !ids.isEmpty else { return }
+        await perform { let added = try await self.service?.registerUnregisteredSkills(ids) ?? []; self.message = "Dodano do biblioteki: \(added.map(\.id).joined(separator: ", "))" }
+    }
+        func adoptSkills(_ items: [AdoptableSkill]) async {
         await perform { let adopted = try await self.service?.adoptSkills(items) ?? []; self.message = "Przejęto \(adopted.count) skilli do biblioteki" }
     }
     /// Where a library item actually lands. Read on demand — a confirmation dialog asking "usunąć?"

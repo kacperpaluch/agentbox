@@ -49,6 +49,7 @@ struct SkillsPane: View {
         HSplitView {
             VStack(spacing: 0) {
                 actionBar
+                if !model.unregisteredSkills.isEmpty { unregisteredBanner }
                 skillList
             }
             .frame(minWidth: 410, idealWidth: 480)
@@ -70,6 +71,31 @@ struct SkillsPane: View {
         } message: {
             Text("Skille zostaną usunięte z biblioteki i przypisań projektów. Znikną z folderów projektów przy kolejnej synchronizacji.")
         }
+    }
+
+    /// A skill saved straight into the library folder — by an assistant, an editor, Finder — is not
+    /// in the catalog until someone adds it. Offered here instead of registered on the spot, because
+    /// the folder may still be in the middle of being written.
+    private var unregisteredBanner: some View {
+        let ready = model.unregisteredSkills.filter { $0.problem == nil }
+        let blocked = model.unregisteredSkills.filter { $0.problem != nil }
+        return HStack(alignment: .top, spacing: Space.section - 2) {
+            Image(systemName: "sparkle.magnifyingglass").foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(model.unregisteredSkills.count == 1 ? "Nowy skill w folderze biblioteki" : "Nowe skille w folderze biblioteki: \(model.unregisteredSkills.count)").font(.callout.weight(.medium))
+                if !ready.isEmpty { Text(ready.map(\.id).joined(separator: ", ")).rowMetadata().lineLimit(2) }
+                ForEach(blocked) { item in
+                    Label("\(item.id): \(item.problem ?? "")", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).lineLimit(2).textSelection(.enabled)
+                }
+            }
+            Spacer()
+            if !ready.isEmpty {
+                Button(ready.count == 1 ? "Dodaj do biblioteki" : "Dodaj \(ready.count) do biblioteki") { Task { await model.registerUnregisteredSkills() } }
+                    .buttonStyle(.borderedProminent).disabled(model.isWorking)
+            }
+        }
+        .padding(.horizontal, Space.page).padding(.vertical, Space.row + 2)
+        .background(.quaternary.opacity(0.4))
     }
 
     // One row instead of two stacked toolbars: the add actions swap for a selection bar the moment

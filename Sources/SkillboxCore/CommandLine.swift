@@ -12,6 +12,7 @@ public enum AgentboxCommand {
       agentbox new <id> [--name x] [--description y] [--tags a,b] [--file plik|-]
       agentbox attach <skill> <plik|folder...> [--replace] | files <skill>
       agentbox delete <skill> | usage <skill>
+      agentbox adopt-library [--yes]
       agentbox project add|set|list|status|explain|adopt|adopt-changes|unsync|remove ...
       agentbox project root-add|root-adopt|roots|scan|adopt-new|ignore-new ...
       agentbox sync project <name> [--dry-run]
@@ -94,6 +95,21 @@ public enum AgentboxCommand {
             let report = try await service.usage(ofSkill: rest[0])
             guard let summary = report.summary else { return ["Skill \(rest[0]) nie jest przypisany do niczego"] }
             return ["Skill \(rest[0]) — używany przez: \(summary)"] + report.projects.map { "  \($0)" }
+        // Skill folders written straight into the library's skills/ that the catalog does not list.
+        case "adopt-library":
+            let found = try await service.unregisteredSkills()
+            guard !found.isEmpty else { return ["Brak niezarejestrowanych folderów w bibliotece."] }
+            let ready = found.filter { $0.problem == nil }, blocked = found.filter { $0.problem != nil }
+            let problems = blocked.map { "  ✗ \($0.id)\t\($0.problem!)" }
+            guard args.contains("--yes") else {
+                return ["Niezarejestrowane foldery w bibliotece: \(found.count)"] + ready.map { "  \($0.id)" } + problems
+                    + (ready.isEmpty ? [] : ["Dodaj --yes, aby dodać je do biblioteki."])
+            }
+            let registered = ready.isEmpty ? [] : try await service.registerUnregisteredSkills(ready.map(\.id))
+            let lines = ["Dodano \(registered.count): \(registered.map(\.id).joined(separator: ", "))"] + problems
+            // A folder left out must be visible to automation, not just printed.
+            guard blocked.isEmpty else { throw PartialFailure(lines: lines, errorDescription: "pominięto \(blocked.count) folderów") }
+            return lines
         case "project": return try await project(rest, service: service, args: args)
         case "sync": return try await sync(rest, service: service, args: args)
         case "refresh": return try await refresh(service: service)
