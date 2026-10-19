@@ -16,6 +16,7 @@ projects.local.json
 .claude/
 .codex/
 .opencode/
+.vibe/
 .skillbox/
 .mcp.json
 opencode.json
