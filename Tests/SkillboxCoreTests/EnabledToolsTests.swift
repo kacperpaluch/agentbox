@@ -109,6 +109,29 @@ final class EnabledToolsTests: AgentboxTestCase {
         await XCTAssertThrowsErrorAsync(try await AgentboxCommand.run(["tools", "set", "claude,nope"], service: service))
     }
 
+    func testAddToolReachesEveryFolderAndOwnProjectButNotFollowers() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let workspace = root.appending(path: "workspace")
+        for name in ["follower", "own"] { try FileManager.default.createDirectory(at: workspace.appending(path: name), withIntermediateDirectories: true) }
+        try FileManager.default.createDirectory(at: root.appending(path: "solo"), withIntermediateDirectories: true)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addProject(name: "follower", path: workspace.appending(path: "follower").path, tools: [.claude])
+        _ = try await service.addProject(name: "own", path: workspace.appending(path: "own").path, tools: [.claude])
+        _ = try await service.addProject(name: "solo", path: root.appending(path: "solo").path, tools: [.vibe])
+        _ = try await AgentboxCommand.run(["project", "root-adopt", "ws", workspace.path, "--keep-own", "own"], service: service)
+
+        let lines = try await AgentboxCommand.run(["project", "add-tool", "vibe"], service: service)
+        XCTAssertEqual(lines.first, "Dodano vibe: 1 folderów, 1 projektów z własnymi ustawieniami")
+        let resolved = Dictionary(uniqueKeysWithValues: try await service.listProjects().map { ($0.name, $0.tools) })
+        XCTAssertEqual(resolved, ["follower": [.claude, .vibe], "own": [.claude, .vibe], "solo": [.vibe]])
+        // The follower gets it through the folder; nothing was written under its own key.
+        let stored = try await service.storedProjects()
+        let follower = try XCTUnwrap(stored.first { $0.name == "follower" })
+        XCTAssertEqual(follower.tools, [])
+        let again = try await AgentboxCommand.run(["project", "add-tool", "vibe"], service: service)
+        XCTAssertEqual(again.first, "Dodano vibe: 0 folderów, 0 projektów z własnymi ustawieniami")
+    }
+
     func testFolderAdoptedFromCommandLineKeepsSwitchedOffClientOfItsProjects() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let workspace = root.appending(path: "workspace")

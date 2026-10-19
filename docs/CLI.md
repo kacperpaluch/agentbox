@@ -54,6 +54,12 @@ agentbox tools
 agentbox tools set claude,codex
 ```
 
+```bash
+agentbox project add-tool vibe
+```
+
+`project add-tool` dodaje klienta do wszystkich folderów nadrzędnych i projektów z własnymi ustawieniami; projekty podążające za folderem dostają go przez folder. Nic nie jest synchronizowane — sprawdź `agentbox sync all --dry-run` i zsynchronizuj.
+
 `tools` pokazuje, z których klientów (`claude`, `codex`, `opencode`, `vibe`) korzystasz na tym Macu. Synchronizacja pomija wyłączonych, nie zapisując ani nie usuwając ich plików. Bez `--tools` polecenia `project add`, `project root-add` i `sync global` biorą włączonych klientów; podanie w `--tools` wyłączonego albo nieznanego klienta kończy się błędem.
 
 ## Projekty

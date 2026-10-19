@@ -13,7 +13,7 @@ public enum AgentboxCommand {
       agentbox attach <skill> <plik|folder...> [--replace] | files <skill>
       agentbox delete <skill> | usage <skill>
       agentbox adopt-library [--yes]
-      agentbox project add|set|list|status|explain|adopt|adopt-changes|unsync|remove ...
+      agentbox project add|set|add-tool|list|status|explain|adopt|adopt-changes|unsync|remove ...
       agentbox project root-add|root-adopt|roots|scan|adopt-new|ignore-new ...
       agentbox sync project <name> [--dry-run]
       agentbox sync all [--dry-run]
@@ -156,6 +156,14 @@ public enum AgentboxCommand {
         case "set" where rest.count >= 2:
             try await service.configureProject(name: rest[1], skillIDs: csv("--skills", in: args), tags: csv("--tags", in: args))
             return ["Zapisano projekt"]
+        case "add-tool" where rest.count >= 2:
+            let added = try await Self.tools(in: ["--tools", rest[1]], service: service)
+            var lines: [String] = []
+            for tool in added {
+                let changed = try await service.addToolEverywhere(tool)
+                lines.append("Dodano \(tool.rawValue): \(changed.folders) folderów, \(changed.projects) projektów z własnymi ustawieniami")
+            }
+            return lines + ["Pliki powstaną przy synchronizacji — sprawdź podgląd: agentbox sync all --dry-run"]
         case "adopt" where rest.count >= 2:
             let project = try await resolve(rest[1], service: service)
             let candidates = try await service.adoptableSkills(projectID: project.id)
@@ -275,7 +283,7 @@ public enum AgentboxCommand {
         return found.filter { $0.rootID == root.id }
     }
 
-    private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode,vibe] | set <nazwa> [--skills a,b] [--tags web] | list | status | explain <nazwa> | adopt <nazwa> [--yes] | adopt-changes <nazwa> [--yes] | unsync <nazwa> | remove <nazwa> [--clean] | root-adopt <nazwa> <folder> [--skills a,b] [--tags x] [--keep-own projekt] | root-add <nazwa> <folder> [--tools t] [--skills a,b] [--tags x] [--folders alpha,beta] [--no-watch] | roots | scan [--root nazwa] | adopt-new [--root nazwa] [--yes] [--sync] | ignore-new [--root nazwa] | unignore <folder>"
+    private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode,vibe] | set <nazwa> [--skills a,b] [--tags web] | add-tool <narzędzie> | list | status | explain <nazwa> | adopt <nazwa> [--yes] | adopt-changes <nazwa> [--yes] | unsync <nazwa> | remove <nazwa> [--clean] | root-adopt <nazwa> <folder> [--skills a,b] [--tags x] [--keep-own projekt] | root-add <nazwa> <folder> [--tools t] [--skills a,b] [--tags x] [--folders alpha,beta] [--no-watch] | roots | scan [--root nazwa] | adopt-new [--root nazwa] [--yes] [--sync] | ignore-new [--root nazwa] | unignore <folder>"
 
     private static func sync(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
         guard let mode = rest.first else { return [syncUsage] }

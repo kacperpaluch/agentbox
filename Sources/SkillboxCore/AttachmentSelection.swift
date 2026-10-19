@@ -185,6 +185,26 @@ extension SkillboxService {
         try await store.save(config)
     }
 
+    /// Adds a client to every parent folder and every project with its own settings, in one save.
+    /// A project following its folder gets it through the folder. Returns how many places changed;
+    /// a place that already had the client is left as it was.
+    @discardableResult
+    public func addToolEverywhere(_ tool: Tool) async throws -> (folders: Int, projects: Int) {
+        var config = try await store.configuration()
+        var folders = 0, projects = 0
+        let targets = config.roots.map { SelectionTarget.root($0.id) }
+            + config.projects.filter { !config.inheritsRoot($0) }.map { SelectionTarget.project($0.id) }
+        for target in targets {
+            var selection = config.storedSelection(for: target)
+            guard !selection.tools.contains(tool) else { continue }
+            selection.tools = (selection.tools + [tool]).sorted { $0.rawValue < $1.rawValue }
+            config.selections[target.storageKey] = selection
+            if case .root = target { folders += 1 } else { projects += 1 }
+        }
+        if folders + projects > 0 { try await store.save(config) }
+        return (folders, projects)
+    }
+
     /// Every place's attachments in one read. The GUI keeps this in memory and answers "what is
     /// attached here" from it on every redraw, instead of hitting the store per row.
     public func allSelections() async throws -> [String: AttachmentSelection] {

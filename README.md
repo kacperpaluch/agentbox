@@ -158,7 +158,7 @@ Usunięcie projektu usuwa jedynie wpis i przypisania MCP z Agentbox. Folder proj
 
 ### Używane narzędzia
 
-`Ustawienia → Ogólne → Używane narzędzia` mówi, z których klientów korzystasz na tym Macu. Wyłączony klient znika z wyboru w edytorach, a każda synchronizacja — projektów i globalna — go pomija: nie zapisuje ani nie usuwa jego plików. Projekty zachowują go w swoich ustawieniach, więc po ponownym włączeniu wystarczy zsynchronizować. Żeby usunąć pliki klienta z projektu, odznacz go w ustawieniach projektu albo użyj `Usuń i posprzątaj pliki`. W CLI: `agentbox tools` i `agentbox tools set claude,codex`; `--tools` domyślnie przyjmuje włączonych klientów.
+`Ustawienia → Ogólne → Używane narzędzia` mówi, z których klientów korzystasz na tym Macu. Wyłączony klient znika z wyboru w edytorach, a każda synchronizacja — projektów i globalna — go pomija: nie zapisuje ani nie usuwa jego plików. Projekty zachowują go w swoich ustawieniach, więc po ponownym włączeniu wystarczy zsynchronizować. Żeby usunąć pliki klienta z projektu, odznacz go w ustawieniach projektu albo użyj `Usuń i posprzątaj pliki`. W CLI: `agentbox tools` i `agentbox tools set claude,codex`; `--tools` domyślnie przyjmuje włączonych klientów. `agentbox project add-tool vibe` dodaje klienta naraz do wszystkich folderów i projektów.
 
 ### Mistral Vibe
 

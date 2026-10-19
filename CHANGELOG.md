@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-10-19
+
+### Dodano
+
+- `agentbox project add-tool <narzędzie>` dodaje klienta do wszystkich folderów nadrzędnych i projektów z własnymi ustawieniami naraz — np. `agentbox project add-tool vibe` po aktualizacji do 0.32.0. Projekty podążające za folderem dostają go przez folder. Polecenie niczego nie synchronizuje; pliki powstają przy następnej synchronizacji.
+
 ## [0.32.0] - 2026-10-19
 
 ### Dodano
