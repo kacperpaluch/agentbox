@@ -103,6 +103,7 @@ struct ContentView: View {
         }
         .sheet(item: $model.updateReview) { plan in SkillUpdatesView(model: model, plan: plan, synchronizing: model.reviewIncludesSync).id(plan.id) }
         .sheet(isPresented: $showHistory) { OperationHistoryView(entries: model.operationLog) }
+        .environment(\.enabledTools, model.enabledTools)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in Task { await model.scanRootsOnActivation() } }
         .toolbar {
             Menu {

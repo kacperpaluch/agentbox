@@ -23,7 +23,9 @@ extension LocalConfiguration {
     public func resolved(_ project: Project) -> Project {
         var resolved = project
         let selection = storedSelection(for: .project(selectionID(for: project)))
-        resolved.tools = selection.tools
+        // Synchronization sees only the clients this Mac uses; editors read `storedProjects()`, so
+        // a switched-off client stays in the selection itself.
+        resolved.tools = selection.tools.filter(activeTools.contains)
         resolved.skillIDs = selection.skillIDs
         resolved.tags = selection.skillTags
         resolved.excludedSkillIDs = selection.excludedSkillIDs.isEmpty ? nil : selection.excludedSkillIDs

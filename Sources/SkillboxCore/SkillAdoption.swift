@@ -41,7 +41,7 @@ extension SkillboxService {
         var found: [DriftedSkill] = []
         for project in config.resolvedProjects.sorted(by: { $0.name < $1.name }) where projectID == nil || project.id == projectID {
             let projectURL = URL(fileURLWithPath: project.path)
-            for tool in project.tools + Self.abandonedTools(project: project) {
+            for tool in project.tools + Self.abandonedTools(project: project, among: config.activeTools) {
                 let target = try Self.managedTarget(project: projectURL, tool: tool)
                 let manifest: SkillManifest
                 do { manifest = try Self.skillManifest(at: target) } catch {

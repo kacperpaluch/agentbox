@@ -6,6 +6,22 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-10-19
+
+### Dodano
+
+- Obsługa Mistral Vibe. Skille trafiają do `.vibe/skills/` w projekcie i do `~/.vibe/skills` globalnie, a serwery MCP do bloku `[[mcp_servers]]` w `.vibe/config.toml`, który dopisuje się do reszty ustawień projektu i nie zmienia ich. Synchronizacja zatrzymuje się, zamiast zapisać serwer, który w Vibe nie zadziała: serwer STDIO odwołujący się do zmiennej systemowej (Vibe jej nie przekazuje), serwer SSE oraz serwer HTTP z więcej niż jednym nagłówkiem ze zmiennej. `.vibe/config.toml` trafia do `.git/info/exclude`. Istniejące projekty nie dostają Vibe same — zaznacz go w ustawieniach projektu albo folderu.
+- `Ustawienia → Ogólne → Używane narzędzia`: wybór klientów, z których korzystasz na tym Macu. Wyłączony klient znika z edytorów, a synchronizacja go pomija, nie zapisując ani nie usuwając jego plików; projekty zachowują go w swoich ustawieniach. W CLI: `agentbox tools [set claude,codex]`.
+
+### Zmieniono
+
+- Bez `--tools` polecenia `project add`, `project root-add` i `sync global` biorą klientów włączonych w ustawieniach zamiast stałej listy `claude,codex,opencode`. Nieznana nazwa w `--tools` jest teraz błędem; dotąd była pomijana bez słowa.
+
+### Uwagi
+
+- Serwera logującego się przez OAuth nie przypisuj w Agentbox do projektu z Vibe — dodaj go w Vibe poleceniem `vibe mcp add <url>`. Wpis z projektu nie ma danych logowania, a zastąpiłby globalny wpis o tej samej nazwie.
+- Gdy Vibe zostanie zaznaczony w którymkolwiek projekcie, folderze albo wyborze globalnym, wersje starsze niż 0.32.0 nie odczytają już biblioteki. Przed powrotem do starszej wersji odznacz Vibe albo przywróć snapshot sprzed zmiany.
+
 ## [0.31.0] - 2026-10-17
 
 ### Dodano

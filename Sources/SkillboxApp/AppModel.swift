@@ -39,6 +39,8 @@ import SkillboxCore
     @Published var selections: [String: AttachmentSelection] = [:]
     /// A local template used only to prefill the editor for a newly added project.
     @Published var projectDefaults = AttachmentSelection(tools: Tool.allCases)
+    /// Clients this Mac uses. Pickers offer only these; the others are skipped by every sync.
+    @Published var enabledTools = Tool.allCases
     @Published var claudePluginLibrary: [ClaudePluginDefinition] = []
     /// What this Mac itself gets. A view onto `selections`, so `Projekty` can list it as a row.
     var global: AttachmentSelection { selections[SelectionTarget.global.storageKey] ?? AttachmentSelection() }
@@ -95,7 +97,7 @@ import SkillboxCore
     // tags), so it recomputes them here too. That is the only place callers need to remember to
     // call — a skill tag edit or a new tagged MCP server no longer leaves the Projects tab showing
     // a stale "synced" badge until someone happens to touch a project directly.
-    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); docs = try await service?.docsConfiguration() ?? DocsConfiguration(); claudePluginLibrary = try await service?.libraryClaudePlugins() ?? []; selections = try await service?.allSelections() ?? [:]; projectDefaults = try await service?.projectDefaults() ?? AttachmentSelection(tools: Tool.allCases); if !skills.contains(where: { $0.id == selection }) { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; do { unregisteredSkills = try await service?.unregisteredSkills() ?? [] } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses() }
+    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); docs = try await service?.docsConfiguration() ?? DocsConfiguration(); claudePluginLibrary = try await service?.libraryClaudePlugins() ?? []; selections = try await service?.allSelections() ?? [:]; projectDefaults = try await service?.projectDefaults() ?? AttachmentSelection(tools: Tool.allCases); enabledTools = try await service?.enabledTools() ?? Tool.allCases; if !skills.contains(where: { $0.id == selection }) { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; do { unregisteredSkills = try await service?.unregisteredSkills() ?? [] } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses() }
 
     // MARK: Parent folders
 
@@ -350,6 +352,10 @@ import SkillboxCore
     func saveProjectDefaults(_ selection: AttachmentSelection) async -> Bool {
         await performing { try await self.requireService().setProjectDefaults(selection); self.message = "Zapisano domyślne ustawienia nowych projektów" }
     }
+    @discardableResult
+    func setEnabledTools(_ tools: [Tool]) async -> Bool {
+        await performing { try await self.requireService().setEnabledTools(tools); self.message = "Używane narzędzia: \(Tool.allCases.filter(tools.contains).map { $0.rawValue.capitalized }.joined(separator: ", "))" }
+    }
     private func requireService() throws -> SkillboxService {
         guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
         return service
@@ -487,7 +493,7 @@ import SkillboxCore
         switch tool {
         case .codex: GlobalMCPDiscovery.codexGlobalServerNames()
         case .claude: GlobalMCPDiscovery.claudeGlobalServerNames()
-        case .opencode: []
+        case .opencode, .vibe: []
         }
     }
     /// One row in the "MCP globalne" tab: a single real project that can see the tool's global

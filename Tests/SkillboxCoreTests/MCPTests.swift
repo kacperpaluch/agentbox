@@ -172,7 +172,8 @@ final class MCPTests: AgentboxTestCase {
         let service = try SkillboxService(root: root.appending(path: "data"))
         let json = #"{"local":{"command":"npx","args":["-y","pkg"],"env":{"TOKEN":"${TOKEN}"}},"remote":{"type":"http","url":"https://example.com/mcp","headers":{"Authorization":"Bearer dummy-secret"}}}"#
         let imported = try await service.importMCPJSON(json)
-        let project = try await service.addProject(name: "golden", path: projectURL.path, tools: Tool.allCases)
+        // Vibe cannot forward `${TOKEN}` to a stdio server; it has its own golden test below.
+        let project = try await service.addProject(name: "golden", path: projectURL.path, tools: [.claude, .codex, .opencode])
         try await service.setMCPServers(projectID: project.id, serverIDs: imported.servers.map(\.id), tags: [])
         let previews = try await service.previewMCP(projectID: project.id)
         let fixtures: [Tool: String] = [.claude: "claude-mcp.json", .codex: "codex-mcp.toml", .opencode: "opencode-mcp.json"]
@@ -182,6 +183,61 @@ final class MCPTests: AgentboxTestCase {
             XCTAssertEqual(preview.content.trimmingCharacters(in: .whitespacesAndNewlines), expected.trimmingCharacters(in: .whitespacesAndNewlines), "Niezgodny format \(preview.tool)")
         }
     }
+    func testGoldenVibeConfigKeepsUserServersAndRefusesWhatVibeCannotExpress() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: projectURL.appending(path: ".vibe"), withIntermediateDirectories: true)
+        let config = projectURL.appending(path: ".vibe/config.toml")
+        let own = "active_model = \"devstral\"\n\n[[mcp_servers]]\nname = \"mine\"\ntransport = \"stdio\"\ncommand = \"mine\""
+        try own.write(to: config, atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        let json = #"{"local":{"command":"npx","args":["-y","pkg"],"env":{"TOKEN":"dummy-secret"}},"remote":{"type":"http","url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${API_TOKEN}","X-Team":"dummy-team"}}}"#
+        let imported = try await service.importMCPJSON(json)
+        let project = try await service.addProject(name: "vibe", path: projectURL.path, tools: [.vibe])
+        try await service.setMCPServers(projectID: project.id, serverIDs: imported.servers.map(\.id), tags: [])
+        let previews = try await service.previewMCP(projectID: project.id)
+        let preview = try XCTUnwrap(previews.first)
+        let expectedURL = try XCTUnwrap(Bundle.module.url(forResource: "vibe-mcp.toml", withExtension: nil, subdirectory: "Fixtures"))
+        XCTAssertEqual(preview.content, own + "\n\n" + (try String(contentsOf: expectedURL, encoding: .utf8)))
+        _ = try await service.syncMCP(projectID: project.id)
+
+        // Nothing assigned any more: the user's own server and settings are all that is left.
+        try await service.setMCPServers(projectID: project.id, serverIDs: [], tags: [])
+        _ = try await service.syncMCP(projectID: project.id)
+        XCTAssertEqual(try String(contentsOf: config, encoding: .utf8), own + "\n")
+
+        for server in [MCPServer(name: "mine", transport: .stdio, command: "npx"),
+                       MCPServer(name: "events", transport: .sse, url: "https://example.com/sse"),
+                       MCPServer(name: "github", transport: .stdio, command: "npx", environment: ["GITHUB_TOKEN": "GITHUB_TOKEN"])] {
+            try await service.saveMCPServer(server)
+            let library = try await service.mcpConfiguration().servers
+            let id = try XCTUnwrap(library.first { $0.name == server.name }?.id)
+            try await service.setMCPServers(projectID: project.id, serverIDs: [id], tags: [])
+            await XCTAssertThrowsErrorAsync(try await service.previewMCP(projectID: project.id))
+        }
+        XCTAssertEqual(try String(contentsOf: config, encoding: .utf8), own + "\n", "odmowa niczego nie zapisuje")
+    }
+
+    func testVibeConflictDetectionSeesCommentedHeaderAndRefusesInlineArray() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let projectURL = root.appending(path: "project")
+        try FileManager.default.createDirectory(at: projectURL.appending(path: ".vibe"), withIntermediateDirectories: true)
+        let config = projectURL.appending(path: ".vibe/config.toml")
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        try await service.saveMCPServer(MCPServer(name: "api", transport: .stdio, command: "npx"))
+        let project = try await service.addProject(name: "vibe", path: projectURL.path, tools: [.vibe])
+        try await service.setMCPServers(projectID: project.id, serverIDs: try await service.mcpConfiguration().servers.map(\.id), tags: [])
+        for own in ["[[mcp_servers]] # mój\nname = \"api\"\ntransport = \"stdio\"\ncommand = \"x\"\n",
+                    "mcp_servers = [{ name = \"other\", transport = \"stdio\", command = \"x\" }]\n"] {
+            try own.write(to: config, atomically: true, encoding: .utf8)
+            await XCTAssertThrowsErrorAsync(try await service.previewMCP(projectID: project.id))
+        }
+        // A key of that name inside some table is not the server list.
+        try "[agents.review]\nmcp_servers = [\"x\"]\n".write(to: config, atomically: true, encoding: .utf8)
+        let previews = try await service.previewMCP(projectID: project.id)
+        XCTAssertEqual(previews.first?.added, ["api"])
+    }
+
     func testMCPApplyRollsBackEarlierFileWhenLaterWriteFails() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -258,7 +314,7 @@ final class MCPTests: AgentboxTestCase {
         try "{\n// existing user setting\n\"theme\": \"dark\",\n}".write(to: projectURL.appending(path: "opencode.jsonc"), atomically: true, encoding: .utf8)
         try "model = \"test\"\n".write(to: projectURL.appending(path: ".codex/config.toml"), atomically: true, encoding: .utf8)
         let service = try SkillboxService(root: root.appending(path: "data"))
-        let project = try await service.addProject(name: "mcp", path: projectURL.path, tools: Tool.allCases)
+        let project = try await service.addProject(name: "mcp", path: projectURL.path, tools: [.claude, .codex, .opencode])
         let server = MCPServer(name: "context7", transport: .stdio, command: "npx", arguments: ["-y", "context7"], environment: ["CONTEXT7_TOKEN": "CONTEXT7_TOKEN"])
         try await service.saveMCPServer(server)
         try await service.setMCPServers(projectID: project.id, serverIDs: [server.id], tags: [])

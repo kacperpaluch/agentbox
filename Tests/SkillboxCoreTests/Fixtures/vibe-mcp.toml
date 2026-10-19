@@ -1,0 +1,15 @@
+# >>> skillbox managed MCP >>>
+[[mcp_servers]]
+name = "local"
+transport = "stdio"
+command = "npx"
+args = ["-y", "pkg"]
+env = { TOKEN = "dummy-secret" }
+
+[[mcp_servers]]
+name = "remote"
+transport = "streamable-http"
+url = "https://example.com/mcp"
+auth = { type = "static", api_key_env = "API_TOKEN", headers = { X-Team = "dummy-team" } }
+
+# <<< skillbox managed MCP <<<

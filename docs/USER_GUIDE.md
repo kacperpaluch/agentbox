@@ -51,7 +51,9 @@ Zwykła aktualizacja nie synchronizuje projektów. `Narzędzia → Odśwież bib
 
 Podczas analizy JSON Agentbox pokazuje, jak zapisze każdą zmienną środowiskową i każdy nagłówek. `${NAZWA}` jest odwołaniem do zmiennej systemowej — do plików projektu trafia samo odwołanie. W nagłówku `Authorization` odwołaniem jest postać `Bearer ${NAZWA}`; samo `${NAZWA}` bez `Bearer` zostaje zapisane dosłownie, tak jak je wpisano. Każda inna wartość — także token — jest wartością lokalną: zostaje zapisana w `mcp.json` i trafia wprost do plików projektów, do których serwer jest przypisany. Agentbox nie rozpoznaje sekretów automatycznie.
 
-Obsługiwane transporty to lokalny STDIO oraz zdalne HTTP i SSE. `"type": "sse"` jest zachowywany przy imporcie i zapisywany w `.mcp.json` Claude Code jako `sse`; OpenCode i Codex mają jeden rodzaj serwera zdalnego, więc dla nich SSE wygląda tak samo jak HTTP.
+Obsługiwane transporty to lokalny STDIO oraz zdalne HTTP i SSE. `"type": "sse"` jest zachowywany przy imporcie i zapisywany w `.mcp.json` Claude Code jako `sse`; OpenCode i Codex mają jeden rodzaj serwera zdalnego, więc dla nich SSE wygląda tak samo jak HTTP. Vibe obsługuje tylko streamable HTTP, więc serwer SSE przypisany do projektu z Vibe zatrzymuje synchronizację.
+
+Vibe nie rozwija `${NAZWA}` i przekazuje serwerowi STDIO tylko podstawowe zmienne, takie jak `PATH` i `HOME`. Serwer STDIO z odwołaniem do zmiennej systemowej zatrzymuje więc synchronizację projektu z Vibe — zapisz wartość w serwerze albo odznacz Vibe w tym projekcie. Serwer HTTP może pobrać ze zmiennej jeden nagłówek: `Authorization: Bearer ${NAZWA}` albo dowolny inny nagłówek `${NAZWA}`.
 
 Importer przyjmuje zarówno mapę `mcpServers`, jak i pojedynczą definicję, na przykład obiekt zawierający `command`, `args` i `env`. W tym drugim przypadku wpisz nazwę serwera w polu nad przyciskiem „Analizuj” albo zaakceptuj nazwę zaproponowaną z argumentów; `env` nigdy nie jest wtedy traktowane jako osobny serwer. Jeśli macOS wstawi typograficzne cudzysłowy zamiast znaków JSON-a, Agentbox spróbuje je automatycznie poprawić podczas importu.
 
@@ -209,9 +211,20 @@ W edytorze projektu można włączyć `Dopisuj wygenerowane pliki MCP do .gitign
 
 - Claude Code — `~/.claude/skills`,
 - Codex — `~/.codex/skills`,
-- OpenCode — `~/.config/opencode/skills`.
+- OpenCode — `~/.config/opencode/skills`,
+- Mistral Vibe — `~/.vibe/skills`.
 
 Zaznacz narzędzia, a następnie pojedyncze skille lub tagi dynamiczne. `Zapisz wybór` zapamiętuje ustawienie w `selections.json` pod kluczem `global`, `Odśwież podgląd` pokazuje planowane dodania, aktualizacje i usunięcia, a `Synchronizuj globalnie` zapisuje zmiany. Odznaczenie skilla usuwa go z katalogu użytkownika przy kolejnej synchronizacji — również tutaj usuwane są wyłącznie katalogi z manifestu Agentbox.
+
+### Używane narzędzia
+
+`Ustawienia → Ogólne → Używane narzędzia` wybiera klientów, z których korzystasz na tym Macu; co najmniej jeden musi zostać włączony. Edytory projektów, folderów i skilli globalnych pokazują tylko włączonych klientów. Synchronizacja pomija wyłączonych całkowicie — niczego dla nich nie zapisuje i niczego nie usuwa, także w katalogach użytkownika. Wybór w projektach się nie zmienia: wyłączony klient zostaje zapisany w projekcie i wraca do synchronizacji po ponownym włączeniu.
+
+To co innego niż odznaczenie klienta w ustawieniach projektu: odznaczenie usuwa przy kolejnej synchronizacji pliki, które Agentbox zapisał dla tego klienta. `Usuń i posprzątaj pliki` usuwa pliki wszystkich klientów, także wyłączonych.
+
+### Mistral Vibe
+
+Skille trafiają do `.vibe/skills/`, a serwery MCP do bloku `[[mcp_servers]]` na końcu `.vibe/config.toml`; pozostałe ustawienia w tym pliku zostają bez zmian. Vibe czyta folder `.vibe/` projektu tylko wtedy, gdy folder jest zaufany. Zaufane foldery Vibe trzyma w `~/.vibe/trusted_folders.toml`, a `vibe --trust` ufa folderowi na jedno uruchomienie. Serwery z projektu łączą się z serwerami z `~/.vibe/config.toml` po nazwie: serwer o tej samej nazwie zastępuje globalny, a pozostałe globalne działają dalej. Własny serwer o nazwie przypisanego serwera zatrzymuje synchronizację, tak jak w innych klientach. Serwer logujący się przez OAuth dodaj w samym Vibe (`vibe mcp add <url>`), a nie przypisuj go w Agentbox do projektu z Vibe: wpis z projektu nie ma danych logowania, a zastąpiłby globalny wpis o tej samej nazwie. Vibe nie ma też odpowiednika wyłączania serwerów globalnych w jednym projekcie, więc ta opcja dotyczy tylko Codex i Claude Code.
 
 ### Domyślne dla nowych projektów
 
@@ -257,7 +270,7 @@ Usunięcie projektu należącego do obserwowanego folderu jest traktowane jak od
 
 Lista projektów grupuje projekty według folderu nadrzędnego, a pozostałe — według ich bezpośredniego folderu — i pokazuje pełną ścieżkę grupy. Nagłówek zwija pojedynczą grupę, a menu pod listą pozwala rozwinąć lub zwinąć wszystkie. Przycisk `Synchronizuj wszystkie projekty` tworzy wspólny podgląd całej listy przed pierwszym zapisem. Następnie synchronizuje projekty kolejno; każdy z nich zachowuje własny backup, transakcyjny zapis skilli i MCP oraz rollback w razie błędu.
 
-Podgląd projektu pokazuje osobno dla Claude, Codex i OpenCode:
+Podgląd projektu pokazuje osobno dla każdego klienta — Claude, Codex, OpenCode i Vibe:
 
 - docelowy katalog skilli;
 - skille dodawane, ponownie zapisywane i usuwane;
@@ -322,11 +335,11 @@ Folder `backups/` jest lokalny i nie jest wysyłany przez Agentbox do Gita. Peł
 
 ## Pliki projektu i Git
 
-Agentbox dopisuje generowane konfiguracje MCP oraz `.skillbox/` do lokalnego `.git/info/exclude`. Dotyczy to także projektu położonego głębiej w większym repozytorium (np. `packages/app` w monorepo) — wpisy wskazują wtedy dokładnie folder projektu. Wykluczenia są sprawdzane przy każdej synchronizacji, również gdy pliki są już aktualne, więc repozytorium zainicjalizowane po pierwszej synchronizacji dostaje ochronę przy następnej. Nie usuwa to pliku, który został wcześniej dodany do indeksu Git — dlatego, gdy przypisany serwer ma wartości lokalne (np. token), a docelowy plik (`.mcp.json`, `.codex/config.toml`, `opencode.json(c)`) jest już śledzony przez Git, synchronizacja projektu zatrzymuje się z komunikatem zamiast zapisać sekret do repozytorium. Zamień wartość na `${ZMIENNA}` albo usuń plik z indeksu (`git rm --cached <plik>`). Wygenerowane pliki MCP są zapisywane z uprawnieniami `0600` (tylko właściciel). Po pierwszej synchronizacji sprawdź:
+Agentbox dopisuje generowane konfiguracje MCP oraz `.skillbox/` do lokalnego `.git/info/exclude`. Dotyczy to także projektu położonego głębiej w większym repozytorium (np. `packages/app` w monorepo) — wpisy wskazują wtedy dokładnie folder projektu. Wykluczenia są sprawdzane przy każdej synchronizacji, również gdy pliki są już aktualne, więc repozytorium zainicjalizowane po pierwszej synchronizacji dostaje ochronę przy następnej. Nie usuwa to pliku, który został wcześniej dodany do indeksu Git — dlatego, gdy przypisany serwer ma wartości lokalne (np. token), a docelowy plik (`.mcp.json`, `.codex/config.toml`, `opencode.json(c)`, `.vibe/config.toml`) jest już śledzony przez Git, synchronizacja projektu zatrzymuje się z komunikatem zamiast zapisać sekret do repozytorium. Zamień wartość na `${ZMIENNA}` albo usuń plik z indeksu (`git rm --cached <plik>`). Wygenerowane pliki MCP są zapisywane z uprawnieniami `0600` (tylko właściciel). Po pierwszej synchronizacji sprawdź:
 
 ```bash
 git status
-git ls-files .mcp.json .codex/config.toml opencode.json opencode.jsonc
+git ls-files .mcp.json .codex/config.toml opencode.json opencode.jsonc .vibe/config.toml
 ```
 
 Jeżeli któreś z tych poleceń pokaże plik zawierający sekret, usuń go z indeksu i sprawdź historię repozytorium.

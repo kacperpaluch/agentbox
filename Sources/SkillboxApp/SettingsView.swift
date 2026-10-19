@@ -39,6 +39,18 @@ struct SettingsView: View {
             Label("Ustawienia aplikacji", systemImage: "gearshape").font(.largeTitle.bold())
             UpdateSettingsCard(updater: updater)
             CLISettingsCard()
+            GroupBox("Używane narzędzia") { VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 16) { ForEach(Tool.allCases, id: \.self) { tool in
+                    let isOn = model.enabledTools.contains(tool)
+                    Toggle(tool.rawValue.capitalized, isOn: Binding(get: { isOn }, set: { on in
+                        Task { await model.setEnabledTools(on ? model.enabledTools + [tool] : model.enabledTools.filter { $0 != tool }) }
+                    }))
+                    .toggleStyle(.checkbox)
+                    // At least one client has to stay on, or no synchronization would do anything.
+                    .disabled(model.isWorking || (isOn && model.enabledTools.count == 1))
+                } }
+                Text("Synchronizacja pomija wyłączone narzędzia: nie zapisuje ani nie usuwa ich plików w projektach i katalogu użytkownika. Projekty zachowują je w swoich ustawieniach, więc po ponownym włączeniu wystarczy zsynchronizować.").font(.caption).foregroundStyle(.secondary)
+            }.padding(8).frame(maxWidth: .infinity, alignment: .leading) }
             GroupBox("Folder biblioteki") { VStack(alignment: .leading, spacing: 12) { Text(model.rootPath).font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading); Text("Tutaj Agentbox przechowuje skille, katalog, konfigurację projektów oraz lokalne kopie zapasowe.").font(.caption).foregroundStyle(.secondary); Button("Wybierz nowy folder…") { chooseFolder() } }.padding(8) }
             Text("Istniejąca biblioteka Agentbox/Skillbox zostanie podłączona bez kopiowania. Jeśli wskażesz pusty folder, obecna biblioteka zostanie do niego skopiowana.").foregroundStyle(.secondary)
             Spacer()

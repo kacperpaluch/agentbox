@@ -691,7 +691,7 @@ public actor SkillboxService {
         // A tool unticked in the project keeps its manifest until this cleanup runs; syncing an
         // empty selection into its target removes everything the manifest lists and the manifest
         // itself, instead of leaving orphaned files in the repository.
-        for tool in Self.abandonedTools(project: project) {
+        for tool in Self.abandonedTools(project: project, among: config.activeTools) {
             let target = try Self.managedTarget(project: URL(fileURLWithPath: project.path), tool: tool)
             results[tool] = try await sync(skills: [], to: target, dryRun: dryRun)
         }

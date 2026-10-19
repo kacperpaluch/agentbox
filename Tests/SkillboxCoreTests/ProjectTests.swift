@@ -71,10 +71,10 @@ final class ProjectTests: AgentboxTestCase {
         let service = try SkillboxService(root: root.appending(path: "data"))
         _ = try await service.addLocal(path: source.path)
         try await service.setTags(skillID: "demo", tags: ["test"])
-        _ = try await service.addProject(name: "sample", path: project.path, tools: [.claude, .codex, .opencode])
+        _ = try await service.addProject(name: "sample", path: project.path, tools: Tool.allCases)
         try await service.configureProject(name: "sample", skillIDs: [], tags: ["test"])
         let result = try await service.syncProject(name: "sample")
-        XCTAssertEqual(result.count, 3)
+        XCTAssertEqual(result.count, Tool.allCases.count)
         for tool in Tool.allCases { XCTAssertTrue(FileManager.default.fileExists(atPath: project.appending(path: tool.projectSkillsPath).appending(path: "demo/SKILL.md").path)) }
     }
     func testImportsMultipleSkillsFromGitSubfolder() async throws {

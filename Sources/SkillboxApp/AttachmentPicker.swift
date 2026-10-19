@@ -9,7 +9,13 @@ import SkillboxCore
 /// eight matching `@State` properties, four times over; a project and a folder could quietly drift
 /// apart because adding a field meant remembering four call sites. Now they hold one
 /// `AttachmentSelection` and hand it here.
+extension EnvironmentValues {
+    /// `AppModel.enabledTools`, set once on the window so every editor sheet offers the same clients.
+    @Entry var enabledTools: [Tool] = Tool.allCases
+}
+
 struct AttachmentPicker: View {
+    @Environment(\.enabledTools) private var enabledTools
     let skills: [Skill]
     let servers: [MCPServer]
     let docs: [AgentDoc]
@@ -34,7 +40,7 @@ struct AttachmentPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            GroupBox("Narzędzia") { HStack { ForEach(Tool.allCases, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: setBinding(tool, in: toolsBinding)).toggleStyle(.checkbox) } }.padding(6) }
+            GroupBox("Narzędzia") { HStack { ForEach(enabledTools, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: setBinding(tool, in: toolsBinding)).toggleStyle(.checkbox) } }.padding(6) }
             ScrollView { SkillCheckGrid(title: "Pojedyncze skille", skills: skills, selection: skillIDsBinding, locked: Set(tagMatched.map(\.id)), lockedHelp: "Wybrany przez tag — odznacz go w sekcji Wykluczenia, by pominąć") }.frame(height: 150)
             TagCheckGrid(title: "Tagi skilli", tags: availableTags, selection: skillTagsBinding)
             if includesServersAndDocs {

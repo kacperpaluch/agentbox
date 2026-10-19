@@ -1,6 +1,6 @@
 # Agentbox
 
-Agentbox to natywna aplikacja macOS i CLI do zarządzania skillami oraz serwerami MCP dla Claude Code, Codex i OpenCode. Definicje są przechowywane w jednej bibliotece, a wybrane zestawy synchronizowane do folderów konkretnych projektów.
+Agentbox to natywna aplikacja macOS i CLI do zarządzania skillami oraz serwerami MCP dla Claude Code, Codex, OpenCode i Mistral Vibe. Definicje są przechowywane w jednej bibliotece, a wybrane zestawy synchronizowane do folderów konkretnych projektów.
 
 Agentbox nie uruchamia serwerów MCP i nie zastępuje klientów AI — przygotowuje dla nich pliki konfiguracyjne i katalogi skilli.
 
@@ -148,12 +148,23 @@ Lista projektów jest grupowana według folderu nadrzędnego, dzięki czemu proj
 | Claude Code | `.claude/skills/` | `.mcp.json` |
 | Codex | `.codex/skills/` | `.codex/config.toml` |
 | OpenCode | `.opencode/skills/` | istniejący `opencode.jsonc` lub nowy `opencode.json` |
+| Mistral Vibe | `.vibe/skills/` | `.vibe/config.toml` |
 
 Dokument, jeśli jest przypisany, ląduje niezależnie od listy narzędzi jako `AGENTS.md` i `CLAUDE.md` w katalogu głównym projektu — zobacz [Dokumenty](#dokumenty-agentsmd--claudemd).
 
 Plik `.skillbox.json` w każdym katalogu skilli śledzi tylko elementy zarządzane przez Agentbox. Obce katalogi nie są usuwane.
 
 Usunięcie projektu usuwa jedynie wpis i przypisania MCP z Agentbox. Folder projektu i wszystkie jego pliki pozostają na dysku.
+
+### Używane narzędzia
+
+`Ustawienia → Ogólne → Używane narzędzia` mówi, z których klientów korzystasz na tym Macu. Wyłączony klient znika z wyboru w edytorach, a każda synchronizacja — projektów i globalna — go pomija: nie zapisuje ani nie usuwa jego plików. Projekty zachowują go w swoich ustawieniach, więc po ponownym włączeniu wystarczy zsynchronizować. Żeby usunąć pliki klienta z projektu, odznacz go w ustawieniach projektu albo użyj `Usuń i posprzątaj pliki`. W CLI: `agentbox tools` i `agentbox tools set claude,codex`; `--tools` domyślnie przyjmuje włączonych klientów.
+
+### Mistral Vibe
+
+Vibe czyta skille z `.vibe/skills/` i serwery MCP z bloków `[[mcp_servers]]` w `.vibe/config.toml`, ale tylko w folderze, który oznaczysz w Vibe jako zaufany — w pozostałych pliki leżą, a Vibe ich nie widzi. Serwery z projektu dokładają się do tych z `~/.vibe/config.toml`; serwer o tej samej nazwie zastępuje globalny. Agentbox dopisuje własny blok na końcu pliku, a resztę ustawień zostawia bez zmian.
+
+Vibe nie rozwija `${ZMIENNA}` i nie przekazuje serwerom STDIO zmiennych systemowych, więc synchronizacja zatrzymuje się, gdy serwer STDIO odwołuje się do zmiennej — zapisz wartość w serwerze albo odznacz Vibe w tym projekcie. Serwer HTTP może pobierać ze zmiennej jeden nagłówek (`api_key_env`), a transport SSE nie jest obsługiwany. Vibe nie ma też odpowiednika wyłączania serwerów globalnych w projekcie. Serwer logujący się przez OAuth dodaj w samym Vibe (`vibe mcp add <url>`), a nie przypisuj go w Agentbox do projektu z Vibe: wpis z projektu nie ma danych logowania, a zastąpiłby globalny wpis o tej samej nazwie.
 
 ## MCP
 
@@ -205,7 +216,7 @@ Pliki konfiguracyjne i manifesty powstają tylko wtedy, gdy projekt ma co synchr
 
 ### Skille globalne
 
-`Projekty → Więcej → Skille we wszystkich sesjach…` synchronizuje wybrane skille do katalogów użytkownika zamiast do projektu: `~/.claude/skills`, `~/.codex/skills` i `~/.config/opencode/skills`. Wybór narzędzi, skilli i tagów jest zapisywany, a podgląd pokazuje zmiany przed zapisem. Globalnie trafiają wyłącznie skille — pliki, w których żyłby globalny serwer MCP, to pliki, których Agentbox celowo nigdy nie zapisuje.
+`Projekty → Więcej → Skille we wszystkich sesjach…` synchronizuje wybrane skille do katalogów użytkownika zamiast do projektu: `~/.claude/skills`, `~/.codex/skills`, `~/.config/opencode/skills` i `~/.vibe/skills`. Wybór narzędzi, skilli i tagów jest zapisywany, a podgląd pokazuje zmiany przed zapisem. Globalnie trafiają wyłącznie skille — pliki, w których żyłby globalny serwer MCP, to pliki, których Agentbox celowo nigdy nie zapisuje.
 
 ### Domyślne dla nowych projektów
 
@@ -233,13 +244,14 @@ Jeśli projekt jest repozytorium Git albo leży wewnątrz repozytorium (np. paki
 .codex/config.toml
 opencode.json
 opencode.jsonc
+.vibe/config.toml
 ```
 
 Nie usuwa to pliku, który został już wcześniej dodany do Git. Dlatego, gdy serwer ma wartości lokalne (np. token), a docelowy plik jest już śledzony przez Git, synchronizacja zatrzymuje się zamiast zapisać sekret do repozytorium — zamień wartość na `${ZMIENNA}` albo usuń plik z indeksu (`git rm --cached`). Wygenerowane pliki MCP mają uprawnienia `0600`. Zawsze warto sprawdzić `git status` oraz historię repozytorium.
 
 ### OAuth
 
-Serwery logujące się przez OAuth zapisuje się tylko jako URL. Logowanie przez przeglądarkę wykonuje Claude, Codex albo OpenCode. Token OAuth znajduje się w magazynie danego klienta, nie w Agentbox, i nie jest nadpisywany podczas synchronizacji. Każde narzędzie uwierzytelnia się osobno.
+Serwery logujące się przez OAuth zapisuje się tylko jako URL. Logowanie przez przeglądarkę wykonuje Claude, Codex albo OpenCode. Vibe potrzebuje w konfiguracji serwera osobnego bloku OAuth, którego Agentbox nie zapisuje — taki serwer dodaj w Vibe poleceniem `vibe mcp add <url>` (zobacz [Mistral Vibe](#mistral-vibe)). Token OAuth znajduje się w magazynie danego klienta, nie w Agentbox, i nie jest nadpisywany podczas synchronizacji. Każde narzędzie uwierzytelnia się osobno.
 
 ### Serwery klientów (Codex i Claude Code)
 

@@ -1,13 +1,14 @@
 import Foundation
 
 public enum Tool: String, Codable, CaseIterable, Sendable {
-    case claude, codex, opencode
+    case claude, codex, opencode, vibe
 
     public var projectSkillsPath: String {
         switch self {
         case .claude: ".claude/skills"
         case .codex: ".codex/skills"
         case .opencode: ".opencode/skills"
+        case .vibe: ".vibe/skills"
         }
     }
 
@@ -16,6 +17,8 @@ public enum Tool: String, Codable, CaseIterable, Sendable {
         case .claude: home.appending(path: ".claude/skills")
         case .codex: home.appending(path: ".codex/skills")
         case .opencode: home.appending(path: ".config/opencode/skills")
+        // shortcut: ignores VIBE_HOME, like `.codex` ignores CODEX_HOME; honour both if anyone sets them.
+        case .vibe: home.appending(path: ".vibe/skills")
         }
     }
 }
@@ -193,6 +196,11 @@ public struct LocalConfiguration: Codable, Sendable {
     /// Starting attachments for a newly created project. This is local to the Mac, just like the
     /// project list: it is a convenience template, not an assignment that existing projects inherit.
     public var projectDefaults = AttachmentSelection(tools: Tool.allCases)
+    /// Clients this Mac uses. `nil` means all of them, which is what every library saved before
+    /// this setting existed gets. A client left out here is skipped by every synchronization while
+    /// the projects keep it in their selection, so switching it back on needs no re-editing.
+    public var enabledTools: [Tool]?
+    public var activeTools: [Tool] { enabledTools.map { enabled in Tool.allCases.filter(enabled.contains) } ?? Tool.allCases }
     /// Every place's attachments, keyed by project id, folder id or `"global"`. Read from and
     /// written to `selections.json` by the store — never part of `projects.local.json`, which is
     /// this Mac's local record and stays out of the Git backup.
@@ -204,7 +212,7 @@ public struct LocalConfiguration: Codable, Sendable {
     // `backupRemote` used to live here, pointing at the library's Git backup. That feature is gone,
     // so the key is simply no longer decoded; an older `projects.local.json` still carrying it reads
     // fine and drops it on the next save.
-    enum CodingKeys: String, CodingKey { case projects, projectRoots, projectDefaults }
+    enum CodingKeys: String, CodingKey { case projects, projectRoots, projectDefaults, enabledTools }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -214,6 +222,7 @@ public struct LocalConfiguration: Codable, Sendable {
         // all supported clients selected, with no attached content.
         projectDefaults = try values.decodeIfPresent(AttachmentSelection.self, forKey: .projectDefaults)
             ?? AttachmentSelection(tools: Tool.allCases)
+        enabledTools = try values.decodeIfPresent([Tool].self, forKey: .enabledTools)
     }
 }
 

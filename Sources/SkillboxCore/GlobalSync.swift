@@ -15,22 +15,31 @@ extension SkillboxService {
     /// `selection` previews a choice that is not saved yet — the CLI's `--dry-run` and the editor's
     /// unsaved checkboxes. Without it the stored choice is previewed.
     public func previewGlobalSync(selection draft: AttachmentSelection? = nil, home: URL = FileManager.default.homeDirectoryForCurrentUser) async throws -> [SkillSyncPreview] {
-        let chosen: AttachmentSelection
-        if let draft { chosen = draft } else { chosen = try await selection(for: .global) }
+        let chosen = try await globalSelectionForSync(draft)
         // Exclusions are offered in the same editor as the choices, so leaving them out here meant
         // the Mac quietly received a skill its owner had unticked.
         let current = try await selectedSkills(ids: chosen.skillIDs, tags: chosen.skillTags, excluding: chosen.excludedSkillIDs)
         let library = await store.skillsDirectory
-        return try (chosen.tools + Self.abandonedGlobalTools(chosen: chosen, home: home)).map { tool in
+        return try (chosen.tools + Self.abandonedGlobalTools(chosen: chosen, among: try await enabledTools(), home: home)).map { tool in
             try Self.skillPreview(tool: tool, target: tool.globalSkillsURL(home: home), current: chosen.tools.contains(tool) ? current : [], library: library)
         }
+    }
+
+    /// The global choice limited to the clients this Mac uses, like `resolved(_ project:)` does for
+    /// a project. A switched-off client's user directory is left exactly as it is.
+    private func globalSelectionForSync(_ draft: AttachmentSelection?) async throws -> AttachmentSelection {
+        var chosen: AttachmentSelection
+        if let draft { chosen = draft } else { chosen = try await selection(for: .global) }
+        let enabled = try await enabledTools()
+        chosen.tools = chosen.tools.filter(enabled.contains)
+        return chosen
     }
 
     /// Clients no longer ticked for this Mac whose user directory still holds an Agentbox manifest.
     /// Unticking one used to leave every skill it had received sitting there forever — the project
     /// path has answered this correctly for a long time; the global one never did.
-    static func abandonedGlobalTools(chosen: AttachmentSelection, home: URL) -> [Tool] {
-        Tool.allCases.filter { tool in
+    static func abandonedGlobalTools(chosen: AttachmentSelection, among tools: [Tool], home: URL) -> [Tool] {
+        tools.filter { tool in
             guard !chosen.tools.contains(tool) else { return false }
             return FileManager.default.fileExists(atPath: tool.globalSkillsURL(home: home).appending(path: ".skillbox.json").path)
         }
@@ -42,8 +51,8 @@ extension SkillboxService {
     @discardableResult
     public func syncGlobalSelection(home: URL = FileManager.default.homeDirectoryForCurrentUser) async throws -> [SkillSyncPreview] {
         let previews = try await previewGlobalSync(home: home)
-        let chosen = try await selection(for: .global)
-        let abandoned = Self.abandonedGlobalTools(chosen: chosen, home: home)
+        let chosen = try await globalSelectionForSync(nil)
+        let abandoned = Self.abandonedGlobalTools(chosen: chosen, among: try await enabledTools(), home: home)
         let current = try await selectedSkills(ids: chosen.skillIDs, tags: chosen.skillTags, excluding: chosen.excludedSkillIDs).map(\.id)
         let fm = FileManager.default
         let scratch = Self.scratchDirectory()

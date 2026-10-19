@@ -210,10 +210,13 @@ extension SkillboxService {
     /// Tools the project no longer lists but whose targets still hold Agentbox manifests.
     /// They stay part of every preview and sync until nothing managed remains, so unticking a
     /// tool removes its files instead of orphaning them in the repository forever.
-    static func abandonedTools(project: Project) -> [Tool] {
+    ///
+    /// `among` limits this to the clients this Mac uses: a client switched off in the settings is
+    /// left alone, files included. Only `unsyncProject`, which must remove everything, looks at all.
+    static func abandonedTools(project: Project, among tools: [Tool] = Tool.allCases) -> [Tool] {
         let url = URL(fileURLWithPath: project.path)
         let mcpManaged = MCPRenderer.managedTools(url)
-        return Tool.allCases.filter { tool in
+        return tools.filter { tool in
             guard !project.tools.contains(tool) else { return false }
             if FileManager.default.fileExists(atPath: url.appending(path: tool.projectSkillsPath).appending(path: ".skillbox.json").path) { return true }
             return mcpManaged.contains(tool)
@@ -226,7 +229,7 @@ extension SkillboxService {
         let catalog = try await store.catalog()
         let selected = SkillboxService.selectedSkills(in: catalog, for: project)
         let library = await store.skillsDirectory
-        let perTool: [(Tool, [Skill])] = project.tools.map { ($0, selected) } + Self.abandonedTools(project: project).map { ($0, []) }
+        let perTool: [(Tool, [Skill])] = project.tools.map { ($0, selected) } + Self.abandonedTools(project: project, among: config.activeTools).map { ($0, []) }
         let skills = try perTool.map { tool, current in
             try SkillboxService.skillPreview(tool: tool, target: try SkillboxService.managedTarget(project: URL(fileURLWithPath: project.path), tool: tool), current: current, library: library)
         }

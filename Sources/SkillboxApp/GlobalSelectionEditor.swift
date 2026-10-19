@@ -58,12 +58,12 @@ struct GlobalSelectionEditor: View {
                 Text("Skille we wszystkich sesjach").font(.title2.bold())
                 Text("Te skille trafiają do katalogu użytkownika i są widoczne we wszystkich sesjach wybranego klienta, niezależnie od projektu.").foregroundStyle(.secondary)
                 GroupBox("Gdzie trafią") { VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Tool.allCases, id: \.self) { tool in
+                    ForEach(model.enabledTools, id: \.self) { tool in
                         if selection.tools.contains(tool) {
                             Text(tool.globalSkillsURL().path).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
                         }
                     }
-                    if selection.tools.isEmpty { Text("Nie wybrano żadnego narzędzia.").font(.caption).foregroundStyle(.secondary) }
+                    if !selection.tools.contains(where: model.enabledTools.contains) { Text("Nie wybrano żadnego narzędzia.").font(.caption).foregroundStyle(.secondary) }
                 }.padding(6) }
 
                 // No plugin picker here, unlike every project and folder editor: Claude Code installs

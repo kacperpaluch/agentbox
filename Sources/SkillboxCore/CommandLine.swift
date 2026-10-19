@@ -6,7 +6,7 @@ import Foundation
 /// commands against a temporary library instead of only testing the service underneath them.
 public enum AgentboxCommand {
     public static let help = """
-    Agentbox — skille i MCP dla Claude, Codex i OpenCode
+    Agentbox — skille i MCP dla Claude, Codex, OpenCode i Vibe
       agentbox add <folder|git-url> [--path subdir] [--branch main] [--id name]
       agentbox list | tag <skill> <tag...> | update <skill|--all> [--dry-run]
       agentbox new <id> [--name x] [--description y] [--tags a,b] [--file plik|-]
@@ -17,7 +17,8 @@ public enum AgentboxCommand {
       agentbox project root-add|root-adopt|roots|scan|adopt-new|ignore-new ...
       agentbox sync project <name> [--dry-run]
       agentbox sync all [--dry-run]
-      agentbox sync global [--skills a,b] [--tags x] [--tools claude,codex,opencode]
+      agentbox sync global [--skills a,b] [--tags x] [--tools claude,codex,opencode,vibe]
+      agentbox tools [set claude,codex]
       agentbox refresh
       agentbox mcp list|server|assign|preview|sync ...
       agentbox docs list|new|tag|delete|assign|preview|sync ...
@@ -110,6 +111,12 @@ public enum AgentboxCommand {
             // A folder left out must be visible to automation, not just printed.
             guard blocked.isEmpty else { throw PartialFailure(lines: lines, errorDescription: "pominięto \(blocked.count) folderów") }
             return lines
+        case "tools":
+            if rest.first == "set", rest.count >= 2 {
+                try await service.setEnabledTools(try rest[1].split(separator: ",").map { try tool(String($0)) })
+            } else if !rest.isEmpty { return ["Użycie: agentbox tools [set claude,codex]"] }
+            let enabled = try await service.enabledTools()
+            return Tool.allCases.map { "\(enabled.contains($0) ? "✓" : "–") \($0.rawValue)" }
         case "project": return try await project(rest, service: service, args: args)
         case "sync": return try await sync(rest, service: service, args: args)
         case "refresh": return try await refresh(service: service)
@@ -144,7 +151,7 @@ public enum AgentboxCommand {
                 }
             }
         case "add" where rest.count >= 3:
-            let tools = (option("--tools", in: args) ?? "claude,codex,opencode").split(separator: ",").compactMap { Tool(rawValue: String($0)) }
+            let tools = try await Self.tools(in: args, service: service)
             return ["Dodano projekt \(try await service.addProject(name: rest[1], path: rest[2], tools: tools).name)"]
         case "set" where rest.count >= 2:
             try await service.configureProject(name: rest[1], skillIDs: csv("--skills", in: args), tags: csv("--tags", in: args))
@@ -187,7 +194,7 @@ public enum AgentboxCommand {
             lines.append("Usunięto projekt \(project.name) z Agentbox" + (args.contains("--clean") ? "" : "; pliki w jego folderze zostały bez zmian"))
             return lines
         case "root-add" where rest.count >= 3:
-            let tools = (option("--tools", in: args) ?? "claude,codex,opencode").split(separator: ",").compactMap { Tool(rawValue: String($0)) }
+            let tools = try await Self.tools(in: args, service: service)
             let folderURL = URL(fileURLWithPath: rest[2]).standardizedFileURL
             // `--folders` picks subfolders by name; without it nothing is added yet and the folder's
             // own scan proposes everything it holds.
@@ -205,12 +212,15 @@ public enum AgentboxCommand {
             let keepOwn = Set(csv("--keep-own", in: args))
             let owners = inside.filter { keepOwn.contains($0.name) }.map(\.id)
             let followers = inside.filter { !keepOwn.contains($0.name) }.map(\.id)
-            let tools = (option("--tools", in: args) ?? "").split(separator: ",").compactMap { Tool(rawValue: String($0)) }
+            let tools = try await Self.tools(in: args, service: service, default: [])
             let root = ProjectRoot(name: rest[1], path: folderURL.path, manageGitignore: args.contains("--gitignore"), watchesNewFolders: !args.contains("--no-watch"))
             // Without --tools the folder starts from the union of what its projects use today, so
             // adopting them never silently drops a client one of them was configured for.
-            let existing = try await service.listProjects().filter { project in inside.contains { $0.id == project.id } }
-            let selection = AttachmentSelection(tools: tools.isEmpty ? Array(Set(existing.flatMap(\.tools))).sorted { $0.rawValue < $1.rawValue } : tools,
+            // The selection itself, not `listProjects()`: that one hides clients switched off in the
+            // settings, and the folder would lose them for good.
+            var existing: [Tool] = []
+            for project in inside { existing += try await service.selection(for: .project(project.id)).tools }
+            let selection = AttachmentSelection(tools: tools.isEmpty ? Array(Set(existing)).sorted { $0.rawValue < $1.rawValue } : tools,
                                                 skillIDs: csv("--skills", in: args), skillTags: csv("--tags", in: args))
             let stored = try await service.adoptProjectsIntoRoot(root, following: followers, keepingOwnSettings: owners, selection: selection)
             return ["Utworzono folder nadrzędny \(stored.name): \(followers.count) projektów na wspólnych ustawieniach, \(owners.count) z własnymi"]
@@ -265,7 +275,7 @@ public enum AgentboxCommand {
         return found.filter { $0.rootID == root.id }
     }
 
-    private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode] | set <nazwa> [--skills a,b] [--tags web] | list | status | explain <nazwa> | adopt <nazwa> [--yes] | adopt-changes <nazwa> [--yes] | unsync <nazwa> | remove <nazwa> [--clean] | root-adopt <nazwa> <folder> [--skills a,b] [--tags x] [--keep-own projekt] | root-add <nazwa> <folder> [--tools t] [--skills a,b] [--tags x] [--folders alpha,beta] [--no-watch] | roots | scan [--root nazwa] | adopt-new [--root nazwa] [--yes] [--sync] | ignore-new [--root nazwa] | unignore <folder>"
+    private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode,vibe] | set <nazwa> [--skills a,b] [--tags web] | list | status | explain <nazwa> | adopt <nazwa> [--yes] | adopt-changes <nazwa> [--yes] | unsync <nazwa> | remove <nazwa> [--clean] | root-adopt <nazwa> <folder> [--skills a,b] [--tags x] [--keep-own projekt] | root-add <nazwa> <folder> [--tools t] [--skills a,b] [--tags x] [--folders alpha,beta] [--no-watch] | roots | scan [--root nazwa] | adopt-new [--root nazwa] [--yes] [--sync] | ignore-new [--root nazwa] | unignore <folder>"
 
     private static func sync(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
         guard let mode = rest.first else { return [syncUsage] }
@@ -282,7 +292,7 @@ public enum AgentboxCommand {
                 // Only what the command names changes. A fresh selection dropped the exclusions
                 // made in the app; a skill named here explicitly is no longer excluded.
                 var selection = try await service.storedSelection(for: .global)
-                selection.tools = (option("--tools", in: args) ?? "claude,codex,opencode").split(separator: ",").compactMap { Tool(rawValue: String($0)) }
+                selection.tools = try await Self.tools(in: args, service: service)
                 selection.skillIDs = ids
                 selection.skillTags = tags
                 selection.excludedSkillIDs.removeAll { ids.contains($0) }
@@ -513,8 +523,20 @@ public enum AgentboxCommand {
         return (root.id, root.name, root.tools, true)
     }
 
+    /// `--tools`, defaulting to the clients this Mac uses. A misspelt name used to be dropped
+    /// silently, and naming a switched-off client would save a choice no sync acts on.
+    private static func tools(in args: [String], service: SkillboxService, default fallback: [Tool]? = nil) async throws -> [Tool] {
+        let enabled = try await service.enabledTools()
+        guard let raw = option("--tools", in: args) else { return fallback ?? enabled }
+        let parsed = try raw.split(separator: ",").map { try tool(String($0)) }
+        if let off = parsed.first(where: { !enabled.contains($0) }) {
+            throw SkillboxError.commandFailed("\(off.rawValue) jest wyłączone w ustawieniach — włącz je: agentbox tools set \((enabled + [off]).map(\.rawValue).joined(separator: ","))")
+        }
+        return parsed
+    }
+
     private static func tool(_ raw: String) throws -> Tool {
-        guard let tool = Tool(rawValue: raw) else { throw SkillboxError.invalidSkill("nieznane narzędzie \(raw) — użyj claude, codex albo opencode") }
+        guard let tool = Tool(rawValue: raw) else { throw SkillboxError.invalidSkill("nieznane narzędzie \(raw) — użyj claude, codex, opencode albo vibe") }
         return tool
     }
 

@@ -223,7 +223,8 @@ struct ProjectsView: View {
 
     private var globalSummary: String {
         let defaults = model.projectDefaults
-        let clients = defaults.tools.isEmpty ? "bez klientów" : defaults.tools.map { $0.rawValue.capitalized }.joined(separator: ", ")
+        let tools = defaults.tools.filter(model.enabledTools.contains)
+        let clients = tools.isEmpty ? "bez klientów" : tools.map { $0.rawValue.capitalized }.joined(separator: ", ")
         let skills = defaults.skillIDs.count + defaults.skillTags.count
         let servers = defaults.serverIDs.count + defaults.serverTags.count
         let docs = defaults.docIDs.count + defaults.docTags.count

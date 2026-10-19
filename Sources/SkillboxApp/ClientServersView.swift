@@ -32,8 +32,8 @@ struct ClientServersView: View {
             Divider()
             List {
                 explanation
-                toolSection(.codex, title: "Codex", source: "~/.codex/config.toml — dzielony z aplikacją ChatGPT Desktop i wtyczką IDE")
-                toolSection(.claude, title: "Claude Code", source: "zasięg „user” w ~/.claude.json")
+                if model.enabledTools.contains(.codex) { toolSection(.codex, title: "Codex", source: "~/.codex/config.toml — dzielony z aplikacją ChatGPT Desktop i wtyczką IDE") }
+                if model.enabledTools.contains(.claude) { toolSection(.claude, title: "Claude Code", source: "zasięg „user” w ~/.claude.json") }
             }
         }
         .sheetFrame(width: 760, height: 640)

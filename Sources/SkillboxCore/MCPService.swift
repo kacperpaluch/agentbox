@@ -158,7 +158,7 @@ extension SkillboxService {
         // Tools unticked in the project still have managed entries until this cleanup lands. They get
         // no servers and no opt-out either: a tool the project no longer uses must end up with its
         // files gone, not with a leftover `enabled = false` nobody can see in the editor any more.
-        previews += try SkillboxService.abandonedTools(project: project).map { tool in
+        previews += try SkillboxService.abandonedTools(project: project, among: local.activeTools).map { tool in
             try MCPRenderer.preview(tool: tool, project: projectURL, servers: [], secrets: secrets, disabledGlobalNames: [])
         }
         return previews
@@ -349,6 +349,12 @@ enum MCPRenderer {
                 let cleaned = try jsonMerged(file: json, path: ["mcp"], servers: [], tool: tool, previouslyManaged: Set(previous), secrets: secrets)
                 if cleaned != (try? String(contentsOf: json, encoding: .utf8)) { stale = (json.path, cleaned) }
             }
+        case .vibe:
+            // No per-project opt-out of a global server: Vibe merges `[[mcp_servers]]` by name and
+            // the project entry replaces the global one whole, so disabling it would mean copying
+            // a definition Agentbox does not own. Same as OpenCode.
+            file = project.appending(path: ".vibe/config.toml")
+            content = try vibeMerged(file: file, servers: servers, previouslyManaged: Set(previous), secrets: secrets)
         }
         try refuseLocalValuesInTrackedFile(file, project: project, servers: servers)
         return MCPPreview(tool: tool, file: file.path, content: content, added: Array(Set(names).subtracting(previous)).sorted(), removed: Array(Set(previous).subtracting(names)).sorted(), staleFile: stale?.path, staleContent: stale?.content, disabledGlobalFile: disabledGlobal?.file.path, disabledGlobalContent: disabledGlobal?.content, disabledGlobalAdded: disabledGlobal?.added ?? [], disabledGlobalRemoved: disabledGlobal?.removed ?? [])
@@ -727,6 +733,78 @@ enum MCPRenderer {
         return ([existing, block.joined(separator: "\n")].filter { !$0.isEmpty }.joined(separator: "\n\n")) + "\n"
     }
 
+    /// `.vibe/config.toml` keeps servers as an array of tables merged by `name`. The block goes at the
+    /// end of the file, because every key after a `[[mcp_servers]]` header belongs to that server.
+    ///
+    /// Vibe passes a stdio server only a fixed handful of variables (PATH, HOME…) and expands no
+    /// `${VAR}` anywhere, and its one environment-backed value is a single HTTP header
+    /// (`api_key_env`). What does not fit is refused rather than written as something that would
+    /// silently start without its token.
+    private static func vibeMerged(file: URL, servers: [MCPServer], previouslyManaged: Set<String>, secrets: [String: String]) throws -> String {
+        var existing = try SkillboxService.existingText(at: file)
+        existing = strippedManagedBlock(existing)
+        // Only before the first table header is a key top-level; inside a table it is something else.
+        let topLevel = existing.components(separatedBy: .newlines).prefix { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("[") }
+        if !servers.isEmpty, topLevel.contains(where: { $0.range(of: "^[ \t]*mcp_servers[ \t]*=", options: .regularExpression) != nil }) {
+            throw SkillboxError.mcpConflict("\(file.lastPathComponent) zapisuje mcp_servers jako tablicę w jednej linii — zamień ją na bloki [[mcp_servers]], żeby Agentbox mógł dopisać własne")
+        }
+        let declared = vibeServerNames(existing)
+        for server in servers {
+            if declared.contains(server.name) && !previouslyManaged.contains(server.name) { throw SkillboxError.mcpConflict("\(server.name) istnieje w config.toml poza blokiem Skillbox") }
+        }
+        guard !servers.isEmpty else { return existing.isEmpty ? "" : existing + "\n" }
+        var block = [start]
+        for server in servers {
+            block.append("[[mcp_servers]]")
+            block.append("name = \(toml(server.name))")
+            switch server.transport {
+            case .stdio:
+                if let variable = server.environment.values.sorted().first {
+                    throw SkillboxError.mcpConflict("\(server.name): Vibe nie przekazuje serwerom stdio zmiennych systemowych (\(variable)) — zapisz wartość w serwerze albo wyłącz Vibe w tym projekcie")
+                }
+                block.append("transport = \"stdio\"")
+                block.append("command = \(toml(server.command))")
+                if !server.arguments.isEmpty { block.append("args = [\(server.arguments.map(toml).joined(separator: ", "))]") }
+                let env = try resolved(server.literalEnvironment, secretRefs: server.secretEnvironment, secrets: secrets, server: server.name)
+                if !env.isEmpty { block.append("env = { \(env.sorted { $0.key < $1.key }.map { "\(tomlKey($0.key)) = \(toml($0.value))" }.joined(separator: ", ")) }") }
+            case .http:
+                guard server.headers.count <= 1 else {
+                    throw SkillboxError.mcpConflict("\(server.name): Vibe czyta ze zmiennej systemowej tylko jeden nagłówek, a serwer ma ich \(server.headers.count)")
+                }
+                block.append("transport = \"streamable-http\"")
+                block.append("url = \(toml(server.url))")
+                var auth = ["type = \"static\""]
+                if let (key, variable) = server.headers.first {
+                    auth.append("api_key_env = \(toml(variable))")
+                    // Vibe's defaults are `Authorization` and `Bearer {token}`, which is exactly how
+                    // an Authorization reference is stored; any other header carries the bare value.
+                    if key.lowercased() != "authorization" { auth.append("api_key_header = \(toml(key))"); auth.append("api_key_format = \"{token}\"") }
+                }
+                var literal = try resolved(server.literalHeaders, secretRefs: server.secretHeaders, secrets: secrets, server: server.name)
+                if let account = server.secretHeaders?["Authorization"], let token = secrets[account] { literal["Authorization"] = "Bearer \(token)" }
+                if !literal.isEmpty { auth.append("headers = { \(literal.sorted { $0.key < $1.key }.map { "\(tomlKey($0.key)) = \(toml($0.value))" }.joined(separator: ", ")) }") }
+                if auth.count > 1 { block.append("auth = { \(auth.joined(separator: ", ")) }") }
+            case .sse:
+                throw SkillboxError.mcpConflict("\(server.name): Vibe nie obsługuje transportu SSE — tylko stdio i streamable HTTP")
+            }
+            block.append("")
+        }
+        block.append(end)
+        return ([existing, block.joined(separator: "\n")].filter { !$0.isEmpty }.joined(separator: "\n\n")) + "\n"
+    }
+
+    /// `name` values of the `[[mcp_servers]]` tables the user wrote. A plain line scan, like
+    /// `declaresCodexServer`: enough to stop a sync before it shadows one of them.
+    private static func vibeServerNames(_ text: String) -> Set<String> {
+        var names: Set<String> = [], inServer = false
+        for line in text.split(whereSeparator: \.isNewline).map({ $0.trimmingCharacters(in: .whitespaces) }) {
+            if line.hasPrefix("[") { inServer = line.replacingOccurrences(of: " ", with: "").hasPrefix("[[mcp_servers]]"); continue }
+            guard inServer, let match = line.firstMatch(of: /^name\s*=\s*["']([^"']*)["']/) else { continue }
+            names.insert(String(match.1))
+        }
+        return names
+    }
+
     /// Claude Code's per-project opt-out of a user-scope (global) MCP server: appends the server's
     /// name to `disabledMcpServers` in `.claude/settings.local.json` — the file Claude Code already
     /// treats as local, unshared settings. Everything else in the file, and any name Agentbox does
@@ -887,7 +965,7 @@ enum MCPRenderer {
             return names.map { "/" + gitignoreEscaped(repository.relativePath) + "/" + $0 }
         }
         var groups: [(marker: String, entries: [String])] = [
-            ("# Skillbox MCP configs (mogą zawierać lokalne sekrety)", entries([".mcp.json", ".codex/config.toml", "opencode.json", "opencode.jsonc", ".skillbox/"]))
+            ("# Skillbox MCP configs (mogą zawierać lokalne sekrety)", entries([".mcp.json", ".codex/config.toml", "opencode.json", "opencode.jsonc", ".vibe/config.toml", ".skillbox/"]))
         ]
         if previews.contains(where: { $0.disabledGlobalFile != nil && !($0.disabledGlobalContent ?? "").isEmpty }) {
             groups.append(("# Skillbox: lokalne ustawienia Claude Code, nieprzeznaczone do współdzielenia", entries([".claude/settings.local.json"])))

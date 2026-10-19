@@ -169,6 +169,22 @@ extension SkillboxService {
         try await store.save(config)
     }
 
+    /// Clients this Mac uses; every synchronization skips the others. See `LocalConfiguration.enabledTools`.
+    public func enabledTools() async throws -> [Tool] {
+        try await store.configuration().activeTools
+    }
+
+    /// Switching a client off leaves its files and every selection that names it untouched;
+    /// synchronization just stops writing or removing anything for it.
+    public func setEnabledTools(_ tools: [Tool]) async throws {
+        guard !tools.isEmpty else { throw SkillboxError.commandFailed("wybierz co najmniej jedno narzędzie") }
+        var config = try await store.configuration()
+        let enabled = Tool.allCases.filter(tools.contains)
+        // Every client on is the same as no setting, so a library that never used it stays unchanged.
+        config.enabledTools = enabled == Tool.allCases ? nil : enabled
+        try await store.save(config)
+    }
+
     /// Every place's attachments in one read. The GUI keeps this in memory and answers "what is
     /// attached here" from it on every redraw, instead of hitting the store per row.
     public func allSelections() async throws -> [String: AttachmentSelection] {

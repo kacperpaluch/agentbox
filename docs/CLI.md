@@ -47,6 +47,15 @@ agentbox adopt-library [--yes]
 
 `usage` odpowiada, gdzie skill faktycznie trafia: wypisuje liczbę projektów, foldery nadrzędne i ten Mac, a pod spodem nazwy projektów. Liczone są także projekty, które biorą skill przez tag albo przez folder nadrzędny, i pomijane te, które go wykluczają — czyli dokładnie to, co zobaczy synchronizacja. Warto uruchomić przed `delete`.
 
+## Używane narzędzia
+
+```bash
+agentbox tools
+agentbox tools set claude,codex
+```
+
+`tools` pokazuje, z których klientów (`claude`, `codex`, `opencode`, `vibe`) korzystasz na tym Macu. Synchronizacja pomija wyłączonych, nie zapisując ani nie usuwając ich plików. Bez `--tools` polecenia `project add`, `project root-add` i `sync global` biorą włączonych klientów; podanie w `--tools` wyłączonego albo nieznanego klienta kończy się błędem.
+
 ## Projekty
 
 ```bash
