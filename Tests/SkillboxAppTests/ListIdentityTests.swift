@@ -30,6 +30,32 @@ final class ListIdentityTests: XCTestCase {
         XCTAssertEqual(outline.numberOfRows, 1, "zwinięta grupa chowa swój skill")
     }
 
+    /// A group header has no tag, so the list put its row id (or nothing) into the selection and the
+    /// detail emptied — with the list then shrinking into the middle of the window.
+    func testSelectingAGroupHeaderKeepsTheOpenSkill() async throws {
+        UserDefaults.standard.removeObject(forKey: "AgentboxCollapsedSkillGroups")
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = AppModel(root: root.appending(path: "library"), startsAutomatically: false)
+        await model.reload()
+        model.skills = ["alpha", "beta"].map { Skill(id: $0, name: $0, source: SkillSource(kind: .git, location: "https://github.com/example/repo-\($0)")) }
+        model.selection = "alpha"
+        let host = NSHostingView(rootView: SkillsPane(model: model, showGit: .constant(false), search: "", selectedTag: "").frame(width: 1000, height: 500))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        try await Task.sleep(for: .seconds(1))
+        let outline = try XCTUnwrap(Self.outline(in: host))
+
+        outline.selectRowIndexes([3], byExtendingSelection: false)   // skill "beta"
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertEqual(model.selection, "beta")
+        outline.selectRowIndexes([2], byExtendingSelection: false)   // header of the "repo-beta" group
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertEqual(model.selection, "beta", "nagłówek grupy nie zamyka otwartego skilla")
+    }
+
     func testGroupAndRowIdentitiesNeverCollide() {
         let skill = Skill(id: "miodkuj", name: "miodkuj", source: SkillSource(kind: .local, location: "/x"))
         let first = SkillGroup(name: "miodkuj", skills: [skill]), second = SkillGroup(name: "#seo", skills: [skill])

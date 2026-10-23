@@ -53,14 +53,23 @@ struct SkillsPane: View {
                 if !model.unregisteredSkills.isEmpty { unregisteredBanner }
                 skillList
             }
-            .frame(minWidth: 410, idealWidth: 480)
+            // Both panes fill the height: without it an empty detail let the list shrink to its own
+            // height and float in the middle, pushing the detail off the right edge.
+            .frame(minWidth: 410, idealWidth: 480, maxHeight: .infinity)
             if let id = model.selection, let skill = model.skills.first(where: { $0.id == id }) {
                 SkillDetail(model: model, skill: skill)
             } else {
                 ContentUnavailableView("Wybierz skill", systemImage: "text.book.closed")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .onChange(of: model.selection) { Task { await model.loadMarkdown() } }
+        .onChange(of: model.selection) { previous, current in
+            // A click on a group header selects no skill (nil, or the header's row id). Keep the skill
+            // that was open instead of emptying the detail; a deleted skill is not restored.
+            let isSkill: (String?) -> Bool = { id in model.skills.contains { $0.id == id } }
+            if !isSkill(current), isSkill(previous) { model.selection = previous; return }
+            Task { await model.loadMarkdown() }
+        }
         .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: tags) { text in let ok = await model.addTags(checked, text: text); if ok { checked.removeAll() }; return ok } }
         .sheet(isPresented: $showNewSkill) { NewSkillView(existingTags: tags, existingIDs: Set(model.skills.map(\.id))) { draft in await model.createSkill(draft) } }
         .confirmationDialog("Usunąć \(PolishNoun.skill(checked.count))?", isPresented: $confirmBatchDelete) {
@@ -176,6 +185,7 @@ struct SkillsPane: View {
                         let updates = group.skills.count { model.updateAvailable.contains($0.id) }
                         if updates > 0 { MetaBadge(text: "\(updates) aktualizacji", tint: .orange) }
                     }
+                    .selectionDisabled()
                 }
             }
         }

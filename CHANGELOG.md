@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.38.1] - 2026-10-23
+
+### Naprawiono
+
+- Kliknięcie nagłówka grupy w `Biblioteka → Skille` zamykało podgląd skilla, a lista zjeżdżała na środek okna i spychała panel podglądu za prawą krawędź. Nagłówka grupy nie da się już zaznaczyć, otwarty skill zostaje, a oba panele zawsze wypełniają wysokość okna.
+
 ## [0.38.0] - 2026-10-23
 
 ### Naprawiono
