@@ -93,7 +93,7 @@ Agentbox obserwuje folder biblioteki, więc zmiana zrobiona poza aplikacją — 
 - **Aktualny** — pliki projektu odpowiadają bibliotece,
 - **Do synchronizacji +N ~N -N** — tyle skilli i wpisów MCP zostanie dodanych, odświeżonych i usuniętych,
 - **Zablokowany** — w projekcie leży katalog skilla albo wpis MCP, którego Agentbox nie zarządza; najedź kursorem, aby zobaczyć powód,
-- **Brak folderu** — katalog projektu zniknął z dysku.
+- **Brak folderu** — katalog projektu zniknął z dysku. Wszystkie takie projekty usuniesz z Agentbox naraz przez `Więcej → Usuń projekty bez folderu…`; folder sprawdzany jest ponownie w chwili usuwania.
 
 Skill liczy się jako nieaktualny, gdy jego wersja w bibliotece jest nowsza niż ta zapisana w manifeście projektu, albo gdy jego katalog zniknął z projektu. Do tego samego licznika trafia wszystko, co zmieniło treść bez zmiany nazwy: poprawiona komenda albo zmienna serwera MCP, przepisany dokument, a także skill zmieniony wprost w folderze biblioteki, poza aplikacją. Stan porównuje zawartość plików projektu z tym, co zapisałaby synchronizacja, więc odznaka zapala się także wtedy, gdy żaden identyfikator się nie zmienił. Skille i pliki, które są aktualne, nie pojawiają się w żadnym z liczników.
 

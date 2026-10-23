@@ -372,6 +372,14 @@ import SkillboxCore
             }
         }
     }
+    /// Projects the last status check found without a folder; the service re-checks the disk itself.
+    var missingProjects: [Project] { projects.filter { statuses[$0.id]?.state == .missing } }
+    func deleteMissingProjects() async {
+        await perform {
+            let removed = try await self.requireService().deleteMissingProjects()
+            self.message = removed.isEmpty ? "Wszystkie foldery projektów istnieją; nic nie usunięto" : "Usunięto z Agentbox projekty bez folderu: \(removed.map(\.name).joined(separator: ", "))"
+        }
+    }
     func loadStatuses() async {
         isCheckingStatuses = true; defer { isCheckingStatuses = false; progress = nil }
         guard let service else { return }

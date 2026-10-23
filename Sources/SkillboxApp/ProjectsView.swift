@@ -12,6 +12,7 @@ struct ProjectsView: View {
     @State private var editing: Project?
     @State private var previewProject: Project?
     @State private var deleting: Project?
+    @State private var deletingMissing = false
     @State private var adopting: Project?
     @State private var managingPlugins: Project?
     @State private var collapsedGroups = Set<String>()
@@ -88,6 +89,10 @@ struct ProjectsView: View {
             Button("Usuń i posprzątaj pliki w projekcie", role: .destructive) { if let deleting { Task { await model.deleteProject(deleting, removingFiles: true) } }; deleting = nil }
             Button("Anuluj", role: .cancel) { deleting = nil }
         } message: { Text("Sprzątanie usuwa wyłącznie skille, wpisy MCP i dokumenty zarządzane przez Agentbox. Kopia na czas operacji służy do cofnięcia zmian w razie błędu; po udanej operacji jest usuwana i nie pojawia się w odzyskiwaniu. Pliki można odtworzyć z biblioteki po ponownym dodaniu i skonfigurowaniu projektu oraz synchronizacji.") }
+        .confirmationDialog("Usunąć z Agentbox projekty bez folderu (\(model.missingProjects.count))?", isPresented: $deletingMissing) {
+            Button("Usuń z Agentbox", role: .destructive) { Task { await model.deleteMissingProjects() } }
+            Button("Anuluj", role: .cancel) {}
+        } message: { Text(model.missingProjects.map(\.name).joined(separator: ", ") + "\n\nAgentbox zapomina tylko ich ustawienia; niczego nie usuwa z dysku. Przed zapisem powstaje snapshot biblioteki.") }
         .sheet(item: $adopting) { project in AdoptSkillsView(model: model, project: project) }
         .sheet(item: $managingPlugins) { project in ClaudePluginsView(model: model, project: project) }
         .confirmationDialog("Usunąć wspólne ustawienia folderu \(deletingRoot?.name ?? "")?", isPresented: Binding(get: { deletingRoot != nil }, set: { if !$0 { deletingRoot = nil } })) {
@@ -178,6 +183,9 @@ struct ProjectsView: View {
                     .disabled((model.projects.isEmpty && model.projectRoots.isEmpty) || model.isCheckingStatuses)
                 Button { showClientServers = true } label: { Label("Serwery klientów…", systemImage: "server.rack") }
                 Button { showGlobalSkills = true } label: { Label("Skille we wszystkich sesjach…", systemImage: "person.crop.circle") }
+                Divider()
+                Button(role: .destructive) { deletingMissing = true } label: { Label("Usuń projekty bez folderu (\(model.missingProjects.count))…", systemImage: "questionmark.folder") }
+                    .disabled(model.missingProjects.isEmpty || model.isWorking)
                 Divider()
                 Button("Rozwiń wszystko") { collapsedGroups.removeAll() }
                 Button("Zwiń wszystko") { collapsedGroups = Set(groups.map(\.path)) }

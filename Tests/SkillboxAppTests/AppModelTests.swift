@@ -192,6 +192,21 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: folder.path), "folder projektu zostaje na dysku")
     }
 
+    func testDeletingMissingProjectsRemovesOnlyProjectsWhoseFolderIsGone() async throws {
+        let model = try await makeModel()
+        let kept = try makeProjectFolder("kept"), gone = try makeProjectFolder("gone")
+        await model.addProject(Project(name: "kept", path: kept.path), selection: AttachmentSelection(tools: [.claude]))
+        await model.addProject(Project(name: "gone", path: gone.path), selection: AttachmentSelection(tools: [.claude]))
+        try FileManager.default.removeItem(at: gone)
+        await model.loadStatuses()
+        XCTAssertEqual(model.missingProjects.map(\.name), ["gone"])
+
+        await model.deleteMissingProjects()
+
+        XCTAssertEqual(model.projects.map(\.name), ["kept"])
+        XCTAssertTrue(model.missingProjects.isEmpty)
+    }
+
     // MARK: Adoption from a project
 
     /// Both halves of "przejmij z projektu" — a skill the library never knew and a change made to

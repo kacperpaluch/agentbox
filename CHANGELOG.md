@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-10-23
+
+### Dodano
+
+- `Więcej → Usuń projekty bez folderu…` w zakładce Projekty usuwa z Agentbox naraz wszystkie projekty oznaczone jako `Brak folderu`. Agentbox sprawdza dysk w chwili usuwania, niczego nie kasuje z dysku i robi jeden snapshot biblioteki.
+
 ## [0.33.0] - 2026-10-19
 
 ### Dodano

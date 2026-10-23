@@ -615,6 +615,25 @@ public actor SkillboxService {
         try await store.save(config)
     }
 
+    /// Forgets every project whose folder is gone from disk, in one save. Existence is checked here,
+    /// not taken from an earlier status, so a folder that came back in the meantime stays. Unlike
+    /// `deleteProject` the path is not added to the parent's ignored list: there is nothing left to
+    /// re-offer, and a folder recreated under the same name should be offered again.
+    @discardableResult
+    public func deleteMissingProjects() async throws -> [Project] {
+        var config = try await store.configuration()
+        let missing = config.projects.filter { project in
+            var isDirectory: ObjCBool = false
+            return !(fm.fileExists(atPath: project.path, isDirectory: &isDirectory) && isDirectory.boolValue)
+        }
+        guard !missing.isEmpty else { return [] }
+        let ids = Set(missing.map(\.id))
+        config.projects.removeAll { ids.contains($0.id) }
+        for id in ids { config.selections.removeValue(forKey: id.uuidString) }
+        try await store.save(config)
+        return missing
+    }
+
     /// Skill directories sitting in a project that Agentbox does not manage and that the library
     /// does not have yet. These are exactly the directories that block synchronization, so adopting
     /// one turns a conflict into a shared skill instead of forcing the user to delete their work.

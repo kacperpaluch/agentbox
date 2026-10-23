@@ -24,6 +24,26 @@ final class ProjectTests: AgentboxTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: projectFolder.path))
     }
 
+    func testDeletingMissingProjectsForgetsOnlyThoseWithoutAFolder() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let kept = root.appending(path: "kept"), gone = root.appending(path: "gone")
+        try FileManager.default.createDirectory(at: kept, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: gone, withIntermediateDirectories: true)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addProject(name: "kept", path: kept.path, tools: [.claude])
+        _ = try await service.addProject(name: "gone", path: gone.path, tools: [.claude])
+        try FileManager.default.removeItem(at: gone)
+
+        let removed = try await service.deleteMissingProjects()
+
+        XCTAssertEqual(removed.map(\.name), ["gone"])
+        let names = try await service.listProjects().map(\.name)
+        XCTAssertEqual(names, ["kept"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: kept.path))
+        let again = try await service.deleteMissingProjects()
+        XCTAssertTrue(again.isEmpty)
+    }
+
     func testDeletingManySkillsCleansEveryAssignmentInOneOperation() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let projectFolder = root.appending(path: "project")
