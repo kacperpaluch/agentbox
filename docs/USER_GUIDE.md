@@ -268,7 +268,13 @@ Nowy podfolder — na przykład świeżo sklonowane repozytorium — pojawia si�
 
 Usunięcie projektu należącego do obserwowanego folderu jest traktowane jak odmowa: jego podfolder nie wraca jako propozycja. Listę pominiętych folderów czyści przycisk `Przywróć pominięte` w ustawieniach folderu.
 
-Lista projektów grupuje projekty według folderu nadrzędnego, a pozostałe — według ich bezpośredniego folderu — i pokazuje pełną ścieżkę grupy. Nagłówek zwija pojedynczą grupę, a menu pod listą pozwala rozwinąć lub zwinąć wszystkie. Przycisk `Synchronizuj wszystkie projekty` tworzy wspólny podgląd całej listy przed pierwszym zapisem. Następnie synchronizuje projekty kolejno; każdy z nich zachowuje własny backup, transakcyjny zapis skilli i MCP oraz rollback w razie błędu.
+Lista projektów grupuje projekty według folderu nadrzędnego, a pozostałe — według ich bezpośredniego folderu — i pokazuje pełną ścieżkę grupy. Nagłówek zwija pojedynczą grupę, a `Więcej → Rozwiń/Zwiń wszystko` wszystkie naraz; Agentbox pamięta zwinięte grupy po ponownym uruchomieniu. Nagłówek grupy pokazuje, ile jej projektów czeka na synchronizację i ile ma problem, a gdy są zmiany do zapisania — przycisk `Synchronizuj grupę` z tym samym podglądem co synchronizacja wszystkich. Projekty bez folderu są w nim pomijane.
+
+W grupie najpierw stoją projekty wymagające uwagi (zablokowane, bez folderu, do synchronizacji), potem pozostałe alfabetycznie. Kolumna `Wyjątki` pokazuje tylko to, czym projekt różni się od reszty grupy: własne ustawienia w folderze nadrzędnym, innych klientów niż większość grupy, tagi skilli. Przycisk `Synchronizuj` jest niebieski tylko przy projektach, które mają coś do zapisania.
+
+Pole wyszukiwania w pasku okna filtruje projekty po nazwie i ścieżce, a przełącznik `Wszystkie · Do synchronizacji · Problemy` z liczbami zostawia tylko projekty w danym stanie. Podczas szukania i filtrowania grupy są rozwinięte, a te bez pasujących projektów — ukryte.
+
+Pole wyboru przy projekcie (albo przy nagłówku grupy — zaznacza jej widoczne projekty) zamienia pasek akcji na pasek zaznaczenia: `Synchronizuj` (z podglądem, pomija projekty bez folderu), `Ustawienia folderu` (przełącza projekty z własnymi ustawieniami z powrotem na ustawienia ich folderu — ich własny wybór jest usuwany, a pliki zmieniają się przy synchronizacji) i `Usuń` (te same dwie opcje co przy pojedynczym projekcie, jednym zapisem). Prawy przycisk myszy na zaznaczonym projekcie pokazuje te same akcje dla całego zaznaczenia, a na innym — menu tego projektu. Przycisk `Synchronizuj wszystkie projekty` tworzy wspólny podgląd całej listy przed pierwszym zapisem. Następnie synchronizuje projekty kolejno; każdy z nich zachowuje własny backup, transakcyjny zapis skilli i MCP oraz rollback w razie błędu.
 
 Podgląd projektu pokazuje osobno dla każdego klienta — Claude, Codex, OpenCode i Vibe:
 

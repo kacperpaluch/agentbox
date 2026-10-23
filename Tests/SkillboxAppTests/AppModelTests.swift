@@ -207,6 +207,37 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(model.missingProjects.isEmpty)
     }
 
+    func testProjectFilterPutsProblemsFirstAndMatchesNameOrPath() {
+        let blocked = Project(name: "zeta", path: "/tmp/zeta"), missing = Project(name: "beta", path: "/tmp/beta")
+        let pending = Project(name: "alpha", path: "/tmp/alpha"), synced = Project(name: "aaa", path: "/work/aaa")
+        let statuses: [UUID: ProjectStatus] = [
+            blocked.id: ProjectStatus(projectID: blocked.id, state: .blocked("x")),
+            missing.id: ProjectStatus(projectID: missing.id, state: .missing),
+            pending.id: ProjectStatus(projectID: pending.id, state: .pending(added: 1, outdated: 0, removed: 0)),
+            synced.id: ProjectStatus(projectID: synced.id, state: .synced),
+        ]
+        XCTAssertEqual(ProjectFilter.sorted([synced, pending, missing, blocked], statuses: statuses).map(\.name), ["zeta", "beta", "alpha", "aaa"])
+        XCTAssertEqual([blocked, missing, pending, synced].filter { ProjectFilter.problems.includes(statuses[$0.id]?.state) }.map(\.name), ["zeta", "beta"])
+        XCTAssertEqual([blocked, missing, pending, synced].filter { ProjectFilter.pending.includes(statuses[$0.id]?.state) }.map(\.name), ["alpha"])
+        XCTAssertTrue(ProjectFilter.matches(synced, search: "work"), "szukanie obejmuje ścieżkę")
+        XCTAssertFalse(ProjectFilter.matches(synced, search: "zeta"))
+        let both = Project(name: "a", path: "/a", tools: [.claude, .codex]), narrow = Project(name: "b", path: "/b", tools: [.claude])
+        XCTAssertEqual(ProjectFilter.usualTools([both, both, narrow], enabled: Tool.allCases), [.claude, .codex], "punkt odniesienia to zestaw większości grupy")
+    }
+
+    func testDeletingCheckedProjectsRemovesThemInOneAction() async throws {
+        let model = try await makeModel()
+        for name in ["one", "two", "three"] {
+            await model.addProject(Project(name: name, path: try makeProjectFolder(name).path), selection: AttachmentSelection(tools: [.claude]))
+        }
+        let chosen = model.projects.filter { $0.name != "two" }
+
+        await model.deleteProjects(chosen, removingFiles: false)
+
+        XCTAssertEqual(model.projects.map(\.name), ["two"])
+        XCTAssertEqual(model.operationLog.first?.text, "Usunięto 2 projektów z Agentbox; pliki w ich folderach zostały bez zmian")
+    }
+
     // MARK: Adoption from a project
 
     /// Both halves of "przejmij z projektu" — a skill the library never knew and a change made to

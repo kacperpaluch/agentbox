@@ -372,6 +372,28 @@ import SkillboxCore
             }
         }
     }
+    /// Several projects as one action: one message, one entry in history and — without files — one
+    /// recovery snapshot. With files, each project is cleaned first; a failure stops before anything
+    /// is forgotten, so a project whose files were not cleaned is never dropped from the library.
+    func deleteProjects(_ projects: [Project], removingFiles: Bool) async {
+        await perform {
+            let service = try self.requireService()
+            var removed = 0
+            if removingFiles { for project in projects { removed += try await service.unsyncProject(id: project.id).count } }
+            try await service.deleteProjects(ids: projects.map(\.id))
+            self.message = removingFiles ? "Usunięto \(projects.count) projektów i \(removed) elementów z ich folderów" : "Usunięto \(projects.count) projektów z Agentbox; pliki w ich folderach zostały bez zmian"
+        }
+    }
+    /// Projects with their own settings go back to their folder's. Files change at the next sync.
+    func followRoot(_ projects: [Project]) async {
+        await perform {
+            try await self.requireService().followRoot(projectIDs: projects.map(\.id))
+            self.message = "\(projects.count) projektów korzysta teraz z ustawień folderu; zsynchronizuj je, by zmiany trafiły do plików"
+        }
+    }
+    /// A project in its folder with settings of its own — the ones `followRoot` can switch back.
+    func hasOwnSettingsInRoot(_ project: Project) -> Bool { root(for: project) != nil && !inheritsRoot(project) }
+
     /// Projects the last status check found without a folder; the service re-checks the disk itself.
     var missingProjects: [Project] { projects.filter { statuses[$0.id]?.state == .missing } }
     func deleteMissingProjects() async {
@@ -635,18 +657,19 @@ import SkillboxCore
     func previewProjectSync(_ project: Project) async throws -> ProjectSyncPreview { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewProjectSync(projectID: project.id) }
     @discardableResult
     func syncEverything(_ project: Project) async -> Bool { await performing { _ = try await self.service?.syncProjectTransaction(projectID: project.id); self.message = "Zsynchronizowano skille, MCP, dokumenty i pluginy dla \(project.name)" } }
-    func previewAllProjectsSync() async throws -> [ProjectSyncPlan] { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.previewAllProjectsSync() }
+    /// `ids` narrows the preview to a group or a selection; `nil` means every project.
+    func previewAllProjectsSync(ids: Set<UUID>? = nil) async throws -> [ProjectSyncPlan] { try await requireService().previewAllProjectsSync(projectIDs: ids) }
     /// `nil` when the run could not even start; an empty list is a run over no projects.
-    func syncAllProjects() async -> [ProjectSyncOutcome]? {
+    func syncAllProjects(ids: Set<UUID>? = nil) async -> [ProjectSyncOutcome]? {
         isWorking = true
         defer { isWorking = false; progress = nil }
         do {
             guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
-            let outcomes = try await service.syncAllProjectsTransactions(progress: progressHandler)
+            let outcomes = try await service.syncAllProjectsTransactions(projectIDs: ids, progress: progressHandler)
             let synced = outcomes.filter { $0.state == .synced }.count
             let upToDate = outcomes.filter { $0.state == .upToDate }.count
             if synced + upToDate == outcomes.count {
-                message = upToDate == 0 ? "Zsynchronizowano wszystkie projekty: \(synced)" : "Zsynchronizowano \(synced), bez zmian \(upToDate)"
+                message = upToDate == 0 ? (ids == nil ? "Zsynchronizowano wszystkie projekty: \(synced)" : "Zsynchronizowano projekty: \(synced)") : "Zsynchronizowano \(synced), bez zmian \(upToDate)"
                 record(.success, message)
             }
             else {

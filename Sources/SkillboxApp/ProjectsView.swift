@@ -3,11 +3,51 @@ import AppKit
 import Combine
 import SkillboxCore
 
+/// What the Projekty list shows. "Problemy" are the projects that cannot be synchronized as they are.
+enum ProjectFilter: String, CaseIterable, Identifiable {
+    case all = "Wszystkie", pending = "Do synchronizacji", problems = "Problemy"
+    var id: String { rawValue }
+
+    func includes(_ state: ProjectStatus.State?) -> Bool {
+        switch (self, state) {
+        case (.all, _), (.pending, .pending?), (.problems, .blocked?), (.problems, .missing?): true
+        default: false
+        }
+    }
+    /// Lower comes first: what needs a decision, then what needs a sync, then everything else.
+    static func rank(_ state: ProjectStatus.State?) -> Int {
+        switch state {
+        case .blocked?: 0
+        case .missing?: 1
+        case .pending?: 2
+        case .synced?: 3
+        case nil: 4
+        }
+    }
+    static func matches(_ project: Project, search: String) -> Bool {
+        search.isEmpty || project.name.localizedCaseInsensitiveContains(search) || project.path.localizedCaseInsensitiveContains(search)
+    }
+    /// The order inside a group: attention first, then by name.
+    /// The clients most projects of a group use. A row names its clients only when they differ, so
+    /// a folder of projects that all use Claude and Codex does not say so on every line.
+    static func usualTools(_ projects: [Project], enabled: [Tool]) -> Set<Tool> {
+        let sets = projects.map { Set($0.tools.filter(enabled.contains)) }
+        let counts = Dictionary(sets.map { ($0, 1) }, uniquingKeysWith: +)
+        return counts.max { $0.value != $1.value ? $0.value < $1.value : $0.key.count > $1.key.count }?.key ?? Set(enabled)
+    }
+    static func sorted(_ projects: [Project], statuses: [UUID: ProjectStatus]) -> [Project] {
+        projects.sorted {
+            let (left, right) = (rank(statuses[$0.id]?.state), rank(statuses[$1.id]?.state))
+            return left != right ? left < right : $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+}
+
 struct ProjectsView: View {
     @ObservedObject var model: AppModel
     @Binding var showProject: Bool
     @State private var showBatch = false
-    @State private var showAllSync = false
+    @State private var syncScope: SyncScope?
     @State private var configurationProject: Project?
     @State private var editing: Project?
     @State private var previewProject: Project?
@@ -15,7 +55,6 @@ struct ProjectsView: View {
     @State private var deletingMissing = false
     @State private var adopting: Project?
     @State private var managingPlugins: Project?
-    @State private var collapsedGroups = Set<String>()
     @State private var editingRoot: ProjectRoot?
     @State private var deletingRoot: ProjectRoot?
     @State private var settingUpRoot: ProjectGroup?
@@ -23,6 +62,19 @@ struct ProjectsView: View {
     @State private var showProjectDefaults = false
     @State private var showGlobalSkills = false
     @State private var showClientServers = false
+    @State private var search = ""
+    @State private var filter = ProjectFilter.all
+    @State private var checked = Set<UUID>()
+    @State private var deletingChecked = false
+    @State private var followingChecked = false
+    /// Folder paths, one per line. Kept between launches so a long list opens the way it was left.
+    @AppStorage("AgentboxCollapsedProjectGroups") private var collapsedStorage = ""
+
+    private struct SyncScope: Identifiable {
+        let id = UUID()
+        let ids: Set<UUID>?
+        let title: String
+    }
 
     private struct ProjectGroup: Identifiable {
         let path: String
@@ -31,6 +83,14 @@ struct ProjectsView: View {
         var id: String { root?.id.uuidString ?? path }
         var name: String { root?.name ?? URL(fileURLWithPath: path).lastPathComponent }
     }
+
+    private var collapsedGroups: Set<String> {
+        get { Set(collapsedStorage.split(separator: "\n").map(String.init)) }
+        nonmutating set { collapsedStorage = newValue.sorted().joined(separator: "\n") }
+    }
+    private var isFiltering: Bool { !search.isEmpty || filter != .all }
+    private var checkedProjects: [Project] { model.projects.filter { checked.contains($0.id) } }
+    private var followable: [Project] { checkedProjects.filter(model.hasOwnSettingsInRoot) }
 
     /// Projects of a parent folder stay together even when one of them was moved elsewhere on disk,
     /// so the group header always describes the settings its rows actually use. Projects added on
@@ -42,12 +102,22 @@ struct ProjectsView: View {
             if let root = model.root(for: project) { byRoot[root.id, default: []].append(project) }
             else { byPath[URL(fileURLWithPath: project.path).deletingLastPathComponent().standardizedFileURL.path, default: []].append(project) }
         }
-        let sorted: ([Project]) -> [Project] = { $0.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
+        let sorted: ([Project]) -> [Project] = { ProjectFilter.sorted($0, statuses: model.statuses) }
         // A folder with no projects left still appears, otherwise its shared settings would become
         // unreachable the moment its last project is removed.
         let rootGroups = model.projectRoots.map { ProjectGroup(path: $0.path, root: $0, projects: sorted(byRoot[$0.id] ?? [])) }
         let pathGroups = byPath.map { ProjectGroup(path: $0.key, root: nil, projects: sorted($0.value)) }
         return (rootGroups + pathGroups).sorted { $0.path.localizedCaseInsensitiveCompare($1.path) == .orderedAscending }
+    }
+    private func visible(_ group: ProjectGroup) -> [Project] {
+        group.projects.filter { ProjectFilter.matches($0, search: search) && filter.includes(model.statuses[$0.id]?.state) }
+    }
+    private func count(_ filter: ProjectFilter, in projects: [Project]) -> Int { projects.filter { filter.includes(model.statuses[$0.id]?.state) }.count }
+    /// A project without its folder has nothing to synchronize into, so a group or selection skips it.
+    private func syncable(_ projects: [Project]) -> Set<UUID> { Set(projects.filter { model.statuses[$0.id]?.state != .missing }.map(\.id)) }
+    private func names(_ projects: [Project]) -> String {
+        let shown = projects.prefix(8).map(\.name).joined(separator: ", ")
+        return projects.count > 8 ? "\(shown) i \(projects.count - 8) innych" : shown
     }
 
     var body: some View {
@@ -57,6 +127,8 @@ struct ProjectsView: View {
             projectList
         }
         .navigationTitle("Projekty")
+        .searchable(text: $search, prompt: "Nazwa lub ścieżka projektu")
+        .onChange(of: model.projects.map(\.id)) { checked.formIntersection(model.projects.map(\.id)) }
         .sheet(isPresented: $showBatch) { BatchProjectView(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, existingProjects: model.projects, existingRoots: model.projectRoots, claudePlugins: model.claudePluginLibrary, initialSelection: model.projectDefaults) { request in await model.addBatch(request) } }
         .sheet(isPresented: $showDetected) { DetectedFoldersView(model: model) }
         .sheet(isPresented: $showProjectDefaults) { ProjectDefaultsEditor(model: model) }
@@ -83,7 +155,7 @@ struct ProjectsView: View {
         }
         .sheet(item: $configurationProject) { project in ProjectConfigurationView(model: model, project: project) }
         .sheet(item: $previewProject) { project in MCPPreviewView(model: model, project: project) }
-        .sheet(isPresented: $showAllSync) { AllProjectsSyncPreviewView(model: model) }
+        .sheet(item: $syncScope) { scope in AllProjectsSyncPreviewView(model: model, ids: scope.ids, title: scope.title) }
         .confirmationDialog("Usunąć projekt \(deleting?.name ?? "") z Agentbox?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             Button("Usuń tylko z Agentbox", role: .destructive) { if let deleting { Task { await model.deleteProject(deleting, removingFiles: false) } }; deleting = nil }
             Button("Usuń i posprzątaj pliki w projekcie", role: .destructive) { if let deleting { Task { await model.deleteProject(deleting, removingFiles: true) } }; deleting = nil }
@@ -93,6 +165,18 @@ struct ProjectsView: View {
             Button("Usuń z Agentbox", role: .destructive) { Task { await model.deleteMissingProjects() } }
             Button("Anuluj", role: .cancel) {}
         } message: { Text(model.missingProjects.map(\.name).joined(separator: ", ") + "\n\nAgentbox zapomina tylko ich ustawienia; niczego nie usuwa z dysku. Przed zapisem powstaje snapshot biblioteki.") }
+        .confirmationDialog("Usunąć \(checkedProjects.count) projektów z Agentbox?", isPresented: $deletingChecked) {
+            Button("Usuń tylko z Agentbox", role: .destructive) { let projects = checkedProjects; Task { await model.deleteProjects(projects, removingFiles: false) } }
+            // A project without its folder has no files to clean, and trying would stop the whole action.
+            if !checkedProjects.contains(where: { model.statuses[$0.id]?.state == .missing }) {
+                Button("Usuń i posprzątaj pliki w projektach", role: .destructive) { let projects = checkedProjects; Task { await model.deleteProjects(projects, removingFiles: true) } }
+            }
+            Button("Anuluj", role: .cancel) {}
+        } message: { Text(names(checkedProjects) + "\n\nSprzątanie usuwa wyłącznie skille, wpisy MCP i dokumenty zarządzane przez Agentbox. Foldery projektów zostają na dysku.") }
+        .confirmationDialog("Przełączyć \(followable.count) projektów na ustawienia folderu?", isPresented: $followingChecked) {
+            Button("Przełącz na ustawienia folderu", role: .destructive) { let projects = followable; Task { await model.followRoot(projects) } }
+            Button("Anuluj", role: .cancel) {}
+        } message: { Text(names(followable) + "\n\nIch własne wybory skilli, MCP i dokumentów zostaną usunięte; od teraz dostają to, co ustawiono w folderze. Pliki w projektach zmienią się dopiero przy synchronizacji. Zmianę można cofnąć snapshotem biblioteki.") }
         .sheet(item: $adopting) { project in AdoptSkillsView(model: model, project: project) }
         .sheet(item: $managingPlugins) { project in ClaudePluginsView(model: model, project: project) }
         .confirmationDialog("Usunąć wspólne ustawienia folderu \(deletingRoot?.name ?? "")?", isPresented: Binding(get: { deletingRoot != nil }, set: { if !$0 { deletingRoot = nil } })) {
@@ -119,77 +203,138 @@ struct ProjectsView: View {
     }
 
     private var projectList: some View {
-        List {
+        let shownGroups = groups.map { ($0, visible($0)) }.filter { !isFiltering || !$0.1.isEmpty }
+        return List {
             defaultsSection
             if model.projects.isEmpty && model.projectRoots.isEmpty {
                 ContentUnavailableView("Brak projektów", systemImage: "folder.badge.plus", description: Text("Dodaj folder i wybierz skille dla Claude, Codex lub OpenCode."))
                     .listRowSeparator(.hidden)
+            } else if isFiltering && shownGroups.isEmpty {
+                ContentUnavailableView("Nic nie pasuje", systemImage: "magnifyingglass", description: Text(filter == .all ? "Żaden projekt nie pasuje do „\(search)”." : "Brak projektów w widoku „\(filter.rawValue)”."))
+                    .listRowSeparator(.hidden)
             }
-            if !model.projects.isEmpty { projectColumnHeader }
-            ForEach(groups) { group in
+            if !model.projects.isEmpty && !shownGroups.isEmpty { projectColumnHeader }
+            ForEach(shownGroups, id: \.0.id) { group, shown in
+                let usualTools = ProjectFilter.usualTools(group.projects, enabled: model.enabledTools)
                 DisclosureGroup(isExpanded: groupExpansion(group.path)) {
                     if group.projects.isEmpty { Text("Folder bez projektów. Dodaj podfoldery przez `Dodaj wiele` albo poczekaj, aż Agentbox je wykryje.").font(.caption).foregroundStyle(.secondary).padding(.vertical, 6) }
-                    ForEach(group.projects) { project in
-                        // A project that belongs to a watched folder but opted out of its shared
-                        // settings looks, at a glance, exactly like one that simply follows it — the
-                        // one place that showed the difference was deep in its own editor. Surfacing
-                        // it here means a change to the folder's settings does not quietly skip this
-                        // project without anyone noticing on the list.
-                        let ownSettings = group.root != nil && !model.inheritsRoot(project)
-                        ProjectRow(project: project, status: model.statuses[project.id], inheritsRoot: model.inheritsRoot(project), ownSettingsInRoot: ownSettings, rootName: group.root?.name, configurationProject: $configurationProject, editing: $editing, previewProject: $previewProject, deleting: $deleting, adopting: $adopting, managingPlugins: $managingPlugins)
+                    ForEach(shown) { project in
+                        ProjectRow(
+                            project: project, status: model.statuses[project.id],
+                            // A project that opted out of its folder's settings looks, at a glance, like
+                            // one that follows it; the badge keeps a folder change from quietly skipping it.
+                            ownSettingsInRoot: group.root != nil && !model.inheritsRoot(project),
+                            rootName: group.root?.name, enabledTools: model.enabledTools, usualTools: usualTools,
+                            isChecked: checkBinding(project.id),
+                            open: { configurationProject = project }, sync: { previewProject = project }
+                        ) { projectActions(project) }
+                        .contextMenu { contextMenu(for: project) }
                     }
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: Space.tight + 2) {
-                                Image(systemName: group.root == nil ? "folder" : "folder.badge.gearshape").foregroundStyle(.tint)
-                                Text(group.name).sectionLabel()
-                                Text("\(group.projects.count)").rowMetadata()
-                                if let root = group.root, root.watchesNewFolders { Image(systemName: "eye").font(.caption2).foregroundStyle(.secondary).help("Agentbox pyta o nowe podfoldery w tym folderze") }
-                            }
-                            Text(group.path).font(.caption2).foregroundStyle(.tertiary).lineLimit(1).help(group.path)
-                        }
-                        Spacer()
-                        if let root = group.root {
-                            Button { editingRoot = root } label: { Label("Ustawienia folderu", systemImage: "gearshape") }.buttonStyle(.bordered).controlSize(.small)
-                            Button { deletingRoot = root } label: { Image(systemName: "trash") }.buttonStyle(.borderless).controlSize(.small).help("Usuń wspólne ustawienia folderu")
-                        } else {
-                            // Projects added before parent folders existed, or added one by one, have
-                            // no folder to inherit from. This is where they get one.
-                            Button { settingUpRoot = group } label: { Label("Wspólne ustawienia…", systemImage: "folder.badge.gearshape") }
-                                .buttonStyle(.bordered).controlSize(.small)
-                                .help("Ustaw skille i MCP wspólne dla wszystkich projektów w tym folderze")
-                        }
-                    }
-                    .textCase(nil)
-                    .padding(.vertical, 2)
-                }
+                } label: { groupHeader(group, shown: shown) }
             }
         }
     }
 
+    private func groupHeader(_ group: ProjectGroup, shown: [Project]) -> some View {
+        let pending = count(.pending, in: group.projects), problems = count(.problems, in: group.projects)
+        return HStack {
+            if !shown.isEmpty { Toggle("", isOn: groupCheckBinding(shown)).labelsHidden().toggleStyle(.checkbox).help("Zaznacz widoczne projekty tej grupy") }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: Space.tight + 2) {
+                    Image(systemName: group.root == nil ? "folder" : "folder.badge.gearshape").foregroundStyle(.tint)
+                    Text(group.name).sectionLabel()
+                    Text("\(group.projects.count)").rowMetadata()
+                    if let root = group.root, root.watchesNewFolders { Image(systemName: "eye").font(.caption2).foregroundStyle(.secondary).help("Agentbox pyta o nowe podfoldery w tym folderze") }
+                    if pending > 0 { MetaBadge(text: "\(pending) do synchronizacji", tint: .orange) }
+                    if problems > 0 { MetaBadge(text: "\(problems) z problemem", tint: .red) }
+                }
+                Text(group.path).font(.caption2).foregroundStyle(.tertiary).lineLimit(1).help(group.path)
+            }
+            Spacer()
+            if pending > 0 {
+                Button { syncScope = SyncScope(ids: syncable(group.projects), title: "Synchronizacja: \(group.name)") } label: { Label("Synchronizuj grupę", systemImage: "arrow.triangle.2.circlepath") }
+                    .buttonStyle(.bordered).controlSize(.small).disabled(model.isWorking)
+            }
+            if let root = group.root {
+                Button { editingRoot = root } label: { Label("Ustawienia folderu", systemImage: "gearshape") }.buttonStyle(.bordered).controlSize(.small)
+                Button { deletingRoot = root } label: { Image(systemName: "trash") }.buttonStyle(.borderless).controlSize(.small).help("Usuń wspólne ustawienia folderu")
+            } else {
+                // Projects added before parent folders existed, or added one by one, have
+                // no folder to inherit from. This is where they get one.
+                Button { settingUpRoot = group } label: { Label("Wspólne ustawienia…", systemImage: "folder.badge.gearshape") }
+                    .buttonStyle(.bordered).controlSize(.small)
+                    .help("Ustaw skille i MCP wspólne dla wszystkich projektów w tym folderze")
+            }
+        }
+        .textCase(nil)
+        .padding(.vertical, 2)
+    }
+
+    /// One list of a project's actions, shared by its "…" menu and its right-click menu.
+    @ViewBuilder private func projectActions(_ project: Project) -> some View {
+        Button("Konfiguracja i pochodzenie…") { configurationProject = project }
+        Button("Edytuj…") { editing = project }
+        Button("Przejmij z projektu…") { adopting = project }
+        Button("Pluginy Claude…") { managingPlugins = project }
+        Divider()
+        Button("Usuń projekt…", role: .destructive) { deleting = project }
+    }
+
+    /// Right-clicking a checked row acts on everything checked, as in Finder; any other row acts on itself.
+    @ViewBuilder private func contextMenu(for project: Project) -> some View {
+        if checked.contains(project.id) && checked.count > 1 {
+            Button("Synchronizuj zaznaczone (\(checked.count))…") { syncChecked() }.disabled(syncable(checkedProjects).isEmpty || model.isWorking)
+            if !followable.isEmpty { Button("Przełącz na ustawienia folderu (\(followable.count))…") { followingChecked = true } }
+            Divider()
+            Button("Usuń zaznaczone (\(checked.count))…", role: .destructive) { deletingChecked = true }
+        } else {
+            Button("Synchronizuj…") { previewProject = project }.disabled(model.statuses[project.id]?.state == .missing)
+            projectActions(project)
+        }
+    }
+
+    private func syncChecked() { syncScope = SyncScope(ids: syncable(checkedProjects), title: "Synchronizacja zaznaczonych projektów") }
+
     private var actionBar: some View {
         ActionBar {
-            Button { showAllSync = true } label: { Label("Synchronizuj wszystkie", systemImage: "arrow.triangle.2.circlepath") }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.projects.isEmpty || model.isWorking)
-            Menu {
-                Button { showProject = true } label: { Label("Jeden projekt…", systemImage: "folder.badge.plus") }
-                Button { showBatch = true } label: { Label("Wiele projektów…", systemImage: "folder.badge.plus") }
-            } label: { Label("Dodaj projekt", systemImage: "plus") }
-                .menuStyle(.borderedButton)
-            Menu {
-                Button { Task { await model.refreshProjects() } } label: { Label("Sprawdź stan projektów", systemImage: "arrow.clockwise") }
-                    .disabled((model.projects.isEmpty && model.projectRoots.isEmpty) || model.isCheckingStatuses)
-                Button { showClientServers = true } label: { Label("Serwery klientów…", systemImage: "server.rack") }
-                Button { showGlobalSkills = true } label: { Label("Skille we wszystkich sesjach…", systemImage: "person.crop.circle") }
-                Divider()
-                Button(role: .destructive) { deletingMissing = true } label: { Label("Usuń projekty bez folderu (\(model.missingProjects.count))…", systemImage: "questionmark.folder") }
-                    .disabled(model.missingProjects.isEmpty || model.isWorking)
-                Divider()
-                Button("Rozwiń wszystko") { collapsedGroups.removeAll() }
-                Button("Zwiń wszystko") { collapsedGroups = Set(groups.map(\.path)) }
-            } label: { Label("Więcej", systemImage: "ellipsis") }
+            if checked.isEmpty {
+                Button { syncScope = SyncScope(ids: nil, title: "Synchronizacja wszystkich projektów") } label: { Label("Synchronizuj wszystkie", systemImage: "arrow.triangle.2.circlepath") }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.projects.isEmpty || model.isWorking)
+                Menu {
+                    Button { showProject = true } label: { Label("Jeden projekt…", systemImage: "folder.badge.plus") }
+                    Button { showBatch = true } label: { Label("Wiele projektów…", systemImage: "folder.badge.plus") }
+                } label: { Label("Dodaj projekt", systemImage: "plus") }
+                    .menuStyle(.borderedButton)
+                    .fixedSize()
+                Menu {
+                    Button { Task { await model.refreshProjects() } } label: { Label("Sprawdź stan projektów", systemImage: "arrow.clockwise") }
+                        .disabled((model.projects.isEmpty && model.projectRoots.isEmpty) || model.isCheckingStatuses)
+                    Button { showClientServers = true } label: { Label("Serwery klientów…", systemImage: "server.rack") }
+                    Button { showGlobalSkills = true } label: { Label("Skille we wszystkich sesjach…", systemImage: "person.crop.circle") }
+                    Divider()
+                    Button(role: .destructive) { deletingMissing = true } label: { Label("Usuń projekty bez folderu (\(model.missingProjects.count))…", systemImage: "questionmark.folder") }
+                        .disabled(model.missingProjects.isEmpty || model.isWorking)
+                    Divider()
+                    Button("Rozwiń wszystko") { collapsedGroups = [] }
+                    Button("Zwiń wszystko") { collapsedGroups = Set(groups.map(\.path)) }
+                } label: { Label("Więcej", systemImage: "ellipsis") }
+                    .fixedSize()
+            } else {
+                Text("Wybrano \(checked.count)").rowMetadata()
+                Button { syncChecked() } label: { Label("Synchronizuj", systemImage: "arrow.triangle.2.circlepath") }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(syncable(checkedProjects).isEmpty || model.isWorking)
+                if !followable.isEmpty {
+                    Button { followingChecked = true } label: { Label("Ustawienia folderu (\(followable.count))", systemImage: "arrow.turn.up.right") }
+                        .buttonStyle(.bordered)
+                        .help("Przełącz projekty z własnymi ustawieniami na ustawienia ich folderu")
+                }
+                Button(role: .destructive) { deletingChecked = true } label: { Label("Usuń", systemImage: "trash") }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isWorking)
+                Button("Anuluj") { checked.removeAll() }.buttonStyle(.bordered)
+            }
             Spacer()
             if model.isCheckingStatuses {
                 ProgressView().controlSize(.small)
@@ -197,6 +342,14 @@ struct ProjectsView: View {
                     Text("\(progress.done)/\(progress.total)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
                 }
             }
+            Picker("Pokaż", selection: $filter) {
+                ForEach(ProjectFilter.allCases) { item in
+                    Text(item == .all ? "\(item.rawValue) \(model.projects.count)" : "\(item.rawValue) \(count(item, in: model.projects))").tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
         }
     }
 
@@ -220,11 +373,12 @@ struct ProjectsView: View {
         HStack(spacing: Space.section) {
             Text("PROJEKT").frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
             Text("STAN").frame(width: 145, alignment: .leading)
-            Text("ZAWARTOŚĆ").frame(width: 170, alignment: .leading)
+            Text("WYJĄTKI").frame(width: 170, alignment: .leading)
             Text("AKCJE").frame(width: 150, alignment: .leading)
         }
         .font(.caption2.weight(.semibold))
         .foregroundStyle(.secondary)
+        .padding(.leading, 22)
         .padding(.vertical, Space.tight)
         .listRowSeparator(.hidden)
     }
@@ -240,7 +394,15 @@ struct ProjectsView: View {
     }
 
     private func groupExpansion(_ path: String) -> Binding<Bool> {
-        Binding(get: { !collapsedGroups.contains(path) }, set: { if $0 { collapsedGroups.remove(path) } else { collapsedGroups.insert(path) } })
+        // A search or a filter opens every group: hiding a match inside a collapsed folder would look like no match.
+        Binding(get: { isFiltering || !collapsedGroups.contains(path) }, set: { open in
+            if open { collapsedGroups.remove(path) } else { collapsedGroups.insert(path) }
+        })
+    }
+    private func checkBinding(_ id: UUID) -> Binding<Bool> { Binding(get: { checked.contains(id) }, set: { if $0 { checked.insert(id) } else { checked.remove(id) } }) }
+    private func groupCheckBinding(_ projects: [Project]) -> Binding<Bool> {
+        let ids = Set(projects.map(\.id))
+        return Binding(get: { !ids.isEmpty && ids.isSubset(of: checked) }, set: { if $0 { checked.formUnion(ids) } else { checked.subtract(ids) } })
     }
 }
 struct ProjectStatusBadge: View {
@@ -248,7 +410,8 @@ struct ProjectStatusBadge: View {
     var body: some View {
         switch status?.state {
         case .synced:
-            Label("Aktualny", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
+            // The common case stays quiet so the states that need something stand out.
+            Label { Text("Aktualny").foregroundStyle(.secondary) } icon: { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }.font(.caption)
         case .pending(let added, let outdated, let removed):
             Label(summary(added, outdated, removed), systemImage: "arrow.triangle.2.circlepath").font(.caption).foregroundStyle(.orange)
         case .blocked(let reason):
@@ -267,63 +430,64 @@ struct ProjectStatusBadge: View {
         return "Do synchronizacji " + parts.joined(separator: " ")
     }
 }
-private struct ProjectRow: View {
+/// One line per project. The third column lists only what differs from the usual — own settings
+/// inside a folder, a narrower set of clients, skill tags — so a list of identical projects reads as
+/// identical instead of repeating the same facts on every row.
+private struct ProjectRow<Actions: View>: View {
     let project: Project
     let status: ProjectStatus?
-    let inheritsRoot: Bool
-    /// True when the project sits in a watched parent folder but was deliberately switched to its
-    /// own settings — so a change to the folder silently stops reaching it.
-    var ownSettingsInRoot: Bool = false
-    var rootName: String?
-    @Binding var configurationProject: Project?
-    @Binding var editing: Project?
-    @Binding var previewProject: Project?
-    @Binding var deleting: Project?
-    @Binding var adopting: Project?
-    @Binding var managingPlugins: Project?
+    let ownSettingsInRoot: Bool
+    let rootName: String?
+    let enabledTools: [Tool]
+    let usualTools: Set<Tool>
+    @Binding var isChecked: Bool
+    let open: () -> Void
+    let sync: () -> Void
+    @ViewBuilder let actions: Actions
 
     var body: some View {
         HStack(alignment: .center, spacing: Space.section) {
-            VStack(alignment: .leading, spacing: Space.tight) {
-                Button { configurationProject = project } label: { Text(project.name).rowTitle() }.buttonStyle(.plain).help("Co trafia do projektu i dlaczego")
-                Text(project.path).rowMetadata().lineLimit(1).help(project.path)
+            Toggle("", isOn: $isChecked).labelsHidden().toggleStyle(.checkbox)
+            HStack(spacing: Space.row) {
+                Button(action: open) { Text(project.name).rowTitle() }.buttonStyle(.plain).help("Co trafia do projektu i dlaczego")
+                Text(project.path).font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle).help(project.path)
             }
             .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
 
             ProjectStatusBadge(status: status)
                 .frame(width: 145, alignment: .leading)
 
-            VStack(alignment: .leading, spacing: Space.tight) {
-                Text(contentSummary).rowMetadata().lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
                 if ownSettingsInRoot {
                     MetaBadge(text: "Własne ustawienia", tint: .orange)
                         .help("Projekt nie dziedziczy ustawień folderu\(rootName.map { " „\($0)”" } ?? "")")
-                } else if inheritsRoot {
-                    Label("Ustawienia folderu", systemImage: "arrow.turn.up.right")
-                        .font(.caption2).foregroundStyle(.secondary)
                 }
+                if let toolsException { Text(toolsException).rowMetadata().lineLimit(1) }
+                if !project.tags.isEmpty { Text(project.tags.map { "#\($0)" }.joined(separator: " ")).rowMetadata().lineLimit(1).help(project.tags.joined(separator: ", ")) }
             }
             .frame(width: 170, alignment: .leading)
 
             HStack(spacing: Space.tight) {
-                Button("Synchronizuj") { previewProject = project }.buttonStyle(.borderedProminent).controlSize(.small)
-                RowMenu {
-                    Button("Konfiguracja i pochodzenie…") { configurationProject = project }
-                    Button("Edytuj…") { editing = project }
-                    Button("Przejmij z projektu…") { adopting = project }
-                    Button("Pluginy Claude…") { managingPlugins = project }
-                    Divider()
-                    Button("Usuń projekt…", role: .destructive) { deleting = project }
+                // Prominent only where there is something to write; elsewhere it would be one of
+                // dozens of identical blue buttons drowning out the rows that need attention.
+                if case .pending? = status?.state {
+                    Button("Synchronizuj", action: sync).buttonStyle(.borderedProminent).controlSize(.small)
+                } else {
+                    Button("Synchronizuj", action: sync).buttonStyle(.bordered).controlSize(.small).disabled(status?.state == .missing)
                 }
+                RowMenu { actions }
             }
             .frame(width: 150, alignment: .leading)
         }
-        .padding(.vertical, Space.row)
+        .padding(.vertical, Space.tight)
     }
 
-    private var contentSummary: String {
-        let pieces = ["\(project.tools.count) klientów", "\(project.tags.count) tagów"]
-        return pieces.joined(separator: " · ")
+    /// Clients named only when they differ from what the rest of the group uses.
+    private var toolsException: String? {
+        let used = enabledTools.filter(project.tools.contains)
+        guard Set(used) != usualTools else { return nil }
+        let names = used.map { $0.rawValue.capitalized }.joined(separator: ", ")
+        return used.isEmpty ? "Bez klientów" : Set(used).isSubset(of: usualTools) ? "Tylko \(names)" : names
     }
 }
 struct ClaudePluginsView: View {
@@ -413,10 +577,13 @@ struct AllProjectsSyncPreviewView: View {
     @ObservedObject var model: AppModel
     @State private var plans: [ProjectSyncPlan]?; @State private var error = ""
     @State private var outcomes: [ProjectSyncOutcome] = []
+    /// A group or a selection; `nil` synchronizes every project.
+    var ids: Set<UUID>? = nil
+    var title = "Synchronizacja wszystkich projektów"
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Synchronizacja wszystkich projektów").font(.title2.bold())
-            Text("Agentbox najpierw sprawdza plan dla wszystkich projektów. Każdy projekt jest synchronizowany transakcyjnie ze swoim backupem i rollbackiem. Błąd zatrzymuje serię, a projekt, który go zgłosił, wraca do stanu sprzed zmiany.").font(.caption).foregroundStyle(.secondary)
+            Text(title).font(.title2.bold())
+            Text("Agentbox najpierw sprawdza plan dla wszystkich wybranych projektów. Każdy projekt jest synchronizowany transakcyjnie ze swoim backupem i rollbackiem. Błąd zatrzymuje serię, a projekt, który go zgłosił, wraca do stanu sprzed zmiany.").font(.caption).foregroundStyle(.secondary)
             Label("Wynikowe pliki MCP mogą zawierać jawne sekrety, dlatego pozostają wykluczone lokalnie z Git.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
             if !error.isEmpty { Text(error).foregroundStyle(.red) }
             else if plans == nil { ProgressView() }
@@ -429,7 +596,7 @@ struct AllProjectsSyncPreviewView: View {
                     Button("Synchronizuj \(plans?.count ?? 0) projektów") {
                         Task {
                             // A run that never started is not "everything succeeded": the sheet stays with the reason.
-                            guard let result = await model.syncAllProjects() else { error = model.message; return }
+                            guard let result = await model.syncAllProjects(ids: ids) else { error = model.message; return }
                             if result.allSatisfy({ $0.state == .synced || $0.state == .upToDate }) { dismiss() } else { outcomes = result }
                         }
                     }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || plans == nil || model.isWorking)
@@ -439,7 +606,7 @@ struct AllProjectsSyncPreviewView: View {
         .padding(24).sheetFrame(width: 820, height: 700)
         // Okno arkusza zasłania overlay z App.swift, więc postęp musi być rysowany też tutaj.
         .overlay { if model.isWorking { WorkingOverlay(progress: model.progress) } }
-        .task { do { plans = try await model.previewAllProjectsSync() } catch { self.error = error.localizedDescription; model.reportError(error) } }
+        .task { do { plans = try await model.previewAllProjectsSync(ids: ids) } catch { self.error = error.localizedDescription; model.reportError(error) } }
     }
 }
 private struct ProjectSyncOutcomeRow: View {

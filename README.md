@@ -141,7 +141,7 @@ Folder nadrzędny może też obserwować nowe podfoldery. Świeżo sklonowane re
 
 Lista projektów jest grupowana według folderu nadrzędnego, dzięki czemu projekty z jednego katalogu roboczego są widoczne razem. Każdą grupę można zwinąć osobno albo rozwinąć i zwinąć wszystkie grupy z menu pod listą.
 
-`Synchronizuj wszystko` przy projekcie pokazuje podgląd i synchronizuje jego skille, konfiguracje MCP oraz dokument. `Synchronizuj wszystkie projekty` najpierw przygotowuje plan dla całej listy, a następnie wykonuje tę samą transakcyjną operację kolejno dla każdego projektu.
+`Synchronizuj wszystko` przy projekcie pokazuje podgląd i synchronizuje jego skille, konfiguracje MCP oraz dokument. `Synchronizuj wszystkie projekty` najpierw przygotowuje plan dla całej listy, a następnie wykonuje tę samą transakcyjną operację kolejno dla każdego projektu. Przy wielu projektach pomagają wyszukiwarka, filtr `Do synchronizacji / Problemy`, `Synchronizuj grupę` w nagłówku folderu oraz zaznaczanie kilku projektów naraz — do synchronizacji, usunięcia albo przełączenia na ustawienia folderu.
 
 | Narzędzie | Skille w projekcie | MCP w projekcie |
 |---|---|---|

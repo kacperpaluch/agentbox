@@ -600,18 +600,46 @@ public actor SkillboxService {
         try await updateProject(project, selection: selection)
     }
 
-    public func deleteProject(id: UUID) async throws {
+    public func deleteProject(id: UUID) async throws { try await deleteProjects(ids: [id]) }
+
+    /// Several projects in one save, so a selection removed together is one recovery snapshot. Every
+    /// id is checked before anything changes.
+    public func deleteProjects(ids: [UUID]) async throws {
         var config = try await store.configuration()
-        guard let removed = config.projects.first(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
-        config.projects.removeAll { $0.id == id }
-        // Removing a project from a watched parent folder is an answer, not an accident: without
-        // this the folder would offer the very same subfolder again at the next scan.
-        if let rootID = removed.rootID, let index = config.roots.firstIndex(where: { $0.id == rootID }) {
-            var roots = config.roots
-            roots[index].ignoredPaths = Self.standardized(roots[index].ignoredPaths + [removed.path]).sorted()
-            config.projectRoots = roots
+        var roots = config.roots
+        for id in ids {
+            guard let removed = config.projects.first(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
+            // Removing a project from a watched parent folder is an answer, not an accident: without
+            // this the folder would offer the very same subfolder again at the next scan.
+            if let rootID = removed.rootID, let index = roots.firstIndex(where: { $0.id == rootID }) {
+                roots[index].ignoredPaths = Self.standardized(roots[index].ignoredPaths + [removed.path]).sorted()
+            }
         }
-        config.selections.removeValue(forKey: id.uuidString)
+        let removing = Set(ids)
+        config.projects.removeAll { removing.contains($0.id) }
+        if roots != config.roots { config.projectRoots = roots }
+        for id in removing { config.selections.removeValue(forKey: id.uuidString) }
+        try await store.save(config)
+    }
+
+    /// Switches projects with their own settings back to their parent folder's, in one save. Their
+    /// own selection is dropped, as the project editor does: a follower reads the folder's, and a
+    /// leftover record would be a second source of truth nothing uses. A project without a parent
+    /// folder refuses the whole operation.
+    public func followRoot(projectIDs: [UUID]) async throws {
+        var config = try await store.configuration()
+        for id in projectIDs {
+            guard let project = config.projects.first(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
+            guard let rootID = project.rootID, config.roots.contains(where: { $0.id == rootID }) else {
+                throw SkillboxError.invalidSkill("projekt \(project.name) nie należy do folderu nadrzędnego")
+            }
+        }
+        let ids = Set(projectIDs)
+        for index in config.projects.indices where ids.contains(config.projects[index].id) {
+            config.projects[index].overridesRoot = nil
+            config.projects[index].manageGitignore = nil
+            config.selections.removeValue(forKey: config.projects[index].id.uuidString)
+        }
         try await store.save(config)
     }
 

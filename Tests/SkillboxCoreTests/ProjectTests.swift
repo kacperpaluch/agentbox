@@ -174,6 +174,75 @@ final class ProjectTests: AgentboxTestCase {
             XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appending(path: ".claude/skills/demo/SKILL.md").path))
         }
     }
+    func testSyncingChosenProjectsWritesOnlyThoseAndRefusesAnUnknownID() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/demo")
+        let firstFolder = root.appending(path: "first"), secondFolder = root.appending(path: "second")
+        for folder in [source, firstFolder, secondFolder] { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+        try "demo".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        var ids: [UUID] = []
+        for (name, folder) in [("first", firstFolder), ("second", secondFolder)] {
+            let project = try await service.addProject(name: name, path: folder.path, tools: [.claude])
+            try await service.configureProject(id: project.id, skillIDs: ["demo"], tags: [])
+            ids.append(project.id)
+        }
+
+        do { _ = try await service.syncAllProjectsTransactions(projectIDs: [ids[0], UUID()]); XCTFail("Nieznany projekt musi zatrzymać synchronizację") } catch {}
+        XCTAssertFalse(FileManager.default.fileExists(atPath: firstFolder.appending(path: ".claude/skills/demo").path), "nic nie jest zapisywane przed walidacją")
+
+        let outcomes = try await service.syncAllProjectsTransactions(projectIDs: [ids[0]])
+        XCTAssertEqual(outcomes.map(\.plan.project.name), ["first"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: firstFolder.appending(path: ".claude/skills/demo/SKILL.md").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: secondFolder.appending(path: ".claude/skills/demo").path), "niewybrany projekt zostaje bez zmian")
+    }
+
+    func testDeletingSeveralProjectsIsAllOrNothingAndKeepsTheirFoldersFromBeingOfferedAgain() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let workspace = root.appending(path: "workspace"), solo = root.appending(path: "solo")
+        for folder in [workspace.appending(path: "alpha"), workspace.appending(path: "beta"), solo] { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addProjectRoot(ProjectRoot(name: "workspace", path: workspace.path, tools: [.claude]), folders: [workspace.appending(path: "alpha").path, workspace.appending(path: "beta").path], selection: AttachmentSelection(tools: [.claude]))
+        _ = try await service.addProject(name: "solo", path: solo.path, tools: [.claude])
+        let byName = Dictionary(uniqueKeysWithValues: try await service.listProjects().map { ($0.name, $0.id) })
+
+        do { try await service.deleteProjects(ids: [byName["alpha"]!, UUID()]); XCTFail("Nieznany projekt musi zatrzymać usuwanie") } catch {}
+        let untouched = try await service.listProjects().count
+        XCTAssertEqual(untouched, 3, "błąd w jednym identyfikatorze nie usuwa pozostałych")
+
+        try await service.deleteProjects(ids: [byName["alpha"]!, byName["solo"]!])
+        let remaining = try await service.listProjects().map(\.name)
+        XCTAssertEqual(remaining, ["beta"])
+        let offered = try await service.scanProjectRoots()
+        XCTAssertTrue(offered.isEmpty, "usunięty projekt nie wraca jako propozycja folderu")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: solo.path))
+    }
+
+    func testFollowingTheRootDropsOwnSettingsAndRefusesAProjectWithoutAFolder() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let workspace = root.appending(path: "workspace"), solo = root.appending(path: "solo")
+        for folder in [workspace.appending(path: "alpha"), solo] { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addProjectRoot(ProjectRoot(name: "workspace", path: workspace.path, tools: [.claude]), folders: [workspace.appending(path: "alpha").path], selection: AttachmentSelection(tools: [.claude]))
+        let soloProject = try await service.addProject(name: "solo", path: solo.path, tools: [.claude])
+        var alpha = try await service.storedProjects().first { $0.name == "alpha" }!
+        alpha.overridesRoot = true
+        try await service.updateProject(alpha, selection: AttachmentSelection(tools: [.claude, .codex]))
+        let ownTools = try await service.listProjects().first { $0.name == "alpha" }!.tools
+        XCTAssertEqual(Set(ownTools), [.claude, .codex])
+
+        do { try await service.followRoot(projectIDs: [alpha.id, soloProject.id]); XCTFail("Projekt bez folderu nadrzędnego musi zatrzymać operację") } catch {}
+        let stillOwn = try await service.storedProjects().first { $0.id == alpha.id }!.overridesRoot
+        XCTAssertEqual(stillOwn, true, "odmowa niczego nie zmienia")
+
+        try await service.followRoot(projectIDs: [alpha.id])
+        let followed = try await service.listProjects().first { $0.id == alpha.id }!
+        XCTAssertEqual(followed.tools, [.claude], "projekt dostaje ustawienia folderu")
+        let selections = try await service.allSelections()
+        XCTAssertNil(selections[alpha.id.uuidString], "własny wybór nie zostaje jako drugie źródło prawdy")
+    }
+
     func testSyncAllProjectsDoesNotWriteWhenAnyPreviewFails() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let source = root.appending(path: "source/demo")

@@ -6,6 +6,23 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-10-23
+
+### Dodano
+
+- Wyszukiwarka projektów (nazwa lub ścieżka) i filtr `Wszystkie · Do synchronizacji · Problemy` z licznikami.
+- Zaznaczanie wielu projektów — pole wyboru przy projekcie i przy nagłówku grupy — z paskiem akcji: `Synchronizuj`, `Ustawienia folderu` (przełącza projekty z własnymi ustawieniami na ustawienia folderu) i `Usuń`. Te same akcje pod prawym przyciskiem myszy.
+- Menu pod prawym przyciskiem myszy na każdym projekcie.
+- Nagłówek grupy pokazuje liczbę projektów do synchronizacji i z problemem oraz przycisk `Synchronizuj grupę`.
+
+### Zmieniono
+
+- Wiersz projektu zajmuje jedną linię: ścieżka stoi obok nazwy.
+- Kolumna `Zawartość` stała się `Wyjątki` i pokazuje tylko to, czym projekt różni się od reszty grupy.
+- `Synchronizuj` jest niebieski tylko przy projektach, które mają coś do zapisania; „Aktualny” jest wyciszony.
+- W grupie najpierw stoją projekty wymagające uwagi.
+- Zwinięte grupy są zapamiętywane po ponownym uruchomieniu.
+
 ## [0.35.0] - 2026-10-23
 
 ### Dodano

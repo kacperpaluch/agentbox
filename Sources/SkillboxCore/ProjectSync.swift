@@ -12,8 +12,14 @@ private struct SyncBackupEntry: Codable {
 }
 
 extension SkillboxService {
-    public func previewAllProjectsSync(progress: SyncProgressHandler? = nil) async throws -> [ProjectSyncPlan] {
-        let projects = try await listProjects()
+    /// `projectIDs` narrows the run to a group or a selection; `nil` means every project. An id that
+    /// is not a project is refused before anything is previewed, never silently skipped.
+    public func previewAllProjectsSync(projectIDs: Set<UUID>? = nil, progress: SyncProgressHandler? = nil) async throws -> [ProjectSyncPlan] {
+        var projects = try await listProjects()
+        if let projectIDs {
+            if let unknown = projectIDs.first(where: { id in !projects.contains { $0.id == id } }) { throw SkillboxError.projectNotFound(unknown.uuidString) }
+            projects = projects.filter { projectIDs.contains($0.id) }
+        }
         var plans: [ProjectSyncPlan] = []
         for project in projects {
             await progress?(SyncProgress(done: plans.count, total: projects.count, label: "Sprawdzam \(project.name)"))
@@ -27,8 +33,8 @@ extension SkillboxService {
     /// run, so the caller always learns exactly which projects were written, which was rolled back,
     /// and which were never attempted.
     @discardableResult
-    public func syncAllProjectsTransactions(progress: SyncProgressHandler? = nil) async throws -> [ProjectSyncOutcome] {
-        let plans = try await previewAllProjectsSync(progress: progress)
+    public func syncAllProjectsTransactions(projectIDs: Set<UUID>? = nil, progress: SyncProgressHandler? = nil) async throws -> [ProjectSyncOutcome] {
+        let plans = try await previewAllProjectsSync(projectIDs: projectIDs, progress: progress)
         var outcomes: [ProjectSyncOutcome] = []
         var failed = false
         for plan in plans {
