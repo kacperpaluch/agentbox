@@ -24,18 +24,10 @@ public struct UsageReport: Hashable, Sendable {
         if let failure { return "nie udało się ustalić (\(failure))" }
         guard !isUnused else { return nil }
         var parts: [String] = []
-        if !projects.isEmpty { parts.append("\(projects.count) \(Self.projectWord(projects.count))") }
+        if !projects.isEmpty { parts.append(PolishNoun.project(projects.count)) }
         if !roots.isEmpty { parts.append("folder\(roots.count == 1 ? "" : "y") nadrzędn\(roots.count == 1 ? "y" : "e"): \(roots.joined(separator: ", "))") }
         if global { parts.append("ten Mac") }
         return parts.joined(separator: ", ")
-    }
-
-    private static func projectWord(_ count: Int) -> String {
-        // 2–4 take the plural the Polish language uses for small counts, 12–14 do not.
-        let lastTwo = count % 100, last = count % 10
-        if count == 1 { return "projekt" }
-        if (2...4).contains(last), !(12...14).contains(lastTwo) { return "projekty" }
-        return "projektów"
     }
 }
 

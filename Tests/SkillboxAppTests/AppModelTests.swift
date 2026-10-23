@@ -235,7 +235,28 @@ final class AppModelTests: XCTestCase {
         await model.deleteProjects(chosen, removingFiles: false)
 
         XCTAssertEqual(model.projects.map(\.name), ["two"])
-        XCTAssertEqual(model.operationLog.first?.text, "Usunięto 2 projektów z Agentbox; pliki w ich folderach zostały bez zmian")
+        XCTAssertEqual(model.operationLog.first?.text, "Usunięto z Agentbox: 2 projekty; pliki w ich folderach zostały bez zmian")
+    }
+
+    func testSkillPreviewSplitsFrontMatterHeadingsCodeAndParagraphs() {
+        let text = "---\nname: demo\ndescription: >\n  Robi coś\n  przydatnego\nlicense: MIT\n---\n# Tytuł\n\nPierwszy **akapit**\n- punkt\n\n```\nkod # nie nagłówek\n```\n"
+        let document = SkillMarkdown.parse(text)
+        XCTAssertEqual(document.field("description"), "Robi coś przydatnego")
+        XCTAssertEqual(document.field("license"), "MIT")
+        XCTAssertEqual(document.blocks, [.heading(level: 1, text: "Tytuł"), .paragraph("Pierwszy **akapit**\n- punkt"), .code("kod # nie nagłówek")])
+        XCTAssertEqual(SkillMarkdown.parse("# Bez nagłówka YAML").blocks, [.heading(level: 1, text: "Bez nagłówka YAML")])
+    }
+
+    func testFolderTagsAreNotAnExceptionButADifferentSetIs() {
+        let a = Project(name: "a", path: "/a", tags: ["seo"]), b = Project(name: "b", path: "/b", tags: ["seo"]), c = Project(name: "c", path: "/c", tags: ["seo", "web"])
+        XCTAssertEqual(ProjectFilter.usualTags([a, b, c]), ["seo"])
+    }
+
+    func testServerSummaryNeverShowsArgumentValuesOrURLPaths() {
+        let local = MCPServer(name: "x", transport: .stdio, command: "/usr/local/bin/npx", arguments: ["-y", "--api-key=dummy-secret", "@scope/server", "dummy-secret-token"])
+        XCTAssertEqual(local.launchSummary, "npx @scope/server")
+        let remote = MCPServer(name: "y", transport: .http, url: "https://api.example.com/mcp?token=dummy-secret")
+        XCTAssertEqual(remote.launchSummary, "api.example.com")
     }
 
     // MARK: Adoption from a project

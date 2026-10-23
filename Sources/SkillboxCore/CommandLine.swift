@@ -35,7 +35,7 @@ public enum AgentboxCommand {
 
     private static func requireAllSynced(_ lines: [String], outcomes: [ProjectSyncOutcome]) throws -> [String] {
         let failed = outcomes.filter { $0.state != .synced && $0.state != .upToDate }.count
-        guard failed == 0 else { throw PartialFailure(lines: lines, errorDescription: "\(failed) z \(outcomes.count) projektów nie zostało zsynchronizowanych") }
+        guard failed == 0 else { throw PartialFailure(lines: lines, errorDescription: "\(failed) z \(PolishNoun.projectGenitive(outcomes.count)) nie zostało zsynchronizowanych") }
         return lines
     }
 
@@ -87,7 +87,7 @@ public enum AgentboxCommand {
             let updated = try await service.applySkillUpdates(plan.updates)
             let lines = updateLines(SkillUpdateResult(updated: updated, failed: plan.failed, unchanged: plan.unchanged))
             // A skill whose repository could not be reached was not updated; automation must see that.
-            guard plan.failed.isEmpty else { throw PartialFailure(lines: lines, errorDescription: "nie udało się zaktualizować \(plan.failed.count) skilli") }
+            guard plan.failed.isEmpty else { throw PartialFailure(lines: lines, errorDescription: "nie udało się zaktualizować \(PolishNoun.skillGenitive(plan.failed.count))") }
             return lines
         case "delete" where rest.count >= 1:
             try await service.deleteSkill(skillID: rest[0])
@@ -169,7 +169,7 @@ public enum AgentboxCommand {
             let candidates = try await service.adoptableSkills(projectID: project.id)
             guard !candidates.isEmpty else { return ["Brak skilli do przejęcia w \(project.name)"] }
             guard args.contains("--yes") else {
-                return ["Znaleziono \(candidates.count) skilli do przejęcia:"] + candidates.map { "  \($0.suggestedID)\t\($0.path)" } + ["Dodaj --yes, aby skopiować je do biblioteki."]
+                return ["Znaleziono \(PolishNoun.skill(candidates.count)) do przejęcia:"] + candidates.map { "  \($0.suggestedID)\t\($0.path)" } + ["Dodaj --yes, aby skopiować je do biblioteki."]
             }
             let adopted = try await service.adoptSkills(candidates)
             return ["Przejęto \(adopted.count): \(adopted.map(\.id).joined(separator: ", "))"]
@@ -190,20 +190,20 @@ public enum AgentboxCommand {
         case "unsync" where rest.count >= 2:
             let project = try await resolve(rest[1], service: service)
             let removed = try await service.unsyncProject(id: project.id)
-            return ["Usunięto z \(project.name): \(removed.count) elementów"] + removed.map { "  \($0)" }
+            return ["Usunięto z \(project.name): \(PolishNoun.item(removed.count))"] + removed.map { "  \($0)" }
         case "remove" where rest.count >= 2:
             let project = try await resolve(rest[1], service: service)
             var lines: [String] = []
             if args.contains("--clean") {
                 let removed = try await service.unsyncProject(id: project.id)
-                lines.append("Usunięto z folderu projektu: \(removed.count) elementów")
+                lines.append("Usunięto z folderu projektu: \(PolishNoun.item(removed.count))")
             }
             try await service.deleteProject(id: project.id)
             lines.append("Usunięto projekt \(project.name) z Agentbox" + (args.contains("--clean") ? "" : "; pliki w jego folderze zostały bez zmian"))
             return lines
         case "remove-missing":
             guard args.contains("--yes") else {
-                let missing = try await service.listProjects().filter { !SkillboxService.projectFolderExists($0.path) }
+                let missing = try await service.projectsWithoutFolder()
                 guard !missing.isEmpty else { return ["Wszystkie foldery projektów istnieją."] }
                 return ["Projekty bez folderu:"] + missing.map { "  \($0.name)\t\($0.path)" } + ["Dodaj --yes, aby usunąć je z Agentbox; dysk zostaje bez zmian."]
             }
@@ -218,7 +218,7 @@ public enum AgentboxCommand {
             let root = ProjectRoot(name: rest[1], path: folderURL.path, manageGitignore: args.contains("--gitignore"), watchesNewFolders: !args.contains("--no-watch"))
             let selection = AttachmentSelection(tools: tools, skillIDs: csv("--skills", in: args), skillTags: csv("--tags", in: args))
             let stored = try await service.addProjectRoot(root, folders: picked, selection: selection)
-            return ["Dodano folder nadrzędny \(stored.name) (\(picked.count) projektów)"]
+            return ["Dodano folder nadrzędny \(stored.name) (\(PolishNoun.project(picked.count)))"]
         case "root-adopt" where rest.count >= 3:
             // Existing projects in the folder join it; --keep-own names the ones that stay on their
             // own settings instead of the folder's.
@@ -239,7 +239,7 @@ public enum AgentboxCommand {
             let selection = AttachmentSelection(tools: tools.isEmpty ? Array(Set(existing)).sorted { $0.rawValue < $1.rawValue } : tools,
                                                 skillIDs: csv("--skills", in: args), skillTags: csv("--tags", in: args))
             let stored = try await service.adoptProjectsIntoRoot(root, following: followers, keepingOwnSettings: owners, selection: selection)
-            return ["Utworzono folder nadrzędny \(stored.name): \(followers.count) projektów na wspólnych ustawieniach, \(owners.count) z własnymi"]
+            return ["Utworzono folder nadrzędny \(stored.name): \(PolishNoun.project(followers.count)) na wspólnych ustawieniach, \(owners.count) z własnymi"]
         case "roots":
             let roots = try await service.projectRoots()
             guard !roots.isEmpty else { return ["Brak folderów nadrzędnych."] }
@@ -247,7 +247,7 @@ public enum AgentboxCommand {
             return roots.map { root in
                 let count = projects.filter { $0.rootID == root.id }.count
                 let watching = root.watchesNewFolders ? "wykrywa nowe" : "bez wykrywania"
-                return "\(root.name)\t\(root.path)\t\(count) projektów\t\(watching)\t\(root.tools.map(\.rawValue).joined(separator: ","))"
+                return "\(root.name)\t\(root.path)\t\(PolishNoun.project(count))\t\(watching)\t\(root.tools.map(\.rawValue).joined(separator: ","))"
             }
         case "scan":
             let found = try await detected(rest, service: service, args: args)
@@ -261,7 +261,7 @@ public enum AgentboxCommand {
                     + ["Dodaj --yes, aby dodać je jako projekty (--sync synchronizuje je od razu)."]
             }
             let added = try await service.addDetectedFolders(found)
-            var output = ["Dodano \(added.count) projektów: \(added.map(\.name).joined(separator: ", "))"]
+            var output = ["Dodano \(PolishNoun.project(added.count)): \(added.map(\.name).joined(separator: ", "))"]
             if args.contains("--sync") {
                 for project in added {
                     let preview = try await service.syncProjectTransaction(projectID: project.id)
@@ -274,7 +274,7 @@ public enum AgentboxCommand {
             let found = try await detected(rest, service: service, args: args)
             guard !found.isEmpty else { return ["Brak nowych podfolderów."] }
             try await service.ignoreDetectedFolders(found)
-            return ["Pominięto \(found.count) podfolderów. Wróć do nich przez agentbox project unignore <folder>."]
+            return ["Pominięto \(PolishNoun.subfolder(found.count)). Wróć do nich przez agentbox project unignore <folder>."]
         case "unignore" where rest.count >= 2:
             guard let root = try await service.projectRoots().first(where: { $0.name == rest[1] }) else { throw SkillboxError.projectNotFound(rest[1]) }
             try await service.clearIgnoredFolders(rootID: root.id)
@@ -325,11 +325,12 @@ public enum AgentboxCommand {
             guard !previews.isEmpty else { return ["Nie wybrano narzędzi dla synchronizacji globalnej"] }
             return previews.map { "\($0.tool.rawValue): +\($0.added.count) ~\($0.updated.count) -\($0.removed.count) → \($0.target)" }
         case "all":
+            let missing = try await service.projectsWithoutFolder().map { "? \($0.name) — brak folderu, pominięto" }
             guard !dry else {
-                return try await service.previewAllProjectsSync().flatMap { ["\($0.project.name):"] + lines(for: $0.preview) }
+                return try await service.previewAllProjectsSync().flatMap { ["\($0.project.name):"] + lines(for: $0.preview) } + missing
             }
             let outcomes = try await service.syncAllProjectsTransactions()
-            let lines = outcomes.map { outcome in
+            let lines = missing + outcomes.map { outcome in
                 switch outcome.state {
                 case .synced: return "✓ \(outcome.plan.project.name)"
                 case .upToDate: return "= \(outcome.plan.project.name) — bez zmian"
@@ -384,6 +385,7 @@ public enum AgentboxCommand {
         lines.append("Utworzono \(backupName)")
         lines.append("3/3 Synchronizacja projektów…")
         let outcomes = try await service.syncAllProjectsTransactions()
+        lines += try await service.projectsWithoutFolder().map { "? \($0.name) — brak folderu, pominięto" }
         for outcome in outcomes {
             switch outcome.state {
             case .synced: lines.append("✓ \(outcome.plan.project.name)")

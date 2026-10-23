@@ -14,6 +14,8 @@ struct BackupView: View {
     @State private var snapshotToRestore: LibrarySnapshot?
     @AppStorage("AgentboxAutoBackup") private var autoBackup = true
     private let formatter: DateFormatter = { let value = DateFormatter(); value.dateStyle = .medium; value.timeStyle = .medium; return value }()
+    /// "5 minut temu" first: ten snapshots taken minutes apart are told apart by when, not by a timestamp.
+    private let relative: RelativeDateTimeFormatter = { let value = RelativeDateTimeFormatter(); value.locale = Locale(identifier: "pl_PL"); value.unitsStyle = .full; return value }()
 
     var body: some View {
         ScrollView {
@@ -28,11 +30,11 @@ struct BackupView: View {
                         Toggle("Automatycznie twórz pełny backup lokalny raz dziennie", isOn: $autoBackup)
                         Text("Kopie są przechowywane lokalnie w folderze biblioteki. Zawierają także projekty oraz wartości MCP.").rowMetadata()
                         if let latest = model.fullBackups.first {
-                            Text("Ostatnia udana pełna kopia: \(formatter.string(from: latest.createdAt))").rowMetadata()
-                        } else { Text("Brak potwierdzonej pełnej kopii.").rowMetadata() }
+                            Text("Ostatni pełny backup: \(relative.localizedString(for: latest.createdAt, relativeTo: .now)) (\(formatter.string(from: latest.createdAt)))").rowMetadata()
+                        } else { Text("Ostatni pełny backup: jeszcze żaden.").rowMetadata() }
                         if let error = model.automaticBackupError { Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                         Text("Pełny workflow: Narzędzia → Odśwież bibliotekę i zsynchronizuj projekty.").rowMetadata()
-                    }.padding(Space.row)
+                    }.padding(Space.row).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 snapshotsSection
 
@@ -67,7 +69,9 @@ struct BackupView: View {
                     }
                 }
             }
+            .frame(maxWidth: 760, alignment: .leading)
             .padding(Space.page + 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle(embedded ? "Ustawienia" : "Backup")
         .task { await model.loadFullBackups(); await model.loadRecovery() }
@@ -95,7 +99,7 @@ struct BackupView: View {
                         HStack {
                             Image(systemName: "externaldrive").foregroundStyle(.tint)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(formatter.string(from: snapshot.date)).rowTitle()
+                                (Text(relative.localizedString(for: snapshot.date, relativeTo: .now).capitalizedFirst).font(.body.weight(.medium)) + Text("  \(formatter.string(from: snapshot.date))").font(.caption).foregroundColor(.secondary))
                                 Text(snapshot.files.joined(separator: " · ")).rowMetadata()
                             }
                             Spacer()
@@ -201,4 +205,8 @@ struct CLISettingsCard: View {
         Text(model.status).font(.caption).foregroundStyle(model.installed ? .green : .secondary).textSelection(.enabled)
         HStack { Text("Po instalacji użyj np. `agentbox project list` w nowym oknie Terminala.").font(.caption).foregroundStyle(.secondary); Spacer(); Button(model.installed ? "Zainstalowano" : "Zainstaluj CLI") { model.install() }.disabled(model.installed) }
     }.padding(8) }.onAppear { model.refresh() } }
+}
+
+private extension String {
+    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
 }

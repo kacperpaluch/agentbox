@@ -35,8 +35,9 @@ struct SettingsView: View {
     }
 
     private var generalSettings: some View {
+        // The title above and the section picker already say where this is; a third heading only pushed
+        // the settings down. A fixed reading width keeps descriptions from running 200 characters wide.
         ScrollView { VStack(alignment: .leading, spacing: 20) {
-            Label("Ustawienia aplikacji", systemImage: "gearshape").font(.largeTitle.bold())
             UpdateSettingsCard(updater: updater)
             CLISettingsCard()
             GroupBox("Używane narzędzia") { VStack(alignment: .leading, spacing: 12) {
@@ -51,10 +52,16 @@ struct SettingsView: View {
                 } }
                 Text("Synchronizacja pomija wyłączone narzędzia: nie zapisuje ani nie usuwa ich plików w projektach i katalogu użytkownika. Projekty zachowują je w swoich ustawieniach, więc po ponownym włączeniu wystarczy zsynchronizować.").font(.caption).foregroundStyle(.secondary)
             }.padding(8).frame(maxWidth: .infinity, alignment: .leading) }
-            GroupBox("Folder biblioteki") { VStack(alignment: .leading, spacing: 12) { Text(model.rootPath).font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading); Text("Tutaj Agentbox przechowuje skille, katalog, konfigurację projektów oraz lokalne kopie zapasowe.").font(.caption).foregroundStyle(.secondary); Button("Wybierz nowy folder…") { chooseFolder() } }.padding(8) }
-            Text("Istniejąca biblioteka Agentbox/Skillbox zostanie podłączona bez kopiowania. Jeśli wskażesz pusty folder, obecna biblioteka zostanie do niego skopiowana.").foregroundStyle(.secondary)
+            GroupBox("Folder biblioteki") { VStack(alignment: .leading, spacing: 12) {
+                Text(model.rootPath).font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                Text("Tutaj Agentbox przechowuje skille, katalog, konfigurację projektów oraz lokalne kopie zapasowe.").font(.caption).foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: Space.section) {
+                    Button("Wybierz nowy folder…") { chooseFolder() }
+                    Text("Istniejąca biblioteka zostanie podłączona bez kopiowania; do pustego folderu obecna biblioteka zostanie skopiowana.").font(.caption).foregroundStyle(.secondary)
+                }
+            }.padding(8) }
             Spacer()
-        }.padding(28) }
+        }.frame(maxWidth: 760, alignment: .leading).padding(28).frame(maxWidth: .infinity, alignment: .leading) }
     }
     private func chooseFolder() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true; panel.prompt = "Wybierz"; if panel.runModal() == .OK, let url = panel.url { Task { await model.moveLibrary(to: url) } } }
 }

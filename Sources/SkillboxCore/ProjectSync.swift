@@ -14,12 +14,17 @@ private struct SyncBackupEntry: Codable {
 extension SkillboxService {
     /// `projectIDs` narrows the run to a group or a selection; `nil` means every project. An id that
     /// is not a project is refused before anything is previewed, never silently skipped.
+    ///
+    /// A project whose folder is gone is left out: there is nothing to write into, and its preview
+    /// used to throw and stop every other project from synchronizing. Callers report the ones left
+    /// out through `projectsWithoutFolder`.
     public func previewAllProjectsSync(projectIDs: Set<UUID>? = nil, progress: SyncProgressHandler? = nil) async throws -> [ProjectSyncPlan] {
         var projects = try await listProjects()
         if let projectIDs {
             if let unknown = projectIDs.first(where: { id in !projects.contains { $0.id == id } }) { throw SkillboxError.projectNotFound(unknown.uuidString) }
             projects = projects.filter { projectIDs.contains($0.id) }
         }
+        projects = projects.filter { Self.projectFolderExists($0.path) }
         var plans: [ProjectSyncPlan] = []
         for project in projects {
             await progress?(SyncProgress(done: plans.count, total: projects.count, label: "Sprawdzam \(project.name)"))

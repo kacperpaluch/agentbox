@@ -243,22 +243,56 @@ final class ProjectTests: AgentboxTestCase {
         XCTAssertNil(selections[alpha.id.uuidString], "własny wybór nie zostaje jako drugie źródło prawdy")
     }
 
+    func testSyncAllLeavesOutAProjectWithoutAFolderInsteadOfStoppingTheOthers() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/demo"), kept = root.appending(path: "kept"), gone = root.appending(path: "gone")
+        for folder in [source, kept, gone] { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+        try "demo".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        for (name, folder) in [("gone", gone), ("kept", kept)] {
+            let project = try await service.addProject(name: name, path: folder.path, tools: [.claude])
+            try await service.configureProject(id: project.id, skillIDs: ["demo"], tags: [])
+        }
+        try FileManager.default.removeItem(at: gone)
+
+        let outcomes = try await service.syncAllProjectsTransactions()
+
+        XCTAssertEqual(outcomes.map(\.plan.project.name), ["kept"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: kept.appending(path: ".claude/skills/demo/SKILL.md").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: gone.path), "synchronizacja nie odtwarza usuniętego folderu")
+        let missing = try await service.projectsWithoutFolder().map(\.name)
+        XCTAssertEqual(missing, ["gone"])
+        let lines = try await AgentboxCommand.run(["sync", "all"], service: service)
+        XCTAssertTrue(lines.contains("? gone — brak folderu, pominięto"), "CLI mówi, co pominęło")
+    }
+
+    func testPolishNounPicksTheFormForEachCount() {
+        let forms = [0, 1, 2, 4, 5, 11, 12, 14, 21, 22, 25, 112, 122].map { PolishNoun.project.form($0) }
+        XCTAssertEqual(forms, ["projektów", "projekt", "projekty", "projekty", "projektów", "projektów", "projektów", "projektów", "projektów", "projekty", "projektów", "projektów", "projekty"])
+        XCTAssertEqual(PolishNoun.skillGenitive(1), "1 skilla")
+    }
+
     func testSyncAllProjectsDoesNotWriteWhenAnyPreviewFails() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         let source = root.appending(path: "source/demo")
         let validFolder = root.appending(path: "valid")
-        let missingFolder = root.appending(path: "missing")
+        let conflictFolder = root.appending(path: "conflict")
         try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: validFolder, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: missingFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: conflictFolder, withIntermediateDirectories: true)
         try "demo".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
         let service = try SkillboxService(root: root.appending(path: "data"))
         _ = try await service.addLocal(path: source.path)
-        for (name, folder) in [("valid", validFolder), ("missing", missingFolder)] {
+        for (name, folder) in [("valid", validFolder), ("conflict", conflictFolder)] {
             let project = try await service.addProject(name: name, path: folder.path, tools: [.claude])
             try await service.configureProject(id: project.id, skillIDs: ["demo"], tags: [])
         }
-        try FileManager.default.removeItem(at: missingFolder)
+        // A skill directory Agentbox does not manage makes this project's preview fail. (A missing
+        // folder used to be the trigger; such a project is now left out of the run instead.)
+        let manual = conflictFolder.appending(path: ".claude/skills/demo")
+        try FileManager.default.createDirectory(at: manual, withIntermediateDirectories: true)
+        try "ręczny".write(to: manual.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
 
         do { _ = try await service.syncAllProjectsTransactions(); XCTFail("Oczekiwano błędu podglądu") } catch {}
         XCTAssertFalse(FileManager.default.fileExists(atPath: validFolder.appending(path: ".claude/skills/demo/SKILL.md").path))

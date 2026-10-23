@@ -148,16 +148,16 @@ import SkillboxCore
         await performing {
             if let root = request.root {
                 _ = try await self.service?.addProjectRoot(root, folders: request.folders, selection: request.selection, treatingExistingAsKnown: request.treatingExistingAsKnown)
-                self.message = "Dodano folder \(root.name) i \(request.folders.count) projektów"
+                self.message = "Dodano folder \(root.name) i \(PolishNoun.project(request.folders.count))"
             } else {
                 for project in request.projects { _ = try await self.service?.addProject(project, selection: request.selection) }
-                self.message = "Dodano \(request.projects.count) projektów"
+                self.message = "Dodano \(PolishNoun.project(request.projects.count))"
             }
         }
     }
     @discardableResult
     func adoptGroupIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], selection: AttachmentSelection, treatingExistingAsKnown: Bool) async -> Bool {
-        await performing { _ = try await self.service?.adoptProjectsIntoRoot(root, following: following, keepingOwnSettings: keepingOwnSettings, selection: selection, treatingExistingAsKnown: treatingExistingAsKnown); self.message = "Utworzono folder \(root.name); wspólnych ustawień używa \(following.count) projektów" }
+        await performing { _ = try await self.service?.adoptProjectsIntoRoot(root, following: following, keepingOwnSettings: keepingOwnSettings, selection: selection, treatingExistingAsKnown: treatingExistingAsKnown); self.message = "Utworzono folder \(root.name); na wspólnych ustawieniach: \(PolishNoun.project(following.count))" }
     }
 
     @discardableResult
@@ -165,14 +165,14 @@ import SkillboxCore
     func deleteRoot(_ root: ProjectRoot) async { await perform { try await self.service?.deleteProjectRoot(id: root.id); self.message = "Usunięto ustawienia folderu \(root.name); projekty zachowały to, co dziedziczyły" } }
     func clearIgnoredFolders(_ root: ProjectRoot) async { await perform { try await self.service?.clearIgnoredFolders(rootID: root.id); self.message = "Wyczyszczono pominięte podfoldery w \(root.name)" } }
     @discardableResult
-    func ignoreDetected(_ folders: [DetectedProjectFolder]) async -> Bool { await performing { try await self.service?.ignoreDetectedFolders(folders); self.message = "Pominięto \(folders.count) podfolderów" } }
+    func ignoreDetected(_ folders: [DetectedProjectFolder]) async -> Bool { await performing { try await self.service?.ignoreDetectedFolders(folders); self.message = "Pominięto \(PolishNoun.subfolder(folders.count))" } }
     /// Adds the detected subfolders and — when asked — synchronizes them right away, which is the
     /// point of the question: a new project in a known folder should end up ready to use.
     @discardableResult
     func addDetected(_ folders: [DetectedProjectFolder], synchronizing: Bool) async -> Bool {
         await performing {
             let added = try await self.service?.addDetectedFolders(folders) ?? []
-            guard synchronizing else { self.message = "Dodano \(added.count) projektów"; return }
+            guard synchronizing else { self.message = "Dodano \(PolishNoun.project(added.count))"; return }
             var synced = 0
             var failures: [String] = []
             for project in added {
@@ -181,7 +181,7 @@ import SkillboxCore
             }
             self.message = failures.isEmpty
                 ? "Dodano i zsynchronizowano \(synced) projektów"
-                : "Dodano \(added.count) projektów, zsynchronizowano \(synced). Nie udało się: \(failures.joined(separator: "; "))"
+                : "Dodano \(PolishNoun.project(added.count)), zsynchronizowano \(synced). Nie udało się: \(failures.joined(separator: "; "))"
         }
     }
     /// Which skill `markdown` belongs to. The selection changes at once while the text arrives later,
@@ -219,7 +219,7 @@ import SkillboxCore
         let urls = url.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         var count = 0; var skipped: [SkippedSkill] = []
         for item in urls { if let result = try await self.service?.addGitCollection(url: item, subpath: subpath.isEmpty ? nil : subpath) { count += result.imported.count; skipped += result.skipped } }
-        self.message = skipped.isEmpty ? "Zaimportowano \(count) skilli" : "Zaimportowano \(count) skilli, pominięto \(skipped.count): " + skipped.map { "\($0.id) (\($0.reason))" }.joined(separator: "; ")
+        self.message = skipped.isEmpty ? "Zaimportowano \(PolishNoun.skill(count))" : "Zaimportowano \(PolishNoun.skill(count)), pominięto \(skipped.count): " + skipped.map { "\($0.id) (\($0.reason))" }.joined(separator: "; ")
     } }
     func checkUpdates() async { await prepareUpdateReview() }
     func update(_ id: String) async { await prepareUpdateReview(ids: [id]) }
@@ -254,7 +254,7 @@ import SkillboxCore
             updateAvailable.subtract(updated.map(\.id))
             updateAvailable.subtract(plan.unchanged)
             let postponed = plan.updates.count - updated.count
-            let summary = "Zaktualizowano \(updated.count) skilli" + (postponed > 0 ? ", odłożono \(postponed)" : "")
+            let summary = "Zaktualizowano \(PolishNoun.skill(updated.count))" + (postponed > 0 ? ", odłożono \(postponed)" : "")
             if synchronizing {
                 // Its own entry only here, before a step that can still fail: a failed
                 // synchronization must not hide that the library has already changed.
@@ -288,14 +288,14 @@ import SkillboxCore
     func addSkillFiles(_ id: String, files: [URL], replacing: Bool = false) async -> Bool { await performing { try await self.service?.addSkillFiles(skillID: id, files: files, replacing: replacing); self.message = "Dodano do \(id): \(files.map(\.lastPathComponent).joined(separator: ", "))" } }
     func saveTags(_ id: String, text: String) async { await perform { try await self.service?.setTags(skillID: id, tags: Self.csv(text)); self.message = "Zapisano tagi" } }
     @discardableResult
-    func addTags(_ ids: Set<String>, text: String) async -> Bool { await performing { try await self.service?.addTags(skillIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) skilli" } }
+    func addTags(_ ids: Set<String>, text: String) async -> Bool { await performing { try await self.service?.addTags(skillIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(PolishNoun.skillGenitive(ids.count))" } }
     func deleteSkill(_ id: String) async { await perform { try await self.service?.deleteSkill(skillID: id); if self.selection == id { self.selection = nil; self.markdown = "" }; self.updateAvailable.remove(id); self.message = "Usunięto skill \(id)" } }
     func deleteSkills(_ ids: Set<String>) async {
         await perform {
             try await self.service?.deleteSkills(skillIDs: Array(ids))
             if let selection = self.selection, ids.contains(selection) { self.selection = nil; self.markdown = "" }
             self.updateAvailable.subtract(ids)
-            self.message = "Usunięto \(ids.count) skilli"
+            self.message = "Usunięto \(PolishNoun.skill(ids.count))"
         }
     }
     func claudePlugins(for project: Project) async throws -> [ClaudePlugin] {
@@ -365,7 +365,7 @@ import SkillboxCore
             if removingFiles {
                 let removed = try await self.service?.unsyncProject(id: project.id) ?? []
                 try await self.service?.deleteProject(id: project.id)
-                self.message = "Usunięto projekt \(project.name) i \(removed.count) elementów z jego folderu"
+                self.message = "Usunięto projekt \(project.name) i \(PolishNoun.item(removed.count)) z jego folderu"
             } else {
                 try await self.service?.deleteProject(id: project.id)
                 self.message = "Usunięto projekt \(project.name) z Agentbox; pliki w jego folderze zostały bez zmian"
@@ -381,19 +381,24 @@ import SkillboxCore
             var removed = 0
             if removingFiles { for project in projects { removed += try await service.unsyncProject(id: project.id).count } }
             try await service.deleteProjects(ids: projects.map(\.id))
-            self.message = removingFiles ? "Usunięto \(projects.count) projektów i \(removed) elementów z ich folderów" : "Usunięto \(projects.count) projektów z Agentbox; pliki w ich folderach zostały bez zmian"
+            self.message = removingFiles ? "Usunięto \(PolishNoun.project(projects.count)) i \(PolishNoun.item(removed)) z ich folderów" : "Usunięto z Agentbox: \(PolishNoun.project(projects.count)); pliki w ich folderach zostały bez zmian"
         }
     }
     /// Projects with their own settings go back to their folder's. Files change at the next sync.
     func followRoot(_ projects: [Project]) async {
         await perform {
             try await self.requireService().followRoot(projectIDs: projects.map(\.id))
-            self.message = "\(projects.count) projektów korzysta teraz z ustawień folderu; zsynchronizuj je, by zmiany trafiły do plików"
+            self.message = "Przełączono na ustawienia folderu: \(PolishNoun.project(projects.count)); zsynchronizuj, by zmiany trafiły do plików"
         }
     }
     /// A project in its folder with settings of its own — the ones `followRoot` can switch back.
     func hasOwnSettingsInRoot(_ project: Project) -> Bool { root(for: project) != nil && !inheritsRoot(project) }
 
+    /// Read from disk, not from the last status check: what a synchronization is about to leave out.
+    func projectsWithoutFolder(in ids: Set<UUID>?) async -> [Project] {
+        do { return try await requireService().projectsWithoutFolder().filter { ids?.contains($0.id) ?? true } }
+        catch { reportError(error); return [] }
+    }
     /// Projects the last status check found without a folder; the service re-checks the disk itself.
     var missingProjects: [Project] { projects.filter { statuses[$0.id]?.state == .missing } }
     func deleteMissingProjects() async {
@@ -409,7 +414,7 @@ import SkillboxCore
         catch { reportError(error) }
     }
     func unsyncProject(_ project: Project) async {
-        await perform { let removed = try await self.service?.unsyncProject(id: project.id) ?? []; self.message = "Usunięto \(removed.count) elementów z \(project.name)" }
+        await perform { let removed = try await self.service?.unsyncProject(id: project.id) ?? []; self.message = "Usunięto \(PolishNoun.item(removed.count)) z \(project.name)" }
     }
     func adoptableSkills(_ project: Project) async throws -> [AdoptableSkill] {
         guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
@@ -447,7 +452,7 @@ import SkillboxCore
         await perform { let added = try await self.service?.registerUnregisteredSkills(ids) ?? []; self.message = "Dodano do biblioteki: \(added.map(\.id).joined(separator: ", "))" }
     }
         func adoptSkills(_ items: [AdoptableSkill]) async {
-        await perform { let adopted = try await self.service?.adoptSkills(items) ?? []; self.message = "Przejęto \(adopted.count) skilli do biblioteki" }
+        await perform { let adopted = try await self.service?.adoptSkills(items) ?? []; self.message = "Przejęto do biblioteki: \(PolishNoun.skill(adopted.count))" }
     }
     /// Where a library item actually lands. Read on demand — a confirmation dialog asking "usunąć?"
     /// without saying what it will reach is a question asked in the dark.
@@ -484,7 +489,7 @@ import SkillboxCore
     }
     func deleteMCPServer(_ id: UUID) async { await perform { try await self.service?.deleteMCPServer(id: id); self.message = "Usunięto serwer MCP" } }
     @discardableResult
-    func addMCPServerTags(_ ids: Set<UUID>, text: String) async -> Bool { await performing { try await self.service?.addMCPServerTags(serverIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) serwerów MCP" } }
+    func addMCPServerTags(_ ids: Set<UUID>, text: String) async -> Bool { await performing { try await self.service?.addMCPServerTags(serverIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(PolishNoun.serverGenitive(ids.count))" } }
     func exportMCPServerJSON(_ id: UUID) async throws -> String { try await requireService().exportMCPServerJSON(id) }
     func mcpServerDraftJSON(_ server: MCPServer, fields: [MCPManagedField]) async throws -> String { try await requireService().mcpServerDraftJSON(server, fields: fields) }
     func mcpServerDraft(fromJSON json: String, name: String) async throws -> (server: MCPServer, fields: [MCPManagedField]) { try await requireService().mcpServerDraft(fromJSON: json, name: name) }
@@ -513,7 +518,7 @@ import SkillboxCore
     }
     func saveDocTags(_ id: String, text: String) async { await perform { try await self.service?.setDocTags(docID: id, tags: Self.csv(text)); self.message = "Zapisano tagi" } }
     @discardableResult
-    func addDocTags(_ ids: Set<String>, text: String) async -> Bool { await performing { try await self.service?.addDocTags(docIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(ids.count) dokumentów" } }
+    func addDocTags(_ ids: Set<String>, text: String) async -> Bool { await performing { try await self.service?.addDocTags(docIDs: Array(ids), tags: Self.csv(text)); self.message = "Dodano tagi do \(PolishNoun.documentGenitive(ids.count))" } }
     func deleteDoc(_ id: String) async { await perform { try await self.service?.deleteDoc(id: id); self.message = "Usunięto dokument \(id)" } }
     func previewMCP(_ project: Project) async throws -> [MCPPreview] { try await service?.previewMCP(projectID: project.id) ?? [] }
     /// Server names Codex/Claude Code declare globally, straight from disk — the same source
@@ -673,7 +678,7 @@ import SkillboxCore
                 record(.success, message)
             }
             else {
-                message = "Zsynchronizowano \(synced) z \(outcomes.count) projektów"
+                message = "Zsynchronizowano \(synced) z \(PolishNoun.projectGenitive(outcomes.count))"
                 record(.error, message)
                 for outcome in outcomes { if case .failed(let reason) = outcome.state { record(.error, "\(outcome.plan.project.name): \(reason)") } }
             }
@@ -710,10 +715,10 @@ import SkillboxCore
     /// `classifications` is what the import sheet shows the user; the store keeps a `${VAR}`
     /// reference as a reference and everything else as a local value, which is the same decision,
     /// so it is not passed on rather than being accepted and ignored.
-    func importMCP(_ text: String, serverNames: Set<String>, classifications _: [String: MCPValueClassification], singleServerName: String? = nil) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text, serverNames: serverNames, singleServerName: singleServerName); await reload(); message = "Zaimportowano \(result.servers.count) serwerów MCP"; record(.success, message); return result }
+    func importMCP(_ text: String, serverNames: Set<String>, classifications _: [String: MCPValueClassification], singleServerName: String? = nil) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text, serverNames: serverNames, singleServerName: singleServerName); await reload(); message = "Zaimportowano \(PolishNoun.server(result.servers.count))"; record(.success, message); return result }
     /// Applies every server the JSON describes — no selection step, because this text is a re-edit
     /// of the library's own configuration rather than something pasted in from elsewhere.
-    func importMCPJSONAll(_ text: String) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text); await reload(); message = "Zapisano \(result.servers.count) serwerów MCP"; record(.success, message); return result }
+    func importMCPJSONAll(_ text: String) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; let result = try await service.importMCPJSON(text); await reload(); message = "Zapisano \(PolishNoun.server(result.servers.count))"; record(.success, message); return result }
     func moveLibrary(to url: URL) async {
         isWorking = true; defer { isWorking = false }
         do {

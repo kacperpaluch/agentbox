@@ -68,7 +68,7 @@ Agentbox nie zgaduje, co jest sekretem: wartość w postaci `${NAZWA}` staje si�
 
 Wartość z `mcp.json` może zostać zapisana jawnie w wynikowym pliku MCP projektu, jeśli format klienta tego wymaga. Przed synchronizacją Agentbox pokazuje pełną treść wynikowych konfiguracji. Preferuj zmienne systemowe, jeśli klient je obsługuje.
 
-Po imporcie `Biblioteka → MCP → Szczegóły → JSON` daje pełną konfigurację jednego serwera jako tekst do ręcznej edycji. Formularz i JSON to dwa widoki tego samego szkicu: przełączenie przenosi niezapisane zmiany, a JSON z błędem zostaje otwarty z opisem problemu. Import i edycja JSON sprawdzają typy pól (`command`, `args`, `url`, `env`, `headers`) i odrzucają niepoprawną strukturę ze wskazaniem ścieżki, zamiast zapisywać puste wartości. Wartości są widoczne wprost, bo Agentbox jest lokalną aplikacją dla jednej osoby.
+Po imporcie `Biblioteka → MCP` → kliknięcie serwera → `JSON` daje pełną konfigurację jednego serwera jako tekst do ręcznej edycji. Formularz i JSON to dwa widoki tego samego szkicu: przełączenie przenosi niezapisane zmiany, a JSON z błędem zostaje otwarty z opisem problemu. Import i edycja JSON sprawdzają typy pól (`command`, `args`, `url`, `env`, `headers`) i odrzucają niepoprawną strukturę ze wskazaniem ścieżki, zamiast zapisywać puste wartości. Wartości są widoczne wprost, bo Agentbox jest lokalną aplikacją dla jednej osoby.
 
 `Edytuj wszystko jako JSON` na liście serwerów otwiera osobny, prosty widok dla całej konfiguracji naraz: popraw i `Zapisz`, bez kroku analizy i zaznaczania — to edycja własnej konfiguracji, nie import czegoś nowego. Checkboxy przy serwerach pozwalają zaznaczyć kilka naraz i dodać im tagi jedną operacją, tak jak w Bibliotece.
 
@@ -161,7 +161,7 @@ Agentbox usuwa i zastępuje wyłącznie katalogi wymienione w swoim manifeście 
 
 ### Wynik synchronizacji wszystkich projektów
 
-`Synchronizuj wszystkie projekty` najpierw liczy plan dla wszystkich projektów i dopiero potem zapisuje. Każdy projekt jest zapisywany transakcyjnie, z własnym backupem. Pierwszy błąd zatrzymuje serię, a okno pokazuje wynik dla każdego projektu osobno: zsynchronizowany, cofnięty do stanu sprzed zmiany albo pominięty. Dzięki temu po błędzie zawsze wiadomo, które projekty zostały zmienione.
+`Synchronizuj wszystkie projekty` najpierw liczy plan dla wszystkich projektów i dopiero potem zapisuje. Każdy projekt jest zapisywany transakcyjnie, z własnym backupem. Projekty bez folderu są pomijane i wymienione nad planem — wcześniej jeden taki projekt zatrzymywał synchronizację wszystkich pozostałych. Pierwszy błąd zatrzymuje serię, a okno pokazuje wynik dla każdego projektu osobno: zsynchronizowany, cofnięty do stanu sprzed zmiany albo pominięty. Dzięki temu po błędzie zawsze wiadomo, które projekty zostały zmienione.
 
 Przy dłuższej serii nie trzeba zgadywać, ile jeszcze zostało: w trakcie operacji okno pokazuje pasek postępu z licznikiem `3/30` i nazwą projektu, na którym Agentbox właśnie pracuje. Licznik przechodzi dwie fazy — `Sprawdzam <projekt>`, czyli liczenie planu, a potem `Synchronizuję <projekt>`, czyli zapis — więc widać też, na którym etapie serii jest operacja. To samo dotyczy `Odśwież bibliotekę i zsynchronizuj projekty`. `Sprawdź stan` pokazuje swój licznik obok listy projektów, bez przesłaniania okna. Gdy serię uruchamiasz z okna `Synchronizacja wszystkich projektów`, pasek widać w tym oknie — nie trzeba go zamykać, żeby zobaczyć postęp.
 
@@ -244,7 +244,7 @@ Pojedynczy projekt może wyłamać się z tego schematu: w jego edytorze przeł�
 
 Odznaczenie `Zapisz ustawienia na folderze nadrzędnym` przy dodawaniu wraca do dawnego zachowania: każdy projekt dostaje własną kopię ustawień, bez dziedziczenia.
 
-Usunięcie ustawień folderu (kosz w nagłówku grupy) nie rusza projektów. Każdy, który dziedziczył, dostaje kopię tego, co dotąd dostawał — łącznie z przypisaniami MCP — więc do repozytoriów trafia dokładnie to samo co przed usunięciem.
+Usunięcie ustawień folderu (menu „…” w nagłówku grupy → `Usuń wspólne ustawienia folderu…`) nie rusza projektów. Każdy, który dziedziczył, dostaje kopię tego, co dotąd dostawał — łącznie z przypisaniami MCP — więc do repozytoriów trafia dokładnie to samo co przed usunięciem.
 
 ### Nowe podfoldery
 
@@ -270,7 +270,7 @@ Usunięcie projektu należącego do obserwowanego folderu jest traktowane jak od
 
 Lista projektów grupuje projekty według folderu nadrzędnego, a pozostałe — według ich bezpośredniego folderu — i pokazuje pełną ścieżkę grupy. Nagłówek zwija pojedynczą grupę, a `Więcej → Rozwiń/Zwiń wszystko` wszystkie naraz; Agentbox pamięta zwinięte grupy po ponownym uruchomieniu. Nagłówek grupy pokazuje, ile jej projektów czeka na synchronizację i ile ma problem, a gdy są zmiany do zapisania — przycisk `Synchronizuj grupę` z tym samym podglądem co synchronizacja wszystkich. Projekty bez folderu są w nim pomijane.
 
-W grupie najpierw stoją projekty wymagające uwagi (zablokowane, bez folderu, do synchronizacji), potem pozostałe alfabetycznie. Kolumna `Wyjątki` pokazuje tylko to, czym projekt różni się od reszty grupy: własne ustawienia w folderze nadrzędnym, innych klientów niż większość grupy, tagi skilli. Przycisk `Synchronizuj` jest niebieski tylko przy projektach, które mają coś do zapisania.
+W grupie najpierw stoją projekty wymagające uwagi (zablokowane, bez folderu, do synchronizacji), potem pozostałe alfabetycznie. Kolumna `Wyjątki` pokazuje tylko to, czym projekt różni się od reszty grupy: własne ustawienia w folderze nadrzędnym, innych klientów albo inne tagi skilli niż większość grupy. Przycisk `Synchronizuj` jest niebieski tylko przy projektach, które mają coś do zapisania.
 
 Pole wyszukiwania w pasku okna filtruje projekty po nazwie i ścieżce, a przełącznik `Wszystkie · Do synchronizacji · Problemy` z liczbami zostawia tylko projekty w danym stanie. Podczas szukania i filtrowania grupy są rozwinięte, a te bez pasujących projektów — ukryte.
 

@@ -219,7 +219,7 @@ struct BatchProjectView: View {
     // Pinned below the scrolling form, so the action stays reachable on any display.
     SheetFooter {
         Button("Anuluj") { dismiss() }
-        Button(sharedSettings ? "Dodaj folder i \(selectedFolders.count) projektów" : "Dodaj \(selectedFolders.count) projektów") { Task { if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(saving || saveDisabled)
+        Button(sharedSettings ? "Dodaj folder i \(PolishNoun.project(selectedFolders.count))" : "Dodaj \(PolishNoun.project(selectedFolders.count))") { Task { if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(saving || saveDisabled)
     } }.sheetFrame(width: 760, height: 640).onAppear { selection = initialSelection } }
 
     private var saveDisabled: Bool {

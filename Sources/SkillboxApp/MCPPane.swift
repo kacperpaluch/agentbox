@@ -33,13 +33,13 @@ struct MCPPane: View {
                 ContentUnavailableView("Nic nie pasuje", systemImage: "magnifyingglass", description: Text("Zmień wyszukiwanie albo wybrany tag."))
             } else {
                 List {
-                    Section("Serwery") {
-                        ForEach(filtered) { server in
-                            HStack(alignment: .top, spacing: Space.row + 1) {
-                                Toggle("", isOn: checkBinding(server.id)).labelsHidden().toggleStyle(.checkbox).padding(.top, 5)
-                                MCPServerRow(server: server, onDetails: { editingServer = server }, onDuplicate: { serverToDuplicate = server }, onDelete: { serverToDelete = server })
-                            }
+                    ForEach(filtered) { server in
+                        HStack(alignment: .top, spacing: Space.row + 1) {
+                            Toggle("", isOn: checkBinding(server.id)).labelsHidden().toggleStyle(.checkbox).padding(.top, 5)
+                            MCPServerRow(server: server, usageKey: AnyHashable([AnyHashable(server.id), AnyHashable(server.tags), AnyHashable(model.selections)]), usage: { await model.usage(ofServer: server.id) }, onDetails: { editingServer = server }, onDuplicate: { serverToDuplicate = server }, onDelete: { serverToDelete = server })
                         }
+                        .contentShape(Rectangle())
+                        .onTapGesture { editingServer = server }
                     }
                 }
             }
@@ -52,7 +52,7 @@ struct MCPPane: View {
         .sheet(item: $editingServer) { server in MCPServerEditor(model: model, server: server, existingTags: existingTags) }
         .sheet(item: $serverToDuplicate) { server in MCPDuplicateView(model: model, server: server) }
         .sheet(item: Binding(get: { bulkJSON.map(IdentifiableString.init) }, set: { bulkJSON = $0?.value })) { text in MCPBulkJSONView(model: model, text: text.value) }
-        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: "serwerów MCP") { text in let ok = await model.addMCPServerTags(checked, text: text); if ok { checked.removeAll() }; return ok } }
+        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: .server) { text in let ok = await model.addMCPServerTags(checked, text: text); if ok { checked.removeAll() }; return ok } }
         .confirmationDialog("Usunąć serwer \(serverToDelete?.name ?? "")?", isPresented: Binding(get: { serverToDelete != nil }, set: { if !$0 { serverToDelete = nil } })) { Button("Usuń", role: .destructive) { if let serverToDelete { Task { await model.deleteMCPServer(serverToDelete.id) } }; serverToDelete = nil }; Button("Anuluj", role: .cancel) { serverToDelete = nil } } message: { Text(serverToDelete.map { server in
             (usageForDeletion?.summary).map { "Używany przez: \($0). Serwer zostanie usunięty także z przypisań projektów." }
                 ?? "Serwer \(server.name) nie jest przypisany do żadnego projektu."
@@ -78,7 +78,7 @@ struct MCPPane: View {
                 Button("Anuluj") { checked.removeAll() }.buttonStyle(.bordered)
             }
             Spacer()
-            Text(filtered.count == model.mcp.servers.count ? "\(model.mcp.servers.count) serwerów" : "\(filtered.count) z \(model.mcp.servers.count)").rowMetadata()
+            Text(filtered.count == model.mcp.servers.count ? PolishNoun.server(model.mcp.servers.count) : "\(filtered.count) z \(model.mcp.servers.count)").rowMetadata()
         }
     }
 
@@ -137,15 +137,15 @@ struct ClaudePluginPreviewRow: View {
     }
 }
 
-/// Two lines per server: name, transport and tags on top; the supporting counts (arguments,
-/// variables, secrets) quiet underneath instead of trailing off the end of one long line.
+/// Two lines per server: name, transport and tags on top; underneath, what it runs and where it is
+/// used. Counts of arguments and variables said nothing — "0 argumentów" for every HTTP server.
 private struct MCPServerRow: View {
     let server: MCPServer
+    let usageKey: AnyHashable
+    let usage: () async -> UsageReport
     let onDetails: () -> Void
     let onDuplicate: () -> Void
     let onDelete: () -> Void
-    private var secretCount: Int { (server.secretEnvironment?.count ?? 0) + (server.secretHeaders?.count ?? 0) }
-    private var variableCount: Int { server.environment.count + (server.literalEnvironment?.count ?? 0) + (server.secretEnvironment?.count ?? 0) }
     var body: some View {
         HStack(alignment: .top, spacing: Space.row) {
             Image(systemName: server.transport == .stdio ? "terminal" : "globe").foregroundStyle(.tint).padding(.top, 2)
@@ -155,10 +155,13 @@ private struct MCPServerRow: View {
                     MetaBadge(text: server.transport == .stdio ? "Lokalny" : server.transport.rawValue.uppercased())
                     ForEach(server.tags ?? [], id: \.self) { TagPill(tag: $0) }
                 }
-                Text("\(server.arguments.count) argumentów · \(variableCount) zmiennych\(secretCount > 0 ? " · \(secretCount) sekretów lokalnych" : "")").rowMetadata()
+                HStack(spacing: Space.row) {
+                    Text(server.launchSummary).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Text("·").rowMetadata()
+                    UsageCaption(key: usageKey, load: usage)
+                }
             }
             Spacer()
-            Button("Szczegóły", action: onDetails).controlSize(.small)
             RowMenu {
                 Button("Szczegóły…", action: onDetails)
                 Button("Duplikuj…", action: onDuplicate)
@@ -323,7 +326,7 @@ struct MCPImportView: View {
         if let summary {
             GroupBox("Rozpoznano") { VStack(alignment: .leading, spacing: 8) {
                 if summary.isSingleServerInput { Text("To konfiguracja jednego serwera. Zostanie zapisany jako „\(summary.servers.first?.name ?? singleServerName)”. Zmień nazwę powyżej i ponownie analizuj, jeśli potrzeba.").font(.caption).foregroundStyle(.secondary) }
-                HStack { Text("\(summary.servers.count) serwerów · \(summary.stdioCount) lokalnych · \(summary.httpCount) HTTP"); Spacer(); Button("Wszystkie") { selected = Set(summary.servers.map(\.name)) }.buttonStyle(.link); Button("Wyczyść") { selected.removeAll() }.buttonStyle(.link) }
+                HStack { Text("\(PolishNoun.server(summary.servers.count)) · lokalne: \(summary.stdioCount) · HTTP: \(summary.httpCount)"); Spacer(); Button("Wszystkie") { selected = Set(summary.servers.map(\.name)) }.buttonStyle(.link); Button("Wyczyść") { selected.removeAll() }.buttonStyle(.link) }
                 ForEach(summary.servers) { server in Toggle(isOn: Binding(get: { selected.contains(server.name) }, set: { if $0 { selected.insert(server.name) } else { selected.remove(server.name) } })) { HStack { Image(systemName: server.transport == .stdio ? "terminal" : "globe"); Text(server.name); Spacer() } }.toggleStyle(.checkbox) }
             }.padding(6).frame(maxWidth: .infinity, alignment: .leading) }
         }
@@ -469,6 +472,21 @@ struct DiffLineRow: View {
         case .removed: return .orange
         case .same: return .secondary
         case .gap: return .secondary
+        }
+    }
+}
+
+extension MCPServer {
+    /// What a list row can say about how the server starts without showing a value: the command
+    /// and the first argument that is not an option (usually the package), or only the host of a
+    /// URL. Other arguments, query strings and paths can carry tokens, so they stay in the editor.
+    var launchSummary: String {
+        switch transport {
+        case .stdio:
+            let package = arguments.first { !$0.hasPrefix("-") && !$0.contains("=") }
+            return [URL(fileURLWithPath: command).lastPathComponent, package].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+        default:
+            return URLComponents(string: url)?.host ?? "adres URL"
         }
     }
 }

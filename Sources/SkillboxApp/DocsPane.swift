@@ -33,22 +33,20 @@ struct DocsPane: View {
                 ContentUnavailableView("Nic nie pasuje", systemImage: "magnifyingglass", description: Text("Zmień wyszukiwanie albo wybrany tag."))
             } else {
                 List {
-                    Section("Dokumenty") {
-                        ForEach(sortedDocs) { doc in
-                            HStack(alignment: .top, spacing: Space.row + 1) {
-                                Toggle("", isOn: checkBinding(doc.id)).labelsHidden().toggleStyle(.checkbox).padding(.top, 5)
-                                DocRow(doc: doc, onEdit: { editingDoc = doc }, onDelete: { docToDelete = doc })
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture { editingDoc = doc }
+                    ForEach(sortedDocs) { doc in
+                        HStack(alignment: .top, spacing: Space.row + 1) {
+                            Toggle("", isOn: checkBinding(doc.id)).labelsHidden().toggleStyle(.checkbox).padding(.top, 5)
+                            DocRow(doc: doc, usageKey: AnyHashable([AnyHashable(doc.id), AnyHashable(doc.tags), AnyHashable(model.selections)]), usage: { await model.usage(ofDoc: doc.id) }, onEdit: { editingDoc = doc }, onDelete: { docToDelete = doc })
                         }
+                        .contentShape(Rectangle())
+                        .onTapGesture { editingDoc = doc }
                     }
                 }
             }
         }
         .sheet(isPresented: $creatingDoc) { NewDocView(existingTags: existingTags, existingIDs: Set(model.docs.docs.map(\.id))) { draft in await model.createDoc(id: draft.id, name: draft.name, tags: draft.tags, content: draft.content) } }
         .sheet(item: $editingDoc) { doc in DocEditorView(model: model, doc: doc, existingTags: existingTags) }
-        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: "dokumentów") { text in let ok = await model.addDocTags(checked, text: text); if ok { checked.removeAll() }; return ok } }
+        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: .document) { text in let ok = await model.addDocTags(checked, text: text); if ok { checked.removeAll() }; return ok } }
         .confirmationDialog("Usunąć dokument \(docToDelete?.name ?? "")?", isPresented: Binding(get: { docToDelete != nil }, set: { if !$0 { docToDelete = nil } })) {
             Button("Usuń", role: .destructive) { if let docToDelete { Task { await model.deleteDoc(docToDelete.id) } }; docToDelete = nil }
             Button("Anuluj", role: .cancel) { docToDelete = nil }
@@ -67,7 +65,7 @@ struct DocsPane: View {
                 Button("Anuluj") { checked.removeAll() }.buttonStyle(.bordered)
             }
             Spacer()
-            Text(sortedDocs.count == model.docs.docs.count ? "\(model.docs.docs.count) dokumentów" : "\(sortedDocs.count) z \(model.docs.docs.count)").rowMetadata()
+            Text(sortedDocs.count == model.docs.docs.count ? PolishNoun.document(model.docs.docs.count) : "\(sortedDocs.count) z \(model.docs.docs.count)").rowMetadata()
         }
     }
 
@@ -76,6 +74,8 @@ struct DocsPane: View {
 
 private struct DocRow: View {
     let doc: AgentDoc
+    let usageKey: AnyHashable
+    let usage: () async -> UsageReport
     let onEdit: () -> Void
     let onDelete: () -> Void
     var body: some View {
@@ -86,10 +86,9 @@ private struct DocRow: View {
                     Text(doc.name).rowTitle()
                     ForEach(doc.tags, id: \.self) { TagPill(tag: $0) }
                 }
-                Text("AGENTS.md + CLAUDE.md (@AGENTS.md) · \(doc.content.count) znaków").rowMetadata()
+                UsageCaption(key: usageKey, load: usage)
             }
             Spacer()
-            Button("Edytuj", action: onEdit).controlSize(.small)
             RowMenu {
                 Button("Edytuj…", action: onEdit)
                 Divider()

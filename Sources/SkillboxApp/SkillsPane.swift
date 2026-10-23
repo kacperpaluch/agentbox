@@ -17,7 +17,13 @@ struct SkillsPane: View {
     @State private var sort: SkillSort = .name
     @State private var grouping: SkillGrouping = .repository
     @State private var checked = Set<String>()
-    @State private var expanded = Set<String>()
+    /// Group names, one per line. Groups start open — a list of closed groups looked empty — and stay
+    /// the way they were left between launches.
+    @AppStorage("AgentboxCollapsedSkillGroups") private var collapsedStorage = ""
+    private var collapsed: Set<String> {
+        get { Set(collapsedStorage.split(separator: "\n").map(String.init)) }
+        nonmutating set { collapsedStorage = newValue.sorted().joined(separator: "\n") }
+    }
     @State private var showBatchTags = false
     @State private var confirmBatchDelete = false
     var tags: [String] { Array(Set(model.skills.flatMap(\.tags))).sorted() }
@@ -61,8 +67,8 @@ struct SkillsPane: View {
         }
         .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: tags) { text in let ok = await model.addTags(checked, text: text); if ok { checked.removeAll() }; return ok } }
         .sheet(isPresented: $showNewSkill) { NewSkillView(existingTags: tags, existingIDs: Set(model.skills.map(\.id))) { draft in await model.createSkill(draft) } }
-        .confirmationDialog("Usunąć \(checked.count) skilli?", isPresented: $confirmBatchDelete) {
-            Button("Usuń \(checked.count) skilli", role: .destructive) {
+        .confirmationDialog("Usunąć \(PolishNoun.skill(checked.count))?", isPresented: $confirmBatchDelete) {
+            Button("Usuń \(PolishNoun.skill(checked.count))", role: .destructive) {
                 let ids = checked
                 checked.removeAll()
                 Task { await model.deleteSkills(ids) }
@@ -147,8 +153,8 @@ struct SkillsPane: View {
             Picker("Grupowanie", selection: $grouping) { ForEach(SkillGrouping.allCases) { Text($0.rawValue).tag($0) } }
             Picker("Sortowanie", selection: $sort) { ForEach(SkillSort.allCases) { Text($0.rawValue).tag($0) } }
             Divider()
-            Button("Rozwiń wszystko") { expanded = Set(groups.map(\.name)) }
-            Button("Zwiń wszystko") { expanded.removeAll() }
+            Button("Rozwiń wszystko") { collapsed = [] }
+            Button("Zwiń wszystko") { collapsed = Set(groups.map(\.name)) }
         } label: { Label("Grupuj i sortuj", systemImage: "line.3.horizontal.decrease.circle") }
     }
 
@@ -182,7 +188,7 @@ struct SkillsPane: View {
 
     private func checkBinding(_ id: String) -> Binding<Bool> { Binding(get: { checked.contains(id) }, set: { if $0 { checked.insert(id) } else { checked.remove(id) } }) }
     private func groupCheckBinding(_ skills: [Skill]) -> Binding<Bool> { let ids = Set(skills.map(\.id)); return Binding(get: { !ids.isEmpty && ids.isSubset(of: checked) }, set: { if $0 { checked.formUnion(ids) } else { checked.subtract(ids) } }) }
-    private func groupExpansion(_ name: String) -> Binding<Bool> { Binding(get: { !search.isEmpty || expanded.contains(name) || grouping == .none }, set: { if $0 { expanded.insert(name) } else { expanded.remove(name) } }) }
+    private func groupExpansion(_ name: String) -> Binding<Bool> { Binding(get: { !search.isEmpty || !collapsed.contains(name) || grouping == .none }, set: { if $0 { collapsed.remove(name) } else { collapsed.insert(name) } }) }
     private func chooseSkill() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; if panel.runModal() == .OK, let url = panel.url { Task { await model.addLocal(url) } } }
 }
 
@@ -205,7 +211,7 @@ struct SkillRow: View {
 }
 
 struct SkillDetail: View {
-    @ObservedObject var model: AppModel; let skill: Skill; @State private var tags = ""; @State private var confirmDelete = false
+    @ObservedObject var model: AppModel; let skill: Skill; @State private var newTag = ""; @State private var confirmDelete = false
     var showsUpdates = true
     @State private var usage: UsageReport?
     /// The dialog names what the deletion will actually reach, instead of leaving the user to guess
@@ -235,8 +241,7 @@ struct SkillDetail: View {
             Button("Zastąp", role: .destructive) { let files = replacement; Task { await model.addSkillFiles(skill.id, files: files, replacing: true) } }
             Button("Anuluj", role: .cancel) {}
         } message: { Text("Skill ma już: \(existing(in: replacement).joined(separator: ", ")). Obecna zawartość zostanie zastąpiona wybraną.") }
-        .onAppear { tags = skill.tags.joined(separator: ", ") }
-        .onChange(of: skill.id) { tags = skill.tags.joined(separator: ", "); isEditing = false; draft = "" }
+        .onChange(of: skill.id) { newTag = ""; isEditing = false; draft = "" }
         .confirmationDialog("Usunąć skill \(skill.name)?", isPresented: $confirmDelete) {
             Button("Usuń skill", role: .destructive) { Task { await model.deleteSkill(skill.id) } }
             Button("Anuluj", role: .cancel) {}
@@ -266,13 +271,40 @@ struct SkillDetail: View {
             } else if usage != nil {
                 Label("Nieprzypisany do żadnego projektu", systemImage: "circle.dashed").font(.caption).foregroundStyle(.secondary)
             }
-            HStack {
-                TextField("tagi, oddzielone przecinkami", text: $tags).textFieldStyle(.roundedBorder)
-                ExistingTagMenu(tags: Array(Set(model.skills.flatMap(\.tags))).sorted(), text: $tags)
-                Button("Zapisz tagi") { Task { await model.saveTags(skill.id, text: tags) } }.buttonStyle(.bordered)
-            }
+            tagEditor
         }
         .padding(Space.page)
+    }
+
+    /// Tags as pills that save on their own: × removes one, typing a name and Return adds it, the menu
+    /// offers the ones other skills use. No separate "save" step to forget.
+    private var tagEditor: some View {
+        let unused = Set(model.skills.flatMap(\.tags)).subtracting(skill.tags).sorted()
+        return HStack(spacing: Space.tight + 2) {
+            ForEach(skill.tags, id: \.self) { tag in
+                HStack(spacing: 3) {
+                    Text("#\(tag)")
+                    Button { saveTags(skill.tags.filter { $0 != tag }) } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }
+                        .buttonStyle(.plain).help("Usuń tag \(tag)").disabled(model.isWorking)
+                }
+                .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                .padding(.horizontal, Space.row - 1).padding(.vertical, 3)
+                .background(.quaternary.opacity(0.6), in: Capsule())
+            }
+            TextField("Dodaj tag", text: $newTag)
+                .textFieldStyle(.roundedBorder).frame(width: 130)
+                .onSubmit { saveTags(skill.tags + AppModel.csv(newTag)); newTag = "" }
+            if !unused.isEmpty {
+                Menu { ForEach(unused, id: \.self) { tag in Button("#\(tag)") { saveTags(skill.tags + [tag]) } } } label: { Image(systemName: "plus") }
+                    .menuStyle(.borderlessButton).fixedSize().help("Dodaj tag używany przez inne skille")
+            }
+            Spacer()
+        }
+    }
+    private func saveTags(_ tags: [String]) {
+        var seen = Set<String>()
+        let unique = tags.filter { seen.insert($0.lowercased()).inserted }
+        Task { await model.saveTags(skill.id, text: unique.joined(separator: ", ")) }
     }
 
     @ViewBuilder private var editorBar: some View {
@@ -341,7 +373,7 @@ struct SkillDetail: View {
         if isEditing {
             TextEditor(text: $draft).font(.system(.body, design: .monospaced)).padding(6)
         } else {
-            ScrollView { Text(model.markdownSkillID == skill.id ? model.markdown : "").font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding() }
+            ScrollView { SkillMarkdownView(document: SkillMarkdown.parse(model.markdownSkillID == skill.id ? model.markdown : "")).padding() }
         }
     }
 }

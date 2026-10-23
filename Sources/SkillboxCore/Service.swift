@@ -653,6 +653,11 @@ public actor SkillboxService {
         return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
     }
 
+    /// Projects whose folder is gone, in the order `listProjects` returns them.
+    public func projectsWithoutFolder() async throws -> [Project] {
+        try await listProjects().filter { !Self.projectFolderExists($0.path) }
+    }
+
     @discardableResult
     public func deleteMissingProjects() async throws -> [Project] {
         var config = try await store.configuration()

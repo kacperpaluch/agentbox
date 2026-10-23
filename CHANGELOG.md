@@ -6,6 +6,18 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-10-23
+
+### Zmieniono
+
+- `Synchronizuj wszystkie` (w aplikacji i `agentbox sync all`) pomija projekty bez folderu i wymienia je, zamiast zatrzymywać synchronizację wszystkich pozostałych. Synchronizacja grupy i zaznaczonych projektów robi to samo.
+- Kolumna `Wyjątki` nie powtarza tagów, które ma cała grupa (np. `#seo` z folderu).
+- Usunięcie wspólnych ustawień folderu przeszło z ikony kosza do menu „…” w nagłówku grupy, z pełną nazwą akcji.
+- Liczby mają poprawną polską odmianę w całej aplikacji i CLI: „1 dokument”, „2 projekty”, „5 serwerów MCP”.
+- Skille: grupy są domyślnie rozwinięte i zapamiętywane; podgląd SKILL.md pokazuje opis i sformatowaną treść zamiast surowego pliku; tagi to pastylki zapisywane od razu (× usuwa, Enter dodaje, „+” podpowiada używane).
+- MCP i Dokumenty: pod nazwą widać, co serwer uruchamia (polecenie i pakiet albo sam host adresu — bez argumentów i tokenów) oraz gdzie jest używany; kliknięcie wiersza otwiera szczegóły zamiast osobnego przycisku.
+- Ustawienia: bez zdublowanego tytułu, z ograniczoną szerokością; snapshoty pokazują czas względny („5 minut temu”), a informacja o pełnym backupie mówi wprost, kiedy powstał ostatni.
+
 ## [0.36.0] - 2026-10-23
 
 ### Dodano
