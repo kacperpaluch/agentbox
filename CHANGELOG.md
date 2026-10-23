@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-10-23
+
+### Dodano
+
+- `agentbox project remove-missing [--yes]` — odpowiednik `Usuń projekty bez folderu…` w CLI. Bez `--yes` wypisuje projekty bez folderu, z `--yes` usuwa je z Agentbox jednym zapisem.
+
 ## [0.34.0] - 2026-10-23
 
 ### Dodano

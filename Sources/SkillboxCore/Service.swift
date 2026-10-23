@@ -619,13 +619,16 @@ public actor SkillboxService {
     /// not taken from an earlier status, so a folder that came back in the meantime stays. Unlike
     /// `deleteProject` the path is not added to the parent's ignored list: there is nothing left to
     /// re-offer, and a folder recreated under the same name should be offered again.
+    /// The one definition of "Brak folderu", shared by status, the CLI listing and deletion.
+    public static func projectFolderExists(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+
     @discardableResult
     public func deleteMissingProjects() async throws -> [Project] {
         var config = try await store.configuration()
-        let missing = config.projects.filter { project in
-            var isDirectory: ObjCBool = false
-            return !(fm.fileExists(atPath: project.path, isDirectory: &isDirectory) && isDirectory.boolValue)
-        }
+        let missing = config.projects.filter { !Self.projectFolderExists($0.path) }
         guard !missing.isEmpty else { return [] }
         let ids = Set(missing.map(\.id))
         config.projects.removeAll { ids.contains($0.id) }

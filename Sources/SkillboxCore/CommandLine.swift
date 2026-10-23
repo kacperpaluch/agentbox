@@ -13,7 +13,7 @@ public enum AgentboxCommand {
       agentbox attach <skill> <plik|folder...> [--replace] | files <skill>
       agentbox delete <skill> | usage <skill>
       agentbox adopt-library [--yes]
-      agentbox project add|set|add-tool|list|status|explain|adopt|adopt-changes|unsync|remove ...
+      agentbox project add|set|add-tool|list|status|explain|adopt|adopt-changes|unsync|remove|remove-missing ...
       agentbox project root-add|root-adopt|roots|scan|adopt-new|ignore-new ...
       agentbox sync project <name> [--dry-run]
       agentbox sync all [--dry-run]
@@ -201,6 +201,14 @@ public enum AgentboxCommand {
             try await service.deleteProject(id: project.id)
             lines.append("Usunięto projekt \(project.name) z Agentbox" + (args.contains("--clean") ? "" : "; pliki w jego folderze zostały bez zmian"))
             return lines
+        case "remove-missing":
+            guard args.contains("--yes") else {
+                let missing = try await service.listProjects().filter { !SkillboxService.projectFolderExists($0.path) }
+                guard !missing.isEmpty else { return ["Wszystkie foldery projektów istnieją."] }
+                return ["Projekty bez folderu:"] + missing.map { "  \($0.name)\t\($0.path)" } + ["Dodaj --yes, aby usunąć je z Agentbox; dysk zostaje bez zmian."]
+            }
+            let removed = try await service.deleteMissingProjects()
+            return removed.isEmpty ? ["Wszystkie foldery projektów istnieją; nic nie usunięto."] : ["Usunięto z Agentbox projekty bez folderu: \(removed.map(\.name).joined(separator: ", "))"]
         case "root-add" where rest.count >= 3:
             let tools = try await Self.tools(in: args, service: service)
             let folderURL = URL(fileURLWithPath: rest[2]).standardizedFileURL
@@ -283,7 +291,7 @@ public enum AgentboxCommand {
         return found.filter { $0.rootID == root.id }
     }
 
-    private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode,vibe] | set <nazwa> [--skills a,b] [--tags web] | add-tool <narzędzie> | list | status | explain <nazwa> | adopt <nazwa> [--yes] | adopt-changes <nazwa> [--yes] | unsync <nazwa> | remove <nazwa> [--clean] | root-adopt <nazwa> <folder> [--skills a,b] [--tags x] [--keep-own projekt] | root-add <nazwa> <folder> [--tools t] [--skills a,b] [--tags x] [--folders alpha,beta] [--no-watch] | roots | scan [--root nazwa] | adopt-new [--root nazwa] [--yes] [--sync] | ignore-new [--root nazwa] | unignore <folder>"
+    private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode,vibe] | set <nazwa> [--skills a,b] [--tags web] | add-tool <narzędzie> | list | status | explain <nazwa> | adopt <nazwa> [--yes] | adopt-changes <nazwa> [--yes] | unsync <nazwa> | remove <nazwa> [--clean] | remove-missing [--yes] | root-adopt <nazwa> <folder> [--skills a,b] [--tags x] [--keep-own projekt] | root-add <nazwa> <folder> [--tools t] [--skills a,b] [--tags x] [--folders alpha,beta] [--no-watch] | roots | scan [--root nazwa] | adopt-new [--root nazwa] [--yes] [--sync] | ignore-new [--root nazwa] | unignore <folder>"
 
     private static func sync(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
         guard let mode = rest.first else { return [syncUsage] }

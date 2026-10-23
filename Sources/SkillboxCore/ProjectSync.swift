@@ -63,8 +63,7 @@ extension SkillboxService {
         let catalog = try await store.catalog()
         for project in projects {
             await progress?(SyncProgress(done: statuses.count, total: projects.count, label: "Sprawdzam \(project.name)"))
-            var isDirectory: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            guard Self.projectFolderExists(project.path) else {
                 statuses.append(ProjectStatus(projectID: project.id, state: .missing)); continue
             }
             do {

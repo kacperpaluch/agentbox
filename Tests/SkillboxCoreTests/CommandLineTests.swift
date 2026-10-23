@@ -102,6 +102,25 @@ final class CommandLineTests: AgentboxTestCase {
         let service = try SkillboxService(root: root)
         await XCTAssertThrowsErrorAsync(try await AgentboxCommand.run(["sync", "project", "nieistniejacy"], service: service))
     }
+    func testCommandLineRemovesMissingProjectsOnlyWithYes() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let kept = root.appending(path: "kept"), gone = root.appending(path: "gone")
+        try FileManager.default.createDirectory(at: kept, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: gone, withIntermediateDirectories: true)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await AgentboxCommand.run(["project", "add", "kept", kept.path, "--tools", "claude"], service: service)
+        _ = try await AgentboxCommand.run(["project", "add", "gone", gone.path, "--tools", "claude"], service: service)
+        try FileManager.default.removeItem(at: gone)
+
+        let listing = try await AgentboxCommand.run(["project", "remove-missing"], service: service)
+        XCTAssertTrue(listing.contains { $0.contains("gone") })
+        let afterListing = try await service.listProjects().count
+        XCTAssertEqual(afterListing, 2, "bez --yes nic nie jest usuwane")
+
+        _ = try await AgentboxCommand.run(["project", "remove-missing", "--yes"], service: service)
+        let names = try await service.listProjects().map(\.name)
+        XCTAssertEqual(names, ["kept"])
+    }
     /// `delete`, `project remove` and `mcp server remove` are the CLI's counterpart to the GUI's
     /// only-in-app delete buttons — a CLI-first workflow should not need to open the app just to
     /// remove something it can already create.

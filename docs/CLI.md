@@ -81,6 +81,8 @@ agentbox project adopt-changes sklep --yes
 agentbox project unsync sklep
 agentbox project remove sklep
 agentbox project remove sklep --clean
+agentbox project remove-missing
+agentbox project remove-missing --yes
 ```
 
 `project status` pokazuje jednym rzutem, które projekty odstają od biblioteki: `✓` aktualny, `●` z liczbą zmian, `✗` zablokowany przez niezarządzany katalog lub wpis, `?` brak folderu projektu. Licznik `~` obejmuje nie tylko skille z nowszą wersją w bibliotece, ale też wszystko, co zmieniło treść bez zmiany nazwy: poprawioną komendę serwera MCP, przepisany dokument i skill zmieniony wprost w folderze biblioteki. Stan porównuje zawartość plików projektu z tym, co zapisałaby synchronizacja.
@@ -92,6 +94,8 @@ agentbox project remove sklep --clean
 `project unsync` usuwa z folderu projektu wyłącznie to, co Agentbox ma w swoich manifestach. Ręcznie dodane skille i serwery MCP zostają nietknięte, a przed zmianą powstaje backup.
 
 `project remove` usuwa wpis projektu i jego przypisania MCP z Agentbox — folder projektu i jego pliki zostają bez zmian. `--clean` najpierw robi to, co `project unsync` (sprząta katalogi skilli i wpisy MCP z manifestów Agentbox), a dopiero potem usuwa projekt.
+
+`project remove-missing` to odpowiednik `Więcej → Usuń projekty bez folderu…`: bez `--yes` wypisuje projekty, których folderu nie ma na dysku (`?` w `project status`), z `--yes` usuwa je wszystkie z Agentbox jednym zapisem. Istnienie folderu jest sprawdzane w chwili usuwania, a dysk zostaje bez zmian.
 
 ### Foldery nadrzędne i nowe podfoldery
 
