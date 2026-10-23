@@ -6,6 +6,21 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-10-23
+
+### Naprawiono
+
+- Grupy skilli o tej samej nazwie co jedyny skill w środku (np. „miodkuj”) dało się rozwinąć, ale nie zwinąć — strzałka trafiała w wiersz skilla. To samo groziło skillom w kilku grupach tagów naraz.
+
+### Zmieniono
+
+- Projekty są natywną tabelą: zmienna szerokość kolumn, zaznaczanie jak w Finderze (klik, ⌘, ⇧, ⌘A, strzałki) zamiast pól wyboru, dwuklik otwiera konfigurację, Delete pyta o usunięcie zaznaczonych, prawy przycisk działa na zaznaczeniu.
+- Skille, serwery MCP i dokumenty zaznacza się natywnie — strzałki i VoiceOver przechodzą po liście; serwer i dokument otwiera dwuklik albo Return, a prawy przycisk pokazuje ich menu.
+- Dostępność: pola wyboru, menu „…” i przyciski tagów mają nazwy dla VoiceOver; powód blokady projektu jest dostępny bez najeżdżania myszą; tekst nie jest mniejszy niż `caption`.
+- Wyszukiwanie ignoruje polskie znaki i wielkość liter: „zrodla” znajduje „źródła”.
+- Daty w Ustawieniach i historii operacji formatuje system.
+- Kod aplikacji jest podzielony na foldery według funkcji, jeden typ na plik, a stan okna korzysta z `@Observable`.
+
 ## [0.37.0] - 2026-10-23
 
 ### Zmieniono

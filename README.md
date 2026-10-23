@@ -127,7 +127,7 @@ CLI `agentbox refresh` wykonuje ten workflow bez okna wyboru. `agentbox update -
 
 ## Projekty i synchronizacja
 
-Kliknięcie nazwy projektu albo `⋯ → Konfiguracja i pochodzenie…` pokazuje, co Agentbox wybrał i dlaczego: bezpośrednio, przez tag albo z folderu nadrzędnego. Widać wykluczone skille, wyłączone MCP, pliki do dodania lub usunięcia oraz lokalne zmiany skilli. Z tego miejsca otworzysz definicję, edytor źródła przypisań, różnice i przejmowanie zmian. W terminalu: `agentbox project explain <nazwa>`.
+Dwuklik na projekcie albo `⋯ → Konfiguracja i pochodzenie…` pokazuje, co Agentbox wybrał i dlaczego: bezpośrednio, przez tag albo z folderu nadrzędnego. Widać wykluczone skille, wyłączone MCP, pliki do dodania lub usunięcia oraz lokalne zmiany skilli. Z tego miejsca otworzysz definicję, edytor źródła przypisań, różnice i przejmowanie zmian. W terminalu: `agentbox project explain <nazwa>`.
 
 Stan dotyczy konfiguracji Agentbox i plików, nie faktycznego załadowania narzędzi w sesji klienta AI. Globalny wybór skilli jest pokazany osobno, bez sprawdzania jego synchronizacji.
 
@@ -188,7 +188,7 @@ Wartość zapisana jako `${NAZWA_ZMIENNEJ}` odwołuje się do zmiennej systemowe
 
 ### Edycja jako JSON
 
-`Biblioteka → MCP` → kliknięcie serwera → `JSON` pokazuje `command`/`args`/`url`/`env`/`headers` jednego serwera jako zwykły tekst do ręcznej edycji. Wartości pozostają lokalne; `${NAZWA_ZMIENNEJ}` oznacza odczyt ze środowiska systemowego. Ten tryb zastępuje sekcję `Zmienne i nagłówki`, zamiast pokazywać ją obok.
+`Biblioteka → MCP` → dwuklik na serwerze → `JSON` pokazuje `command`/`args`/`url`/`env`/`headers` jednego serwera jako zwykły tekst do ręcznej edycji. Wartości pozostają lokalne; `${NAZWA_ZMIENNEJ}` oznacza odczyt ze środowiska systemowego. Ten tryb zastępuje sekcję `Zmienne i nagłówki`, zamiast pokazywać ją obok.
 
 Przycisk `Edytuj całą konfigurację` na liście serwerów otwiera osobny, prosty widok dla całej konfiguracji naraz, wypełniony aktualnym stanem: popraw i `Zapisz` — bez kroku analizy i zaznaczania serwerów, bo to edycja własnej konfiguracji, a nie import z zewnątrz. Poprawki nadpisują serwery o tej samej nazwie, reszta zostaje bez zmian. Ta ceremonia (analiza, wybór serwerów, klasyfikacja pól) zostaje tam, gdzie faktycznie jest potrzebna — w `Dodaj serwer → JSON` lub `AI`.
 
