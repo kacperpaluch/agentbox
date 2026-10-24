@@ -12,7 +12,7 @@ struct SkillUpdatesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Aktualizacje skilli").font(.title2.bold())
-            Text("Wybierz aktualizacje do przyjęcia. Zapis obejmie dokładnie sprawdzone pliki; wcześniej powstanie pełny backup biblioteki. Metadane .git i .DS_Store nie są częścią podglądu skilla.").font(.caption).foregroundStyle(.secondary)
+            Text("Wybierz aktualizacje do przyjęcia. Przed zapisem powstanie pełny backup biblioteki.").font(.caption).foregroundStyle(.secondary)
             if synchronizing { Label("Po przyjęciu wyboru Agentbox zsynchronizuje projekty. Odznaczone aktualizacje pozostaną na później.", systemImage: "arrow.triangle.2.circlepath").font(.caption) }
             Label("Pliki skilli mogą zawierać prywatne dane i kod. Podgląd pokazuje ich jawną treść.", systemImage: "eye").font(.caption).foregroundStyle(.secondary)
             if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }

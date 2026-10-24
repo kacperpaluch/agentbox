@@ -16,7 +16,7 @@ struct MCPDuplicateView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Duplikuj serwer MCP").font(.title2.bold())
-            Text("Powstanie niezależna kopia 1:1 — z transportem, URL-em, argumentami, zmiennymi, nagłówkami, wartościami lokalnymi i tagami. Przypisania do projektów nie są kopiowane.").font(.caption).foregroundStyle(.secondary)
+            Text("Powstanie niezależna kopia z wszystkimi wartościami i tagami, bez przypisań do projektów.").font(.caption).foregroundStyle(.secondary)
             TextField("Nowa nazwa techniczna", text: $name)
             if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
             HStack { Spacer(); Button("Anuluj") { dismiss() }; Button("Duplikuj") { Task { await duplicate() } }.buttonStyle(.borderedProminent).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isWorking) }

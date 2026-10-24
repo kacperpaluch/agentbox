@@ -31,7 +31,7 @@ struct GroupRootSetupView: View {
             ScrollView { VStack(alignment: .leading, spacing: 14) {
                 Text("Wspólne ustawienia folderu").font(.title2.bold())
                 Text(folderPath).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                Text("Skille, tagi i serwery MCP ustawione tutaj obowiązują wszystkie zaznaczone projekty. Późniejsza zmiana w folderze obejmuje je wszystkie naraz.").foregroundStyle(.secondary)
+                Text("Ustawienia folderu obowiązują wszystkie zaznaczone projekty — także po późniejszej zmianie.").foregroundStyle(.secondary)
                 TextField("Nazwa folderu", text: $name)
                 if nameTaken { Label("Folder nadrzędny o tej nazwie już istnieje.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }
                 GroupBox("Projekty w tym folderze") { VStack(alignment: .leading, spacing: 7) {
@@ -49,7 +49,7 @@ struct GroupRootSetupView: View {
                 }.padding(6) }
                 GroupBox("Nowe podfoldery") { VStack(alignment: .leading, spacing: 6) {
                     Toggle("Pytaj, gdy w tym folderze pojawi się nowy podfolder", isOn: $watchesNewFolders).toggleStyle(.checkbox)
-                    Text("Nowy podfolder — na przykład świeżo sklonowane repozytorium — pojawi się jako pytanie nad listą projektów oraz jako plakietka przy `Projekty`.").font(.caption).foregroundStyle(.secondary)
+                    Text("Nowy podfolder, np. sklonowane repozytorium, pojawi się jako pytanie nad listą projektów.").font(.caption).foregroundStyle(.secondary)
                     Toggle("Pytaj tylko o podfoldery, które pojawią się od teraz", isOn: $onlyFutureFolders).toggleStyle(.checkbox).disabled(!watchesNewFolders)
                     Text(onlyFutureFolders
                          ? "Podfoldery, które są w tym folderze teraz i nie są projektami, zostają uznane za znane. Wrócą po kliknięciu `Przywróć pominięte` w ustawieniach folderu."
@@ -58,7 +58,7 @@ struct GroupRootSetupView: View {
                 }.padding(6) }
                 if differingDocuments {
                     GroupBox { VStack(alignment: .leading, spacing: 6) {
-                        Label("Projekty używają różnych dokumentów, a folder może mieć tylko jeden. Wybierz go poniżej — przy każdym projekcie, który go zmieni, widać „inny dokument”.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Label("Projekty używają różnych dokumentów, a folder może mieć jeden. Wybierz go poniżej; zmienione projekty mają dopisek „inny dokument”.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                         Toggle("Rozumiem, że dokument części projektów się zmieni", isOn: $documentsConfirmed).toggleStyle(.checkbox)
                     }.padding(6) }
                 }

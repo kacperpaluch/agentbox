@@ -3,6 +3,8 @@ import SkillboxCore
 
 struct BatchProjectView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.enabledTools) private var enabledTools
+    @State private var start = ProjectStart.defaults
     let skills: [Skill]; let servers: [MCPServer]; let docs: [AgentDoc]; let existingProjects: [Project]; let existingRoots: [ProjectRoot]
     let claudePlugins: [ClaudePluginDefinition]
     let initialSelection: AttachmentSelection
@@ -19,7 +21,7 @@ struct BatchProjectView: View {
 
     var body: some View { VStack(spacing: 0) { ScrollView { VStack(alignment: .leading, spacing: 14) {
         Text("Dodaj wiele projektów").font(.title2.bold())
-        Text("Ustawienia zapisują się na folderze nadrzędnym i schodzą na jego podfoldery. Pojedynczy projekt może później dostać własne.").foregroundStyle(.secondary)
+        Text("Ustawienia zapisują się na folderze nadrzędnym i obowiązują jego podfoldery.").foregroundStyle(.secondary)
         HStack { TextField("Folder nadrzędny", text: $root); Button("Wybierz…") { chooseRoot() } }
         if !scanError.isEmpty { Label(scanError, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
         if rootAlreadyAdded { Label("Ten folder jest już dodany jako nadrzędny. Otwórz jego ustawienia na liście projektów.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
@@ -32,20 +34,22 @@ struct BatchProjectView: View {
                 TextField("Nazwa folderu nadrzędnego", text: $rootName)
                 if rootNameTaken { Text("Folder nadrzędny o tej nazwie już istnieje.").font(.caption).foregroundStyle(.orange) }
             } else {
-                Text("Bez wspólnych ustawień każdy projekt dostaje własną kopię tego, co wybierzesz poniżej — tak jak w poprzednich wersjach.").font(.caption).foregroundStyle(.secondary)
+                Text("Każdy projekt dostanie własną kopię wyboru poniżej.").font(.caption).foregroundStyle(.secondary)
             }
         }.padding(6) }
         GroupBox("Podfoldery") { VStack(alignment: .leading, spacing: 7) {
             if folders.isEmpty { Text("Wybierz folder, aby znaleźć projekty.").foregroundStyle(.secondary) }
             else { HStack { Button("Zaznacz dostępne") { selectedFolders = Set(availableFolders.map(\.path)) }; Button("Wyczyść") { selectedFolders.removeAll() }; Spacer(); Text("Wybrano \(selectedFolders.count)").foregroundStyle(.secondary) }; ForEach(folders, id: \.path) { folder in let exists = existingPaths.contains(folder.standardizedFileURL.path); Toggle(isOn: folderBinding(folder)) { HStack { Image(systemName: "folder"); Text(folder.lastPathComponent); Spacer(); if exists { Text("już dodany").font(.caption).foregroundStyle(.secondary) } } }.toggleStyle(.checkbox).disabled(exists) } }
         }.padding(6) }.frame(maxHeight: 230)
+        ProjectStartPicker(start: $start)
         AttachmentPicker(skills: skills, servers: servers, docs: docs, claudePlugins: claudePlugins, selection: $selection, manageGitignore: $manageGitignore)
     }.padding(24) }
     // Pinned below the scrolling form, so the action stays reachable on any display.
     SheetFooter {
         Button("Anuluj") { dismiss() }
         Button(sharedSettings ? "Dodaj folder i \(PolishNoun.project(selectedFolders.count))" : "Dodaj \(PolishNoun.project(selectedFolders.count))") { Task { if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(saving || saveDisabled)
-    } }.sheetFrame(width: 760, height: 640).onAppear { selection = initialSelection } }
+    } }.sheetFrame(width: 760, height: 640).onAppear { selection = initialSelection }
+        .onChange(of: start) { selection = start == .defaults ? initialSelection : AttachmentSelection(tools: enabledTools) } }
 
     private var saveDisabled: Bool {
         if selection.tools.isEmpty || rootAlreadyAdded { return true }

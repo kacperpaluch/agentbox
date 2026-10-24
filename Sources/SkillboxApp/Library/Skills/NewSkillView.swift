@@ -28,7 +28,7 @@ struct NewSkillView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Nowy skill").font(.title2.bold())
-            Text("Treść trafia prosto do biblioteki jako `SKILL.md`. Taki skill można później edytować w Agentbox — w przeciwieństwie do skilli z Git, które nadpisuje aktualizacja.").font(.callout).foregroundStyle(.secondary)
+            Text("Treść trafia do biblioteki jako `SKILL.md` i można ją później edytować w Agentbox.").font(.callout).foregroundStyle(.secondary)
             HStack { TextField("Nazwa", text: $name); TextField("Identyfikator", text: Binding(get: { identifierEdited ? identifier : suggestedID }, set: { identifier = $0; identifierEdited = true })) }
             if !effectiveID.isEmpty && !idValid { Label("Identyfikator może zawierać tylko małe litery, cyfry i pojedyncze myślniki.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }
             if idTaken { Label("Skill o tym identyfikatorze już jest w bibliotece.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }

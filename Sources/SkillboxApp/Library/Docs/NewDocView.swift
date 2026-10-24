@@ -23,7 +23,7 @@ struct NewDocView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Nowy dokument").font(.title2.bold())
-            Text("Treść trafia jako AGENTS.md do projektów, które dostaną ten dokument. CLAUDE.md w tych projektach Agentbox generuje sam jako import @AGENTS.md, a do istniejącego CLAUDE.md dopisuje tylko ten import — nie trzeba pisać go osobno.").font(.callout).foregroundStyle(.secondary)
+            Text("Tekst trafia jako AGENTS.md; CLAUDE.md dostaje import @AGENTS.md, bez osobnej edycji.").font(.callout).foregroundStyle(.secondary)
             HStack { TextField("Nazwa", text: $name); TextField("Identyfikator", text: Binding(get: { identifierEdited ? identifier : suggestedID }, set: { identifier = $0; identifierEdited = true })) }
             if !effectiveID.isEmpty && !idValid { Label("Identyfikator może zawierać tylko małe litery, cyfry i pojedyncze myślniki.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }
             if idTaken { Label("Dokument o tym identyfikatorze już jest w bibliotece.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }

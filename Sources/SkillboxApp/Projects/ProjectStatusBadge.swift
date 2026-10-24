@@ -2,9 +2,9 @@ import SwiftUI
 import SkillboxCore
 
 struct ProjectStatusBadge: View {
-    let status: ProjectStatus?
+    let state: ProjectStatus.State?
     var body: some View {
-        switch status?.state {
+        switch state {
         case .synced:
             // The common case stays quiet so the states that need something stand out.
             Label { Text("Aktualny").foregroundStyle(.secondary) } icon: { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }.font(.caption)

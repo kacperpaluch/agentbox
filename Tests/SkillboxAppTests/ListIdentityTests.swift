@@ -72,6 +72,8 @@ final class ListIdentityTests: XCTestCase {
         XCTAssertEqual(ProjectTableRow.projects(for: [groupRow], in: entries).map(\.name), ["a", "b"])
         XCTAssertEqual(ProjectTableRow.projects(for: [groupRow, a.id.uuidString, c.id.uuidString], in: entries).map(\.name), ["a", "b", "c"], "projekt zaznaczony razem z grupą liczy się raz")
         XCTAssertNotEqual(groupRow, ProjectTableRow(project: a, in: work).id)
+        XCTAssertTrue(ProjectTableRow.projects(for: [ProjectTableRow.mac.id], in: entries).isEmpty, "wiersz „Ten Mac” nie oznacza żadnego projektu")
+        XCTAssertFalse(([groupRow] + [a, b, c].map { ProjectTableRow(project: $0, in: work).id }).contains(ProjectTableRow.mac.id))
     }
 
     private static func outline(in view: NSView) -> NSOutlineView? {

@@ -384,6 +384,81 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.skillFiles.map(\.path), ["run.sh"])
     }
 
+    // MARK: Inspector
+
+    /// A project following its folder has no choice of its own, so the inspector's save must land on
+    /// the folder — and reach the folder's other projects — while a project with its own settings
+    /// changes only itself. Asked through the sync preview, not the selection the save just wrote.
+    func testInspectorSaveWritesTheFolderForAFollowingProjectAndOnlyTheProjectOtherwise() async throws {
+        let model = try await makeModel()
+        await model.addLocal(try makeSkill("alfa"))
+        await model.addLocal(try makeSkill("beta"))
+        let parent = try makeProjectFolder("grupa")
+        for name in ["a", "b"] { try FileManager.default.createDirectory(at: parent.appending(path: name), withIntermediateDirectories: true) }
+        let added = await model.addBatch(BatchProjectRequest(root: ProjectRoot(name: "grupa", path: parent.path, tools: [.claude]), folders: ["a", "b"].map { parent.appending(path: $0).path }, selection: AttachmentSelection(tools: [.claude])))
+        XCTAssertTrue(added)
+        let folder = try XCTUnwrap(model.projectRoots.first)
+        let first = try XCTUnwrap(model.projects.first { $0.name == "a" })
+        let second = try XCTUnwrap(model.projects.first { $0.name == "b" })
+        XCTAssertTrue(model.inheritsRoot(first))
+        XCTAssertEqual(model.followers(of: folder), 2)
+
+        var shared = model.selection(for: .project(first.id), resolvingInheritance: true)
+        shared.skillIDs = ["alfa"]
+        let savedShared = await model.saveAttachments(shared, manageGitignore: true, for: first)
+        XCTAssertTrue(savedShared)
+        let secondPreview = try await model.previewProjectSync(second)
+        XCTAssertEqual(secondPreview.skills.flatMap(\.added), ["alfa"], "zmiana z projektu dziedziczącego obejmuje cały folder")
+        XCTAssertEqual(model.projectRoots.first?.manageGitignore, true)
+
+        let promoted = await model.promoteToOwnSettings(try XCTUnwrap(model.storedProject(id: first.id)))
+        XCTAssertTrue(promoted)
+        var own = model.selection(for: .project(first.id), resolvingInheritance: true)
+        own.skillIDs = ["beta"]
+        let savedOwn = await model.saveAttachments(own, manageGitignore: false, for: try XCTUnwrap(model.projects.first { $0.id == first.id }))
+        XCTAssertTrue(savedOwn)
+        let firstPreview = try await model.previewProjectSync(try XCTUnwrap(model.projects.first { $0.id == first.id }))
+        XCTAssertEqual(firstPreview.skills.flatMap(\.added), ["beta"])
+        let untouched = try await model.previewProjectSync(second)
+        XCTAssertEqual(untouched.skills.flatMap(\.added), ["alfa"], "własne ustawienia jednego projektu nie ruszają folderu")
+        XCTAssertEqual(model.storedProject(id: first.id)?.manageGitignore, false)
+    }
+
+    /// Unticking a skill a tag pulls in is how it is excluded now; ticking it again takes the
+    /// exclusion back instead of adding a direct pick the exclusion would still override.
+    func testUntickingATagCoveredSkillExcludesItAndTickingItTakesTheExclusionBack() {
+        let seo = Skill(id: "seo", name: "seo", tags: ["Web"], source: SkillSource(kind: .local, location: "/x"))
+        let plain = Skill(id: "plain", name: "plain", source: SkillSource(kind: .local, location: "/y"))
+        var selection = AttachmentSelection(tools: [.claude], skillTags: ["web"])
+        XCTAssertEqual(SkillPick.coveringTag(seo, in: selection), "Web", "tagi porównywane bez wielkości liter, jak w synchronizacji")
+        XCTAssertTrue(SkillPick.isIncluded(seo, in: selection))
+
+        selection = SkillPick.setting(seo, included: false, in: selection)
+        XCTAssertEqual(selection.excludedSkillIDs, ["seo"])
+        XCTAssertFalse(SkillPick.isIncluded(seo, in: selection))
+        selection = SkillPick.setting(seo, included: true, in: selection)
+        XCTAssertEqual(selection.excludedSkillIDs, [])
+        XCTAssertEqual(selection.skillIDs, [], "skill z tagu nie potrzebuje osobnego wyboru")
+
+        // A stale exclusion of a skill no tag covers must not keep a fresh tick from working.
+        selection.excludedSkillIDs = ["plain"]
+        selection = SkillPick.setting(plain, included: true, in: selection)
+        XCTAssertTrue(SkillPick.isIncluded(plain, in: selection))
+        XCTAssertEqual(selection.skillIDs, ["plain"])
+        selection = SkillPick.setting(plain, included: false, in: selection)
+        XCTAssertEqual(selection.skillIDs, [])
+        XCTAssertEqual(selection.excludedSkillIDs, [], "odznaczenie skilla spoza tagu to brak wyboru, nie wykluczenie")
+    }
+
+    /// The Mac's row says what synchronizing the global choice would change, in a project's terms.
+    func testTheMacRowReadsLikeAProjectStatus() {
+        XCTAssertNil(AppModel.globalState([]), "bez narzędzi i bez śladów Agentbox nie ma czego pokazać")
+        let quiet = SkillSyncPreview(tool: .claude, target: "/h/.claude/skills", added: [], updated: [], removed: [])
+        XCTAssertEqual(AppModel.globalState([quiet]), .synced)
+        let busy = SkillSyncPreview(tool: .codex, target: "/h/.codex/skills", added: ["a", "b"], updated: ["c"], removed: ["d"])
+        XCTAssertEqual(AppModel.globalState([quiet, busy]), .pending(added: 2, outdated: 1, removed: 1))
+    }
+
     // MARK: Library watcher
 
     func testCreatingAGroupRootReportsFailureAndThenSuccess() async throws {

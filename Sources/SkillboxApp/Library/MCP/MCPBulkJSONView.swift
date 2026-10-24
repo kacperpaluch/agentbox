@@ -17,7 +17,7 @@ struct MCPBulkJSONView: View {
     }
     var body: some View { VStack(alignment: .leading, spacing: 14) {
         Text("Edytuj konfigurację MCP jako JSON").font(.title2.bold())
-        Text("Wartości wprost, łącznie z sekretami. Zapis nadpisuje po nazwie serwery obecne w tekście, resztę zostawia bez zmian — usunięcie serwera z tekstu go tu nie kasuje. Wartość `${ZMIENNA}` przekazuje zmienną systemową; każda inna wartość — także token — zostaje zapisana w mcp.json i trafia do plików projektów, do których serwer jest przypisany.").font(.caption).foregroundStyle(.secondary)
+        Text("Wartości wprost, łącznie z sekretami. Zapis nadpisuje serwery obecne w tekście; usunięcie serwera z tekstu go nie kasuje. Poza `${ZMIENNA}` każda wartość, także token, trafia do mcp.json i plików projektów.").font(.caption).foregroundStyle(.secondary)
         TextEditor(text: $text).font(.system(.body, design: .monospaced)).frame(minHeight: 420).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
         if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
         HStack { if working { ProgressView() }; Spacer(); Button("Anuluj") { dismiss() }; Button("Zapisz") { Task { await save() } }.buttonStyle(.borderedProminent).disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || working) }

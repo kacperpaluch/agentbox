@@ -24,23 +24,44 @@ struct AttachmentPicker: View {
     private var mcpTags: [String] { Array(Set(servers.flatMap { $0.tags ?? [] })).sorted() }
     private var docTags: [String] { Array(Set(docs.flatMap(\.tags))).sorted() }
     private var matchedDocs: [AgentDoc] { docs.filter { covered($0.tags, by: Set(selection.docTags)) } }
+    /// The rarely touched options start folded; the label still says what they are set to.
+    @State private var showsMore = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            GroupBox("Narzędzia") { HStack { ForEach(enabledTools, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: setBinding(tool, in: toolsBinding)).toggleStyle(.checkbox) } }.padding(6) }
-            ScrollView { SkillCheckGrid(title: "Pojedyncze skille", skills: skills, selection: skillIDsBinding, locked: Set(tagMatched.map(\.id)), lockedHelp: "Wybrany przez tag — odznacz go w sekcji Wykluczenia, by pominąć") }.frame(height: 150)
+            GroupBox("Narzędzia") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 110))], alignment: .leading) { ForEach(enabledTools, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: setBinding(tool, in: toolsBinding)).toggleStyle(.checkbox).fixedSize() } }.padding(6) }
+            // Tags first: they decide which skills below arrive on their own.
             TagCheckGrid(title: "Tagi skilli", tags: availableTags, selection: skillTagsBinding)
+            ScrollView { SkillCheckGrid(title: "Skille", skills: skills, selection: $selection) }.frame(height: 150)
             if includesServersAndDocs {
-                GroupBox("Pojedyncze serwery MCP") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(servers.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { server in serverToggle(server) } }.padding(6) }
                 TagCheckGrid(title: "Tagi MCP", tags: mcpTags, selection: serverTagsBinding)
+                GroupBox("Serwery MCP") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(servers.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { server in serverToggle(server) } }.padding(6) }
             }
             if !claudePlugins.isEmpty { pluginSection }
-            exclusionsBox
-            if includesServersAndDocs { docSection }
-            if let manageGitignore {
-                GroupBox("Git") { VStack(alignment: .leading, spacing: 6) { Toggle("Dopisuj wygenerowane pliki MCP do .gitignore projektu", isOn: manageGitignore).toggleStyle(.checkbox); Text(".gitignore jedzie z repozytorium, więc chroni też zespół. Agentbox dopisuje tylko własny blok i nigdy nie usuwa istniejących wpisów.").font(.caption).foregroundStyle(.secondary) }.padding(6) }
+            if includesServersAndDocs || manageGitignore != nil {
+                if matchedDocs.count > 1 { docConflict }
+                DisclosureGroup(isExpanded: $showsMore) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        if includesServersAndDocs { docSection }
+                        if let manageGitignore {
+                            GroupBox("Git") { Toggle("Dopisuj wygenerowane pliki MCP do .gitignore projektu", isOn: manageGitignore).toggleStyle(.checkbox).help("Agentbox dopisuje tylko własny blok i nigdy nie usuwa istniejących wpisów.").padding(6).frame(maxWidth: .infinity, alignment: .leading) }
+                        }
+                    }.padding(.top, 6)
+                } label: {
+                    HStack { Text("Więcej opcji").sectionLabel(); Text(moreSummary).rowMetadata().lineLimit(1) }
+                }
             }
         }
+    }
+
+    private var moreSummary: String {
+        var parts: [String] = []
+        if includesServersAndDocs {
+            let named = selection.docIDs.first.flatMap { id in docs.first { $0.id == id }?.name }
+            parts.append("dokument: " + (named ?? (selection.docTags.isEmpty ? "brak" : selection.docTags.map { "#\($0)" }.joined(separator: " "))))
+        }
+        if let manageGitignore { parts.append(".gitignore: " + (manageGitignore.wrappedValue ? "tak" : "nie")) }
+        return parts.joined(separator: " · ")
     }
 
     // MARK: Bindings into the selection
@@ -51,9 +72,6 @@ struct AttachmentPicker: View {
 
     private var toolsBinding: Binding<Set<Tool>> {
         Binding(get: { Set(selection.tools) }, set: { selection.tools = $0.sorted { $0.rawValue < $1.rawValue } })
-    }
-    private var skillIDsBinding: Binding<Set<String>> {
-        Binding(get: { Set(selection.skillIDs) }, set: { selection.skillIDs = $0.sorted() })
     }
     private var skillTagsBinding: Binding<Set<String>> {
         Binding(get: { Set(selection.skillTags) }, set: { selection.skillTags = $0.sorted() })
@@ -71,7 +89,6 @@ struct AttachmentPicker: View {
     private var pluginSection: some View {
         GroupBox("Pluginy Claude") {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Zostaną zainstalowane przez Claude Code przy synchronizacji projektu.").font(.caption).foregroundStyle(.secondary)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(claudePlugins) { item in Toggle(item.name, isOn: setBinding(item.id, in: pluginIDsBinding)).toggleStyle(.checkbox).help(item.plugin) } }
             }.padding(6)
         }
@@ -83,65 +100,34 @@ struct AttachmentPicker: View {
 
     /// A project can only ever have one `AGENTS.md`, so this is a single pick — not a checkbox grid
     /// like skills and MCP servers. Tags can still match more than one document; that is a conflict
-    /// synchronization reports, so it is flagged here before it gets that far.
+    /// synchronization reports, so it is flagged before it gets that far.
     @ViewBuilder private var docSection: some View {
         GroupBox("Dokument (AGENTS.md / CLAUDE.md)") {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Ten sam tekst trafia jako AGENTS.md; CLAUDE.md jest generowany jako import @AGENTS.md, a do istniejącego CLAUDE.md projektu Agentbox tylko dopisuje ten import.").font(.caption).foregroundStyle(.secondary)
                 Picker("Dokument", selection: docBinding) {
                     Text("Brak").tag(String?.none)
                     ForEach(docs.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { doc in Text(doc.name).tag(Optional(doc.id)) }
                 }
+                .help("Tekst trafia jako AGENTS.md; CLAUDE.md dostaje import @AGENTS.md.")
                 TagCheckGrid(title: "Tagi dokumentów", tags: docTags, selection: docTagsBinding)
-                if matchedDocs.count > 1 {
-                    Label("Kilka dokumentów pasuje przez tagi naraz — synchronizacja zgłosi konflikt. Zostaw jeden pasujący tag albo wybierz dokument wprost.", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption).foregroundStyle(.orange)
-                }
             }.padding(6)
         }
     }
+    private var docConflict: some View {
+        Label("Kilka dokumentów pasuje przez tagi naraz. Zostaw jeden tag albo wybierz dokument wprost.", systemImage: "exclamationmark.triangle.fill")
+            .font(.caption).foregroundStyle(.orange)
+    }
 
-    /// Every skill a tag pulls in can be excluded here, including one that was also ticked
-    /// individually — the tag locks its checkbox, so this box is the only way to drop it.
-    private var tagMatched: [Skill] { skills.filter { covered($0.tags, by: Set(selection.skillTags)) }.sorted { $0.name < $1.name } }
     /// Tags are compared case-insensitively, the same way the sync resolves them.
     private func covered(_ tags: [String], by wanted: Set<String>) -> Bool {
         let lowered = Set(wanted.map { $0.lowercased() })
         return !lowered.isDisjoint(with: tags.map { $0.lowercased() })
     }
-    @ViewBuilder private var exclusionsBox: some View {
-        GroupBox("Wykluczenia") {
-            VStack(alignment: .leading, spacing: 6) {
-                if tagMatched.isEmpty { Text("Wybierz tagi skilli, aby móc wykluczyć pojedyncze pozycje.").font(.caption).foregroundStyle(.secondary) }
-                else {
-                    Text("Te skille wchodzą przez tagi. Zaznaczone zostaną pominięte.").font(.caption).foregroundStyle(.secondary)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) {
-                        ForEach(tagMatched) { skill in
-                            Toggle(skill.name, isOn: Binding(
-                                get: { selection.excludedSkillIDs.contains(skill.id) },
-                                set: { excluded in
-                                    var ids = Set(selection.excludedSkillIDs)
-                                    if excluded {
-                                        ids.insert(skill.id)
-                                        selection.skillIDs.removeAll { $0 == skill.id }
-                                    } else {
-                                        ids.remove(skill.id)
-                                    }
-                                    selection.excludedSkillIDs = ids.sorted()
-                                }
-                            )).toggleStyle(.checkbox)
-                        }
-                    }
-                }
-            }.padding(6)
-        }
-    }
-    // A selected tag pulls the server in on its own; showing it checked-but-locked here makes that
-    // visible right on the list. Skills get the same treatment via `SkillCheckGrid`'s `locked` set —
-    // servers have no exclusions box, so there is nowhere else a tag-covered one could be dropped.
+    // A selected tag pulls the server in on its own; showing it checked-but-locked makes that visible.
+    // Servers have no exclusions in the model, so unlike a skill a tag-covered one cannot be dropped.
     private func serverToggle(_ server: MCPServer) -> some View {
         let tagCovered = covered(server.tags ?? [], by: Set(selection.serverTags))
         return Toggle(server.name, isOn: tagCovered ? .constant(true) : setBinding(server.id, in: serverIDsBinding)).toggleStyle(.checkbox)
-            .disabled(tagCovered).help(tagCovered ? "Wybrany przez tag MCP" : "")
+            .disabled(tagCovered).help(tagCovered ? "Wybrany przez tag MCP — odznacz tag, by go pominąć" : "")
     }
 }

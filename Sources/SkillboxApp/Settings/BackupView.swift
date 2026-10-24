@@ -36,7 +36,7 @@ struct BackupView: View {
 
                 VStack(alignment: .leading, spacing: Space.section - 2) {
                     Label("Pełny backup lokalny", systemImage: "externaldrive.fill.badge.plus").font(.title2.bold())
-                    Text("Chroni całą bibliotekę, projekty i wszystkie wartości MCP. Powstaje automatycznie raz dziennie przy włączonej automatyzacji; ostatnie 14 kopii zostaje, starsze znikają. Przycisk obok tworzy kopię od razu, np. przed ryzykowną operacją.").foregroundStyle(.secondary)
+                    Text("Cała biblioteka, projekty i wartości MCP. Powstaje raz dziennie; zostaje 14 ostatnich kopii.").foregroundStyle(.secondary)
                     Label("Pliki są czytelne i niezaszyfrowane — nie udostępniaj folderu backups.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     HStack {
                         Button("Utwórz teraz") { Task { await model.createFullBackup() } }.buttonStyle(.borderedProminent)
@@ -74,7 +74,7 @@ struct BackupView: View {
         .confirmationDialog("Przywrócić snapshot biblioteki?", item: $snapshotToRestore) { snapshotToRestore in
             Button("Przywróć bibliotekę", role: .destructive) { Task { await model.restoreLibrary(snapshotToRestore) } }
             Button("Anuluj", role: .cancel) {}
-        } message: { _ in Text("Aktualny stan zostanie zachowany jako nowy snapshot. Przywrócone zostaną metadane biblioteki, w tym mcp.json razem z lokalnymi wartościami MCP (np. tokenami) z chwili snapshotu. Katalog skills i klucz OpenAI w pęku kluczy nie zostaną zmienione.") }
+        } message: { _ in Text("Obecny stan zostanie zachowany jako nowy snapshot. Wrócą metadane biblioteki, w tym mcp.json z wartościami MCP (np. tokenami) z tamtej chwili. Katalog skills i klucz OpenAI zostają bez zmian.") }
     }
 
     private var snapshotsSection: some View {
@@ -84,7 +84,7 @@ struct BackupView: View {
                 Spacer()
                 Button("Odśwież") { Task { await model.loadRecovery() } }.buttonStyle(.bordered)
             }
-            Text("Agentbox zachowuje automatycznie 10 ostatnich stanów katalogu, tagów i MCP — przed każdą ryzykowną operacją. Pliki w folderach projektów odtwarza ponowna synchronizacja, a czyści „Usuń i posprzątaj pliki” w Projektach.").foregroundStyle(.secondary)
+            Text("10 ostatnich stanów katalogu, tagów i MCP, zapisywanych przed każdą ryzykowną operacją. Pliki projektów odtwarza synchronizacja.").foregroundStyle(.secondary)
             if model.librarySnapshots.isEmpty {
                 Text("Brak snapshotów biblioteki.").rowMetadata()
             } else {

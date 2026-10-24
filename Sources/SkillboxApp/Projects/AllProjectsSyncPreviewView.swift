@@ -14,7 +14,7 @@ struct AllProjectsSyncPreviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title).font(.title2.bold())
-            Text("Agentbox najpierw sprawdza plan dla wszystkich wybranych projektów. Każdy projekt jest synchronizowany transakcyjnie ze swoim backupem i rollbackiem. Błąd zatrzymuje serię, a projekt, który go zgłosił, wraca do stanu sprzed zmiany.").font(.caption).foregroundStyle(.secondary)
+            Text("Każdy projekt zapisuje się w całości albo wcale. Błąd zatrzymuje serię, a projekt, który go zgłosił, wraca do stanu sprzed zmiany.").font(.caption).foregroundStyle(.secondary)
             Label("Wynikowe pliki MCP mogą zawierać jawne sekrety, dlatego pozostają wykluczone lokalnie z Git.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
             if !skipped.isEmpty {
                 Label("Pominięto, bo nie ma folderu: \(skipped.map(\.name).joined(separator: ", ")). Usuniesz je przez Więcej → Usuń projekty bez folderu.", systemImage: "questionmark.folder").font(.caption).foregroundStyle(.secondary)

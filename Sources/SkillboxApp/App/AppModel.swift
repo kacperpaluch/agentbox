@@ -26,6 +26,12 @@ import SkillboxCore
     var librarySnapshots: [LibrarySnapshot] = []
     var fullBackups: [FullBackupInfo] = []
     var statuses: [UUID: ProjectStatus] = [:]
+    /// The "Ten Mac" row: what synchronizing the global skill choice would change. `nil` while the
+    /// Mac has no client ticked and nothing of Agentbox's is left in its user directories.
+    var globalState: ProjectStatus.State?
+    /// Bumped by every `reload()`, so a view that reads something derived from the library (the
+    /// inspector's report) knows when to read it again.
+    private(set) var generation = 0
     var isCheckingStatuses = false
     /// Projects exactly as they are stored. `projects` carries the settings synchronization uses,
     /// which for a project following a parent folder are the folder's — saving those back would
@@ -95,7 +101,7 @@ import SkillboxCore
     // tags), so it recomputes them here too. That is the only place callers need to remember to
     // call — a skill tag edit or a new tagged MCP server no longer leaves the Projects tab showing
     // a stale "synced" badge until someone happens to touch a project directly.
-    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); docs = try await service?.docsConfiguration() ?? DocsConfiguration(); claudePluginLibrary = try await service?.libraryClaudePlugins() ?? []; selections = try await service?.allSelections() ?? [:]; projectDefaults = try await service?.projectDefaults() ?? AttachmentSelection(tools: Tool.allCases); enabledTools = try await service?.enabledTools() ?? Tool.allCases; if !skills.contains(where: { $0.id == selection }) { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; do { unregisteredSkills = try await service?.unregisteredSkills() ?? [] } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses() }
+    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); docs = try await service?.docsConfiguration() ?? DocsConfiguration(); claudePluginLibrary = try await service?.libraryClaudePlugins() ?? []; selections = try await service?.allSelections() ?? [:]; projectDefaults = try await service?.projectDefaults() ?? AttachmentSelection(tools: Tool.allCases); enabledTools = try await service?.enabledTools() ?? Tool.allCases; if !skills.contains(where: { $0.id == selection }) { selection = skills.first?.id }; await loadMarkdown() } catch { message = error.localizedDescription }; do { unregisteredSkills = try await service?.unregisteredSkills() ?? [] } catch { message = error.localizedDescription }; await scanRoots(); await loadStatuses(); generation += 1 }
 
     // MARK: Parent folders
 
@@ -323,6 +329,25 @@ import SkillboxCore
     func addProject(_ project: Project, selection: AttachmentSelection) async -> Bool { await performing { _ = try await self.service?.addProject(project, selection: selection); self.message = "Dodano projekt" } }
     @discardableResult
     func updateProject(_ project: Project, selection: AttachmentSelection) async -> Bool { await performing { try await self.service?.updateProject(project, selection: selection); self.message = "Zapisano projekt" } }
+    /// The inspector's save. A project that follows its folder has no choice of its own, so the
+    /// change lands on the folder — and on every project following it, which the inspector says
+    /// before the click. Otherwise it is the project's own record, written the way its editor did.
+    @discardableResult
+    func saveAttachments(_ selection: AttachmentSelection, manageGitignore: Bool, for project: Project) async -> Bool {
+        if inheritsRoot(project), var folder = root(for: project) {
+            folder.tools = selection.tools; folder.skillIDs = selection.skillIDs; folder.tags = selection.skillTags
+            folder.excludedSkillIDs = selection.excludedSkillIDs.isEmpty ? nil : selection.excludedSkillIDs
+            folder.manageGitignore = manageGitignore
+            return await saveRoot(folder, selection: selection)
+        }
+        guard var stored = storedProject(id: project.id) else { reportError(SkillboxError.projectNotFound(project.name)); return false }
+        stored.tools = selection.tools; stored.skillIDs = selection.skillIDs; stored.tags = selection.skillTags
+        stored.excludedSkillIDs = selection.excludedSkillIDs.isEmpty ? nil : selection.excludedSkillIDs
+        stored.manageGitignore = manageGitignore
+        return await updateProject(stored, selection: selection)
+    }
+    /// How many projects a change to this folder's settings reaches.
+    func followers(of root: ProjectRoot) -> Int { storedProjects.count { $0.rootID == root.id && $0.overridesRoot != true } }
     /// The state already loaded here, in the shape the core expects. Rebuilding it costs nothing and
     /// lets the whole app answer "what is attached to this place" through the very same code a sync
     /// runs, instead of six accessors that each reimplemented the inheritance rule.
@@ -410,6 +435,19 @@ import SkillboxCore
         guard let service else { return }
         do { statuses = Dictionary(uniqueKeysWithValues: try await service.projectStatuses(progress: progressHandler).map { ($0.projectID, $0) }) }
         catch { reportError(error) }
+        await loadGlobalState()
+    }
+    func loadGlobalState() async {
+        guard let service else { return }
+        do { globalState = Self.globalState(try await service.previewGlobalSync()) }
+        catch { globalState = .blocked(error.localizedDescription) }
+    }
+    /// The Mac's row reads like a project's: changes waiting, or up to date. No previews means no
+    /// client is ticked and nothing Agentbox wrote is left behind — there is nothing to report.
+    static func globalState(_ previews: [SkillSyncPreview]) -> ProjectStatus.State? {
+        guard !previews.isEmpty else { return nil }
+        let added = previews.reduce(0) { $0 + $1.added.count }, updated = previews.reduce(0) { $0 + $1.updated.count }, removed = previews.reduce(0) { $0 + $1.removed.count }
+        return added + updated + removed == 0 ? .synced : .pending(added: added, outdated: updated, removed: removed)
     }
     func unsyncProject(_ project: Project) async {
         await perform { let removed = try await self.service?.unsyncProject(id: project.id) ?? []; self.message = "Usunięto \(PolishNoun.item(removed.count)) z \(project.name)" }
@@ -701,8 +739,8 @@ import SkillboxCore
             guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
             let previews = try await service.syncGlobalSelection()
             message = "Zsynchronizowano skille globalne: \(previews.count) narzędzi"
-            record(.success, message); return true
-        } catch { message = error.localizedDescription; record(.error, message); return false }
+            record(.success, message); await loadGlobalState(); return true
+        } catch { message = error.localizedDescription; record(.error, message); await loadGlobalState(); return false }
     }
     // The global selection is read into `global` by `reload()` and written through `saveSelection`,
     // like every other place — only the preview stays a call of its own, because it inspects the

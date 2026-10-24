@@ -256,7 +256,7 @@ agentbox plugin remove "Claude SEO"
 
 Kilka rzeczy jest wyłącznie w aplikacji, bo wymagają wyboru albo okna:
 
-- **instalowanie i usuwanie pluginów poza biblioteką** — `Projekty → … → Pluginy Claude…` pokazuje, co Claude Code faktycznie ma w projekcie, i pozwala zainstalować albo usunąć pojedynczy plugin bez definicji w bibliotece;
+- **instalowanie i usuwanie pluginów poza biblioteką** — zakładka `Pluginy` w inspektorze projektu pokazuje, co Claude Code faktycznie ma w projekcie, i pozwala zainstalować albo usunąć pojedynczy plugin bez definicji w bibliotece;
 - **podgląd różnicy pliku** — `--dry-run` wypisuje, ile wpisów się zmieni; porównanie linia po linii pokazuje okno podglądu synchronizacji;
 - **pełne backupy i przywracanie** — `refresh` tworzy backup, ale wybór kopii do przywrócenia jest w `Kopie zapasowe`;
 - **obserwacja folderu biblioteki** — dotyczy okna aplikacji, nie procesu jednorazowego.

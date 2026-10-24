@@ -13,8 +13,8 @@ Pasek boczny ma trzy pozycje, odpowiadające dwóm pojęciom: rzeczom, które zb
 | Sekcja | Co w niej jest |
 | --- | --- |
 | `Biblioteka` | skille, serwery MCP i dokumenty — jedna lista z przełącznikiem typu, wspólnym wyszukiwaniem i filtrem tagów |
-| `Projekty` | projekty, foldery nadrzędne oraz domyślne ustawienia dla nowych projektów; stąd otwiera się też `Serwery klientów…` |
-| `Ustawienia` | folder biblioteki, aktualizacje, CLI oraz `Backup i odzyskiwanie` |
+| `Projekty` | ten Mac, foldery nadrzędne i projekty w jednej tabeli; zaznaczony wiersz otwiera się w inspektorze po prawej |
+| `Ustawienia` | folder biblioteki, aktualizacje, CLI, domyślne dla nowych projektów oraz `Backup i odzyskiwanie` |
 | `Ustawienia` | folder biblioteki, aktualizacje, CLI |
 
 Wcześniej tych pozycji było osiem. `Skille`, `MCP` i `Dokumenty` to jedna biblioteka z trzema rodzajami wpisu, a domyślne ustawienia to konfiguracja projektów, nie osobny ekran. Backup i odzyskiwanie są częścią ustawień. Żadna funkcja nie zniknęła — zmieniła się tylko oś podziału.
@@ -22,7 +22,7 @@ Wcześniej tych pozycji było osiem. `Skille`, `MCP` i `Dokumenty` to jedna bibl
 ## Pierwsze uruchomienie
 
 1. Dodaj skill z lokalnego katalogu albo repozytorium Git.
-2. Opcjonalnie ustaw `Projekty → Domyślne dla nowych projektów → Skonfiguruj…`, wybierając skille, MCP i dokumenty.
+2. Opcjonalnie ustaw `Ustawienia → Domyślne dla nowych projektów → Edytuj…`, wybierając skille, MCP i dokumenty.
 3. Dodaj projekt; formularz startuje z tym wyborem, który możesz zmienić przed zapisem.
 3. Przypisz skille bezpośrednio lub przez tagi dynamiczne.
 4. Opcjonalnie zaimportuj serwery MCP i przypisz im tagi.
@@ -78,11 +78,13 @@ Menu przy serwerze ma także `Duplikuj…`. Wpisz własną nową nazwę technicz
 
 ### Co trafia do projektu i dlaczego
 
-Kliknij nazwę projektu albo wybierz `⋯ → Konfiguracja i pochodzenie…`. Lista pokazuje skille, MCP, dokumenty i pluginy wybrane przez Agentbox, źródło przypisania (projekt lub folder nadrzędny), pasujące tagi oraz stan plików. Wykluczone skille i wyłączone serwery są widoczne z powodem pominięcia. Widać również elementy, które poprzedni manifest wskazuje do usunięcia. Konflikt nie ukrywa listy przypisań — powód blokady jest pokazany nad nią.
+Zaznacz projekt w tabeli — inspektor po prawej (przycisk w pasku narzędzi go pokazuje i chowa) ma trzy zakładki: `Przegląd`, `Wybór` i `Pluginy`. `Przegląd` pokazuje skille, MCP, dokumenty i pluginy wybrane przez Agentbox, źródło przypisania (projekt lub folder nadrzędny), pasujące tagi oraz stan plików. Wykluczone skille i wyłączone serwery są widoczne z powodem pominięcia. Widać również elementy, które poprzedni manifest wskazuje do usunięcia. Konflikt nie ukrywa listy przypisań — powód blokady jest pokazany nad nią.
 
-`Definicja…` otwiera wpis biblioteki. `Edytuj źródło przypisań…` prowadzi do projektu albo właściwego folderu nadrzędnego; zmiana folderu dotyczy wszystkich dziedziczących projektów. Skille mają rozwijane różnice plików. `Przejmij z projektu…` jest dostępne przy wykrytych lokalnych zmianach, a `Podgląd synchronizacji…` pokazuje wspólny plan, także różnice MCP i dokumentów.
+`Definicja…` otwiera wpis biblioteki. Skille mają rozwijane różnice plików. `Przejmij zmiany z projektu…` jest dostępne przy wykrytych lokalnych zmianach, a `Synchronizuj…` w nagłówku inspektora pokazuje wspólny plan, także różnice MCP i dokumentów, zanim cokolwiek zapisze.
 
-Stan MCP opisuje wspólny plik konfiguracyjny — zmiana tego pliku nie oznacza, że zmienił się każdy serwer z osobna. Widok nie sprawdza działania serwerów ani zawartości sesji klienta AI. Globalny wybór skilli Agentbox jest pokazany osobno, bez sprawdzania jego synchronizacji. Odpowiednik tekstowy to `agentbox project explain <nazwa>`.
+`Wybór` to ten sam formularz co przy dodawaniu projektu: narzędzia, tagi i skille, MCP, pluginy, a w zwiniętym `Więcej opcji` dokument i `.gitignore`. Nic nie zapisuje się do kliknięcia `Zapisz` w przypiętym pasku na dole; `Przywróć` odrzuca zmiany. Projekt, który dziedziczy z folderu, zmienia wybór folderu — inspektor mówi wtedy, ile projektów obejmie zmiana. Przełącznik `Ustawienia: Z folderu / Własne` w nagłówku przełącza projekt między ustawieniami folderu a własnymi; przejście na własne zaczyna od tego, co projekt ma dziś, a powrót do folderu pyta o potwierdzenie, bo usuwa własny wybór. Nazwę i folder projektu zmienia `⋯ → Nazwa i folder…`.
+
+Stan MCP opisuje wspólny plik konfiguracyjny — zmiana tego pliku nie oznacza, że zmienił się każdy serwer z osobna. Widok nie sprawdza działania serwerów ani zawartości sesji klienta AI. Globalny wybór skilli ma własny wiersz `Ten Mac` na górze tabeli. Odpowiednik tekstowy to `agentbox project explain <nazwa>`.
 
 ### Stan projektów
 
@@ -129,15 +131,15 @@ Skille pochodzące z Git są tylko do odczytu. `Aktualizuj` zastępuje taki skil
 
 ### Pluginy Claude w projekcie
 
-W wierszu projektu wybierz `… → Pluginy Claude…`. Podaj opcjonalny marketplace oraz identyfikator pluginu, np. `claude-seo@agricidaniel-claude-seo`. Zakres `Projekt` zapisuje aktywację w `.claude/settings.json`, więc plik można współdzielić z zespołem. `Tylko ten Mac` używa `.claude/settings.local.json` i nie powinien trafiać do repozytorium. Agentbox zleca instalację samemu Claude Code, aby jego zależności i cache pozostały spójne. Przed instalacją sprawdź źródło: plugin może dodawać hooki, serwery MCP oraz programy wykonywalne.
+Zaznacz projekt i otwórz w inspektorze zakładkę `Pluginy`. Widać tam, co Claude Code ma zainstalowane w projekcie, z przyciskiem `Usuń`. W `Zainstaluj ręcznie` podaj opcjonalny marketplace oraz identyfikator pluginu, np. `claude-seo@agricidaniel-claude-seo`. Zakres `Projekt` zapisuje aktywację w `.claude/settings.json`, więc plik można współdzielić z zespołem. `Tylko ten Mac` używa `.claude/settings.local.json` i nie powinien trafiać do repozytorium. Agentbox zleca instalację samemu Claude Code, aby jego zależności i cache pozostały spójne. Przed instalacją sprawdź źródło: plugin może dodawać hooki, serwery MCP oraz programy wykonywalne.
 
-Jeśli plugin ma być używany w wielu projektach, dodaj go raz w `Biblioteka → Pluginy` albo poleceniem `agentbox plugin add <nazwa> <plugin@marketplace> [--marketplace źródło]`; `agentbox plugin assign <projekt> --plugins <nazwy>` wybiera je dla projektu, a `agentbox plugin list` pokazuje, gdzie każda definicja jest używana. W projekcie zaznacz definicję w sekcji `Z biblioteki Agentbox` i zapisz wybór. Następne `Synchronizuj` instaluje zaznaczone pluginy przez Claude Code dla tego projektu. Projekt z zaznaczonym, jeszcze niezainstalowanym pluginem ma na liście plakietkę „do zsynchronizowania”, a podgląd synchronizacji rozróżnia pluginy `Już w projekcie` od tych, które zostaną zainstalowane.
+Jeśli plugin ma być używany w wielu projektach, dodaj go raz w `Biblioteka → Pluginy` albo poleceniem `agentbox plugin add <nazwa> <plugin@marketplace> [--marketplace źródło]`; `agentbox plugin assign <projekt> --plugins <nazwy>` wybiera je dla projektu, a `agentbox plugin list` pokazuje, gdzie każda definicja jest używana. W inspektorze projektu, w zakładce `Wybór`, zaznacz definicję w sekcji `Pluginy Claude` i kliknij `Zapisz`. Następne `Synchronizuj` instaluje zaznaczone pluginy przez Claude Code dla tego projektu. Projekt z zaznaczonym, jeszcze niezainstalowanym pluginem ma na liście plakietkę „do zsynchronizowania”, a podgląd synchronizacji rozróżnia pluginy `Już w projekcie` od tych, które zostaną zainstalowane.
 
 Definicję w bibliotece można poprawić (`Edytuj`) — poprawka obowiązuje wszystkie projekty, które ją mają zaznaczoną — albo usunąć. Usunięcie kasuje definicję i wybór we wszystkich projektach, więc synchronizacja przestaje instalować ten plugin; tego, co Claude Code już zainstalował na dysku, nie rusza.
 
 `Usuń` przy pluginie aktywnym w projekcie odinstalowuje go przez Claude Code i jednocześnie odznacza w wyborze tego projektu, więc kolejna synchronizacja go nie przywróci.
 
-Projekt korzystający z ustawień folderu nadrzędnego dziedziczy także wybór pluginów. W jego panelu lista jest wtedy wyszarzona z informacją, skąd pochodzi — zmień ją w ustawieniach folderu albo nadaj projektowi własne ustawienia. Sekcja `Pluginy Claude` jest też w edytorze projektu i folderu, obok skilli i serwerów MCP.
+Projekt korzystający z ustawień folderu nadrzędnego dziedziczy także wybór pluginów; zmiana w jego zakładce `Wybór` zmienia wybór folderu, o czym inspektor mówi nad formularzem. Sekcja `Pluginy Claude` jest też w ustawieniach folderu i w formularzu nowego projektu.
 
 Jeśli instalacja pluginu nie powiedzie się w trakcie synchronizacji, Agentbox przywraca `.claude/settings.json` i `.claude/settings.local.json` do stanu sprzed niej, więc projekt nie zostaje z połową wybranych pluginów.
 
@@ -173,11 +175,11 @@ Tagi dodaje się w szczegółach serwera MCP. Menu `Używane tagi` pokazuje istn
 
 ### Serwery klientów
 
-Codex CLI, jego wtyczka IDE i aplikacja ChatGPT Desktop dzielą jeden plik `~/.codex/config.toml` — serwer dodany w którymkolwiek z nich ładuje się automatycznie w każdym projekcie Codexa. Claude Code ma analogiczny mechanizm: serwer dodany w zasięgu `user` (`~/.claude.json`) też trafia wszędzie. `Projekty → Serwery klientów…` pokazuje te serwery od strony narzędzia — po jednym wierszu na serwer, rozwijalnym do listy folderów i projektów, które go widzą. To widok diagnostyczny („gdzie ten serwer jest aktywny”), a nie biblioteka ani miejsce, dlatego otwiera się jako arkusz z `Projekty`, a nie jako osobna pozycja w pasku bocznym.
+Codex CLI, jego wtyczka IDE i aplikacja ChatGPT Desktop dzielą jeden plik `~/.codex/config.toml` — serwer dodany w którymkolwiek z nich ładuje się automatycznie w każdym projekcie Codexa. Claude Code ma analogiczny mechanizm: serwer dodany w zasięgu `user` (`~/.claude.json`) też trafia wszędzie. `Serwery klientów…` (w inspektorze wiersza `Ten Mac` albo w jego menu `⋯`) pokazuje te serwery od strony narzędzia — po jednym wierszu na serwer, rozwijalnym do listy folderów i projektów, które go widzą. To widok diagnostyczny („gdzie ten serwer jest aktywny”), a nie biblioteka ani miejsce, dlatego otwiera się jako arkusz, a nie jako osobna pozycja w pasku bocznym.
 
 Agentbox nie zarządza tymi plikami i niczego w nich nie nadpisuje — tylko je czyta. Odznaczenie folderu albo projektu przy serwerze zapisuje w bibliotece lokalny override: dla Codexa to samo `enabled = false` w `.codex/config.toml`, bez powtarzania `command`/`args`; dla Claude Code — nazwa w `disabledMcpServers` w `.claude/settings.local.json`, obok pozostałych ustawień w tym pliku. Sam przełącznik zapisuje tylko wybór; na dysk zmiana trafia po `Synchronizuj wszystkie` w `Projekty`, z tym samym podglądem i transakcją co reszta synchronizacji.
 
-Po rozwinięciu serwera folder ze wspólnymi ustawieniami (ikona ⚙️ na liście `Projekty`) pokazuje **każdy** należący do niego projekt osobno, z własnym checkboxem — nie jeden zbiorczy wiersz. Projekt, który dziś dziedziczy ustawienia folderu, ma plakietkę `dziedziczy z folderu`, a jego checkbox pokazuje aktualny, wspólny stan. Odznaczenie takiego projektu pyta o potwierdzenie: to nie jest osobny przełącznik tylko dla tego serwera, tylko ten sam mechanizm co `Własne ustawienia` w edytorze projektu — projekt zaczyna od dokładnie tego, co ma dziś (skille, serwery MCP, dokument, i to co folder akurat wyłączał globalnie), ale przestaje automatycznie dostawać przyszłe zmiany folderu. Projekty, które tylko leżą w jednym katalogu bez wspólnych ustawień, są pogrupowane pod nazwą tego katalogu wyłącznie wizualnie — każdy zawsze miał własny, niezależny przełącznik.
+Po rozwinięciu serwera folder ze wspólnymi ustawieniami (ikona ⚙️ na liście `Projekty`) pokazuje **każdy** należący do niego projekt osobno, z własnym checkboxem — nie jeden zbiorczy wiersz. Projekt, który dziś dziedziczy ustawienia folderu, ma plakietkę `dziedziczy z folderu`, a jego checkbox pokazuje aktualny, wspólny stan. Odznaczenie takiego projektu pyta o potwierdzenie: to nie jest osobny przełącznik tylko dla tego serwera, tylko ten sam mechanizm co przełącznik `Własne` w inspektorze projektu — projekt zaczyna od dokładnie tego, co ma dziś (skille, serwery MCP, dokument, i to co folder akurat wyłączał globalnie), ale przestaje automatycznie dostawać przyszłe zmiany folderu. Projekty, które tylko leżą w jednym katalogu bez wspólnych ustawień, są pogrupowane pod nazwą tego katalogu wyłącznie wizualnie — każdy zawsze miał własny, niezależny przełącznik.
 
 Po rozwinięciu serwera pierwsza pozycja to `Wyłączaj w nowych projektach i folderach`. Wyłączanie globalnego serwera jest z natury per projekt, więc bez tej opcji projekt dodany za miesiąc znów widziałby go jako aktywny i trzeba by pamiętać o ponownym kliknięciu `Wyłącz wszędzie`. Zaznaczenie nie zmienia niczego w projektach, które już istnieją — decyduje wyłącznie o tym, z czym startuje następny.
 
@@ -185,36 +187,36 @@ Przy nazwie każdego serwera są też dwa linki — `Wyłącz wszędzie` i `Wł�
 
 ### Wybór dokumentu w projekcie
 
-Dokument wybiera się jednym z dwóch sposobów: wprost z listy albo dynamicznie przez tag — nigdy oboma naraz w sposób, który dawałby więcej niż jedno dopasowanie. `AGENTS.md` ma tylko jedną treść, więc jeśli tagi wciągnęłyby dwa różne dokumenty do tego samego projektu, synchronizacja zatrzymuje się z komunikatem `Konflikt dokumentu` zamiast wybierać dowolny z nich — edytor projektu ostrzega o tym już przy zaznaczaniu tagów.
+Dokument wybiera się jednym z dwóch sposobów: wprost z listy albo dynamicznie przez tag — nigdy oboma naraz w sposób, który dawałby więcej niż jedno dopasowanie. `AGENTS.md` ma tylko jedną treść, więc jeśli tagi wciągnęłyby dwa różne dokumenty do tego samego projektu, synchronizacja zatrzymuje się z komunikatem `Konflikt dokumentu` zamiast wybierać dowolny z nich — formularz wyboru ostrzega o tym już przy zaznaczaniu tagów.
 
 Zsynchronizowany dokument ląduje jako `AGENTS.md` (pełna treść) i `CLAUDE.md` (jednolinijkowy, wygenerowany import `@AGENTS.md`) w katalogu głównym projektu, niezależnie od tego, jakie narzędzia (Claude/Codex/OpenCode) ma projekt zaznaczone. `CLAUDE.md` nie edytuje się osobno — Claude Code przez import wczytuje treść `AGENTS.md`, więc jeden tekst wystarcza obu. Claude Code od v2.1.277 potrafi czytać `AGENTS.md` sam, ale tylko wtedy, gdy w projekcie ani wyżej nie ma żadnego `CLAUDE.md` ani `CLAUDE.local.md`; import działa zawsze i nie powoduje podwójnego wczytania. Własny `CLAUDE.md` projektu nie blokuje synchronizacji: Agentbox dopisuje na jego końcu oznaczony blok z importem `@AGENTS.md` (znacznik jest komentarzem HTML, który Claude Code pomija przy wczytywaniu), a resztę pliku zostawia bajt w bajt. Plik, który już importuje `AGENTS.md`, zostaje bez zmian. Wyjątkiem jest `CLAUDE.md` powtarzający tylko treść przypisanego dokumentu (z dopisanym blokiem albo bez niego, bez względu na puste linie) — tak zostaje po przeniesieniu własnego `CLAUDE.md` do biblioteki. Agentbox zastępuje go wtedy samym `@AGENTS.md`, żeby Claude Code nie wczytywał tej samej treści dwa razy; tekst zostaje w dokumencie w bibliotece, a odpięcie dokumentu usuwa taki plik razem z `AGENTS.md`. Odpięcie dokumentu albo sprzątanie projektu usuwa tylko ten blok — a wygenerowany w całości `CLAUDE.md` znika razem z `AGENTS.md`.
 
 ### Wykluczenia w projekcie
 
-Projekt może wciągać skille tagiem i jednocześnie pomijać wybrane pozycje. W edytorze projektu zaznaczenie tagu — skilla albo MCP — od razu zaznacza i blokuje odpowiednie pozycje na liście `Pojedyncze skille`/`Pojedyncze serwery MCP`, więc widać, co wchodzi przez tag, bez otwierania osobnej listy. Tag ma pierwszeństwo także wtedy, gdy pozycja była wcześniej zaznaczona ręcznie — wygląda wtedy identycznie jak każda inna wciągnięta tagiem. Odznaczenie tagu przed zapisem przywraca zwykłe zaznaczenie; po zapisie pozycję ma już tag i to on decyduje, czy wchodzi do projektu. Sekcja `Wykluczenia` pokazuje te same skille jeszcze raz — zaznaczenie skilla tam pomija go w tym jednym projekcie. Skille wybrane tylko pojedynczo, bez pasującego tagu, usuwa się po prostu odznaczając je na liście.
+Projekt może wciągać skille tagiem i jednocześnie pomijać wybrane pozycje. Zaznaczenie tagu skilli od razu zaznacza na liście `Skille` wszystkie skille z tym tagiem, a przy nazwie każdego widać tag, przez który wchodzi (np. `#web`). Odznaczenie takiego skilla pomija go w tym jednym miejscu — to jest wykluczenie, osobnej sekcji `Wykluczenia` już nie ma. Ponowne zaznaczenie cofa wykluczenie. Skill bez pasującego tagu zaznacza się i odznacza zwyczajnie. Serwery MCP wciągnięte tagiem są zaznaczone i zablokowane — serwerów nie da się wykluczać, więc pomija się je, odznaczając tag.
 
 ### Usuwanie projektu i sprzątanie plików
 
 Usunięcie projektu daje dwie możliwości. `Usuń tylko z Agentbox` zostawia folder projektu nietknięty. `Usuń i posprzątaj pliki w projekcie` dodatkowo kasuje katalogi skilli, wpisy MCP i dokument `AGENTS.md`/`CLAUDE.md` wymienione w manifestach Agentbox — wyłącznie je. Plik konfiguracyjny, który w całości pochodził z Agentbox, znika razem z wpisami; ręcznie dodane skille, serwery MCP i pliki dokumentów zostają. Przed sprzątaniem powstaje tymczasowa kopia do cofnięcia operacji w razie błędu. Po sukcesie jest usuwana; nie trafia na listę odzyskiwania. Aby odtworzyć pliki z biblioteki, dodaj projekt ponownie, wybierz jego konfigurację i zsynchronizuj. Ręcznych zmian w usuniętych kopiach projektu nie odtwarza ponowna synchronizacja.
 
-Zmiana folderu projektu w jego edytorze najpierw sprząta w ten sam sposób pliki Agentbox w starym folderze, a dopiero potem zapisuje nową ścieżkę. Jeśli stary folder już nie istnieje (został przeniesiony), nie ma czego sprzątać — pliki przeniosły się razem z nim.
+Zmiana folderu projektu w `⋯ → Nazwa i folder…` najpierw sprząta w ten sam sposób pliki Agentbox w starym folderze, a dopiero potem zapisuje nową ścieżkę. Jeśli stary folder już nie istnieje (został przeniesiony), nie ma czego sprzątać — pliki przeniosły się razem z nim.
 
 Pliki i manifesty powstają tylko wtedy, gdy projekt ma co synchronizować — projekt bez wybranych skilli, serwerów MCP i dokumentu pozostaje nietknięty, a odznaczenie narzędzia sprząta jego pliki skilli/MCP przy kolejnej synchronizacji.
 
 ### Ochrona przez .gitignore projektu
 
-W edytorze projektu można włączyć `Dopisuj wygenerowane pliki MCP do .gitignore projektu`. `.git/info/exclude`, którego Agentbox używa domyślnie, chroni tylko ten jeden klon — kolega z zespołu, który sklonuje repozytorium, nie jest chroniony wcale. `.gitignore` jedzie z repozytorium, więc obejmuje wszystkich. Agentbox dopisuje wyłącznie własny, oznaczony blok i nigdy nie usuwa istniejących wpisów. Opcja jest domyślnie włączona dla nowych projektów i wyłączona dla tych utworzonych wcześniej.
+W zakładce `Wybór`, w sekcji `Więcej opcji`, można włączyć `Dopisuj wygenerowane pliki MCP do .gitignore projektu`. `.git/info/exclude`, którego Agentbox używa domyślnie, chroni tylko ten jeden klon — kolega z zespołu, który sklonuje repozytorium, nie jest chroniony wcale. `.gitignore` jedzie z repozytorium, więc obejmuje wszystkich. Agentbox dopisuje wyłącznie własny, oznaczony blok i nigdy nie usuwa istniejących wpisów. Opcja jest domyślnie włączona dla nowych projektów i wyłączona dla tych utworzonych wcześniej.
 
 ### Skille globalne
 
-`Projekty → Więcej → Skille we wszystkich sesjach…` synchronizuje wybrane skille do katalogu użytkownika, a nie do projektu. Są wtedy widoczne we wszystkich sesjach danego klienta:
+Wiersz `Ten Mac` na górze tabeli `Projekty` synchronizuje wybrane skille do katalogu użytkownika, a nie do projektu. Są wtedy widoczne we wszystkich sesjach danego klienta:
 
 - Claude Code — `~/.claude/skills`,
 - Codex — `~/.codex/skills`,
 - OpenCode — `~/.config/opencode/skills`,
 - Mistral Vibe — `~/.vibe/skills`.
 
-Zaznacz narzędzia, a następnie pojedyncze skille lub tagi dynamiczne. `Zapisz wybór` zapamiętuje ustawienie w `selections.json` pod kluczem `global`, `Odśwież podgląd` pokazuje planowane dodania, aktualizacje i usunięcia, a `Synchronizuj globalnie` zapisuje zmiany. Odznaczenie skilla usuwa go z katalogu użytkownika przy kolejnej synchronizacji — również tutaj usuwane są wyłącznie katalogi z manifestu Agentbox.
+Zaznacz wiersz `Ten Mac`, a w inspektorze narzędzia oraz skille lub tagi. Kolumna `Stan` pokazuje, czy katalogi użytkownika odpowiadają wyborowi. `Podgląd` w inspektorze na bieżąco pokazuje planowane dodania, aktualizacje i usunięcia, `Zapisz` zapamiętuje wybór w `selections.json` pod kluczem `global`, a `Synchronizuj` (albo `Zapisz i synchronizuj`) zapisuje zmiany na dysku. Odznaczenie skilla usuwa go z katalogu użytkownika przy kolejnej synchronizacji — również tutaj usuwane są wyłącznie katalogi z manifestu Agentbox.
 
 ### Używane narzędzia
 
@@ -228,7 +230,7 @@ Skille trafiają do `.vibe/skills/`, a serwery MCP do bloku `[[mcp_servers]]` na
 
 ### Domyślne dla nowych projektów
 
-`Projekty → Domyślne dla nowych projektów → Skonfiguruj…` to lokalny szablon dla nowych projektów. Wybierz w nim klientów, skille, serwery MCP i dokumenty. `Dodaj projekt` oraz `Dodaj wiele` zaczną z tym zestawem, ale przed zapisem można go zmienić. Edycja domyślnych nie zmienia istniejących projektów ani folderów nadrzędnych.
+`Ustawienia → Domyślne dla nowych projektów → Edytuj…` to lokalny szablon dla nowych projektów. Wybierz w nim klientów, skille, serwery MCP i dokumenty. `Dodaj projekt` oraz `Dodaj wiele` mają przełącznik `Zacznij od: Domyślne ustawienia / Pusty wybór`; zestaw można zmienić przed zapisem. Edycja domyślnych nie zmienia istniejących projektów ani folderów nadrzędnych.
 
 ### Dodawanie wielu projektów
 
@@ -236,11 +238,11 @@ W sekcji `Projekty` wybierz `Dodaj wiele`, a następnie wskaż folder nadrzędny
 
 ### Ustawienia folderu nadrzędnego
 
-Domyślnie ustawienia z `Dodaj wiele` zapisują się **na folderze nadrzędnym**, a jego podfoldery je dziedziczą. Zmiana w folderze obejmuje od razu wszystkie projekty, które z niego korzystają — nie trzeba edytować każdego z osobna. Ustawienia folderu otwiera przycisk `Ustawienia folderu` w nagłówku grupy na liście projektów.
+Domyślnie ustawienia z `Dodaj wiele` zapisują się **na folderze nadrzędnym**, a jego podfoldery je dziedziczą. Zmiana w folderze obejmuje od razu wszystkie projekty, które z niego korzystają — nie trzeba edytować każdego z osobna. Ustawienia folderu otwiera dwuklik na nagłówku grupy, `⋯ → Ustawienia folderu…` albo przycisk w inspektorze zaznaczonej grupy.
 
-Projekty dodane wcześniej — pojedynczo albo przed pojawieniem się folderów nadrzędnych — też mogą dostać wspólne ustawienia. W nagłówku ich grupy jest przycisk `Wspólne ustawienia…`. Formularz startuje od sumy tego, czego projekty w folderze już używają — skilli, MCP i pluginów — więc utworzenie folderu niczego nikomu nie zabiera, a przy każdym projekcie widać, co dokładnie się zmieni (`bez zmian`, `+2 skilli`, `−1 MCP`, `inny dokument`, `+1 globalnych MCP`). Jeśli projekty używają różnych dokumentów, formularz niczego nie wybiera za ciebie: trzeba wskazać dokument i potwierdzić zmianę. Folder zachowuje wyłączenia globalnych serwerów wspólne dla wszystkich przechodzących projektów. Odznaczony projekt zostaje w folderze, ale zachowuje własne ustawienia.
+Projekty dodane wcześniej — pojedynczo albo przed pojawieniem się folderów nadrzędnych — też mogą dostać wspólne ustawienia. W menu `⋯` nagłówka ich grupy (oraz w inspektorze grupy) jest `Wspólne ustawienia…`. Formularz startuje od sumy tego, czego projekty w folderze już używają — skilli, MCP i pluginów — więc utworzenie folderu niczego nikomu nie zabiera, a przy każdym projekcie widać, co dokładnie się zmieni (`bez zmian`, `+2 skilli`, `−1 MCP`, `inny dokument`, `+1 globalnych MCP`). Jeśli projekty używają różnych dokumentów, formularz niczego nie wybiera za ciebie: trzeba wskazać dokument i potwierdzić zmianę. Folder zachowuje wyłączenia globalnych serwerów wspólne dla wszystkich przechodzących projektów. Odznaczony projekt zostaje w folderze, ale zachowuje własne ustawienia.
 
-Pojedynczy projekt może wyłamać się z tego schematu: w jego edytorze przełącznik `Skąd projekt bierze ustawienia` przełącza między `Z folderu` a `Własne dla tego projektu`. Formularz startuje wtedy od tego, co projekt dostawał z folderu, więc odejście od wspólnych ustawień nic nie zmienia, dopóki czegoś nie poprawisz. Na liście projektów widać obie sytuacje: projekt, który dziedziczy z folderu, ma przy nazwie małą strzałkę z podpowiedzią; projekt, który się wyłamał, ma zamiast niej pomarańczową plakietkę `Własne ustawienia` — od razu widać, że zmiana w folderze nadrzędnym go nie obejmie.
+Pojedynczy projekt może wyłamać się z tego schematu: w inspektorze przełącznik `Ustawienia` przełącza między `Z folderu „…”` a `Własne`. Projekt zaczyna wtedy od tego, co dostawał z folderu, więc odejście od wspólnych ustawień nic nie zmienia, dopóki czegoś nie poprawisz. Na liście projektów widać obie sytuacje: projekt, który dziedziczy z folderu, ma przy nazwie małą strzałkę z podpowiedzią; projekt, który się wyłamał, ma zamiast niej pomarańczową plakietkę `Własne ustawienia` — od razu widać, że zmiana w folderze nadrzędnym go nie obejmie.
 
 Odznaczenie `Zapisz ustawienia na folderze nadrzędnym` przy dodawaniu wraca do dawnego zachowania: każdy projekt dostaje własną kopię ustawień, bez dziedziczenia.
 
@@ -255,7 +257,7 @@ Folder nadrzędny z włączoną opcją `Pytaj, gdy w tym folderze pojawi się no
 - po każdej zmianie danych w aplikacji,
 - na żądanie, przyciskiem `Sprawdź stan` w sekcji `Projekty`.
 
-Wykrywanie jest własnością folderu nadrzędnego, nie listy projektów: dopóki folder nie istnieje, nie ma czego skanować. Projekty pogrupowane po ścieżce dostają go przyciskiem `Wspólne ustawienia…` w nagłówku grupy.
+Wykrywanie jest własnością folderu nadrzędnego, nie listy projektów: dopóki folder nie istnieje, nie ma czego skanować. Projekty pogrupowane po ścieżce dostają go przez `⋯ → Wspólne ustawienia…` w nagłówku grupy.
 
 Podfoldery, które leżą w folderze w chwili jego tworzenia i nie stają się projektami, są uznawane za znane — odznaczenie podfolderu przy dodawaniu jest odpowiedzią, a nie odłożonym pytaniem. Wyłącza to opcja `Pytaj tylko o podfoldery, które pojawią się od teraz`, a `Przywróć pominięte` w ustawieniach folderu przywraca je wszystkie.
 
@@ -268,7 +270,7 @@ Nowy podfolder — na przykład świeżo sklonowane repozytorium — pojawia si�
 
 Usunięcie projektu należącego do obserwowanego folderu jest traktowane jak odmowa: jego podfolder nie wraca jako propozycja. Listę pominiętych folderów czyści przycisk `Przywróć pominięte` w ustawieniach folderu.
 
-Lista projektów grupuje projekty według folderu nadrzędnego, a pozostałe — według ich bezpośredniego folderu — i pokazuje pełną ścieżkę grupy. Nagłówek zwija pojedynczą grupę, a `Więcej → Rozwiń/Zwiń wszystko` wszystkie naraz; Agentbox pamięta zwinięte grupy po ponownym uruchomieniu. Nagłówek grupy pokazuje, ile jej projektów czeka na synchronizację i ile ma problem, a gdy są zmiany do zapisania — przycisk `Synchronizuj grupę` z tym samym podglądem co synchronizacja wszystkich. Projekty bez folderu są w nim pomijane.
+Lista projektów grupuje projekty według folderu nadrzędnego, a pozostałe — według ich bezpośredniego folderu — i pokazuje pełną ścieżkę grupy. Nagłówek zwija pojedynczą grupę, a `Więcej → Rozwiń/Zwiń wszystko` wszystkie naraz; Agentbox pamięta zwinięte grupy po ponownym uruchomieniu. Nagłówek grupy pokazuje, ile jej projektów czeka na synchronizację i ile ma problem, a `⋯ → Synchronizuj grupę…` otwiera ten sam podgląd co synchronizacja wszystkich. Przycisk `Synchronizuj` pojawia się w wierszu tylko wtedy, gdy projekt ma zmiany do zapisania; aktualne wiersze mają sam status i menu `⋯`. Projekty bez folderu są w nim pomijane.
 
 W grupie najpierw stoją projekty wymagające uwagi (zablokowane, bez folderu, do synchronizacji), potem pozostałe alfabetycznie. Kolumna `Wyjątki` pokazuje tylko to, czym projekt różni się od reszty grupy: własne ustawienia w folderze nadrzędnym, innych klientów albo inne tagi skilli niż większość grupy. Przycisk `Synchronizuj` jest niebieski tylko przy projektach, które mają coś do zapisania.
 

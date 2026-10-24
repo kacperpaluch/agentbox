@@ -8,12 +8,14 @@ struct ProjectRowMenu: View {
     let perform: (ProjectRowAction) -> Void
 
     var body: some View {
-        if let project = row.project {
+        if row.isMac {
+            Button("Pokaż w inspektorze") { perform(.inspectMac) }
+            Button("Serwery klientów…") { perform(.clientServers) }
+        } else if let project = row.project {
             Button("Synchronizuj…") { perform(.sync(project)) }.disabled(isMissing)
-            Button("Konfiguracja i pochodzenie…") { perform(.configure(project)) }
-            Button("Edytuj…") { perform(.edit(project)) }
+            Button("Pokaż w inspektorze") { perform(.inspect(project)) }
+            Button("Nazwa i folder…") { perform(.edit(project)) }
             Button("Przejmij z projektu…") { perform(.adopt(project)) }
-            Button("Pluginy Claude…") { perform(.plugins(project)) }
             Divider()
             Button("Usuń projekt…", role: .destructive) { perform(.delete(project)) }
         } else if let root = row.group.root {

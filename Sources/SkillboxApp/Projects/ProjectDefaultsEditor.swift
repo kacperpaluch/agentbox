@@ -14,7 +14,7 @@ struct ProjectDefaultsEditor: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Domyślne dla nowych projektów").font(.title2.bold())
-                    Text("Ten zestaw pojawi się w formularzu przy tworzeniu pojedynczego projektu lub grupy projektów. Możesz go wtedy dowolnie zmienić; zapis tutaj nie wpływa na istniejące projekty.")
+                    Text("Ten zestaw wypełnia formularz nowego projektu. Nie zmienia istniejących.")
                         .foregroundStyle(.secondary)
                     AttachmentPicker(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, claudePlugins: model.claudePluginLibrary, selection: $selection)
                     if !error.isEmpty {

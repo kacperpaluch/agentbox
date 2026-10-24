@@ -8,8 +8,8 @@ struct MCPPreviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Synchronizacja · \(project.name)").font(.title2.bold())
-            Text("Poniżej znajduje się pełny plan zmian skilli i konfiguracji MCP. Całość zostanie wycofana, jeśli którykolwiek zapis się nie powiedzie.").font(.caption).foregroundStyle(.secondary)
-            Label("Pliki projektu mogą zawierać jawne sekrety. Agentbox doda je do lokalnego .git/info/exclude i zapisze z uprawnieniami tylko dla właściciela, ale nie szyfruje ich. Exclude nie chroni plików już śledzonych przez Git — dlatego wartości lokalnych nie zapisuje do takiego pliku.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
+            Text("Pełny plan zmian. Jeśli którykolwiek zapis się nie powiedzie, całość zostanie wycofana.").font(.caption).foregroundStyle(.secondary)
+            Label("Pliki projektu mogą zawierać jawne, niezaszyfrowane sekrety. Agentbox dopisuje je do .git/info/exclude i nie zapisuje wartości lokalnych do pliku już śledzonego przez Git.", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
             if preview?.mcp.contains(where: { $0.file.hasSuffix(".jsonc") }) == true { Label("W pliku OpenCode JSONC podmieniany jest wyłącznie zarządzany klucz `mcp`. Komentarze i pozostałe klucze zostają bez zmian.", systemImage: "text.badge.checkmark").font(.caption).foregroundStyle(.secondary) }
             if !error.isEmpty { Text(error).foregroundStyle(.red) }
             else if preview == nil { ProgressView() }
@@ -27,7 +27,7 @@ struct MCPPreviewView: View {
                     ForEach(preview.plugins) { item in ClaudePluginPreviewRow(item: item) }
                 }
             } } }
-            HStack { Spacer(); Button("Zamknij") { dismiss() }; Button("Synchronizuj skille, MCP, dokumenty i pluginy") { Task { if await model.syncEverything(project) { dismiss() } } }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || preview == nil || model.isWorking) }
+            HStack { Spacer(); Button("Zamknij") { dismiss() }; Button("Synchronizuj") { Task { if await model.syncEverything(project) { dismiss() } } }.buttonStyle(.borderedProminent).disabled(!error.isEmpty || preview == nil || model.isWorking) }
         }.padding(24).sheetFrame(width: 820, height: 700)
         // Okno arkusza zasłania overlay z App.swift, więc postęp musi być rysowany też tutaj.
         .overlay { if model.isWorking { WorkingOverlay(progress: model.progress) } }

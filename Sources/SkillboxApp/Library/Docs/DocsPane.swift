@@ -13,9 +13,9 @@ struct DocsPane: View {
     @State private var docToDelete: AgentDoc?
     /// Read while the dialog is open, so the question says how far the deletion reaches.
     @State private var usageForDeletion: UsageReport?
-    @State private var checked = Set<String>()
-    /// The highlighted row; Return or a double click opens it.
-    @State private var selected: String?
+    /// The list's own selection (click, ⌘, ⇧); Return or a double click opens a single document.
+    @State private var selected = Set<String>()
+    private var checked: Set<String> { selected.intersection(model.docs.docs.map(\.id)) }
     @State private var showBatchTags = false
     private var existingTags: [String] { Array(Set(model.docs.docs.flatMap(\.tags))).sorted() }
     private var sortedDocs: [AgentDoc] {
@@ -34,11 +34,8 @@ struct DocsPane: View {
             } else {
                 List(selection: $selected) {
                     ForEach(sortedDocs) { doc in
-                        HStack(alignment: .top, spacing: Space.row + 1) {
-                            Toggle("Zaznacz \(doc.name)", isOn: checkBinding(doc.id)).labelsHidden().toggleStyle(.checkbox).padding(.top, 5)
-                            DocRow(doc: doc, usageKey: AnyHashable([AnyHashable(doc.id), AnyHashable(doc.tags), AnyHashable(model.selections)]), usage: { await model.usage(ofDoc: doc.id) }, onEdit: { editingDoc = doc }, onDelete: { docToDelete = doc })
-                        }
-                        .tag(doc.id)
+                        DocRow(doc: doc, usageKey: AnyHashable([AnyHashable(doc.id), AnyHashable(doc.tags), AnyHashable(model.selections)]), usage: { await model.usage(ofDoc: doc.id) }, onEdit: { editingDoc = doc }, onDelete: { docToDelete = doc })
+                            .tag(doc.id)
                     }
                 }
                 .contextMenu(forSelectionType: String.self) { ids in
@@ -46,28 +43,30 @@ struct DocsPane: View {
                         Button("Edytuj…") { editingDoc = doc }
                         Divider()
                         Button("Usuń…", role: .destructive) { docToDelete = doc }
+                    } else if ids.count > 1 {
+                        Button("Dodaj tagi (\(ids.count))…") { selected = ids; showBatchTags = true }
                     }
                 } primaryAction: { ids in editingDoc = doc(in: ids) }
             }
         }
         .sheet(isPresented: $creatingDoc) { NewDocView(existingTags: existingTags, existingIDs: Set(model.docs.docs.map(\.id))) { draft in await model.createDoc(id: draft.id, name: draft.name, tags: draft.tags, content: draft.content) } }
         .sheet(item: $editingDoc) { doc in DocEditorView(model: model, doc: doc, existingTags: existingTags) }
-        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: .document) { text in let ok = await model.addDocTags(checked, text: text); if ok { checked.removeAll() }; return ok } }
+        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: .document) { text in await model.addDocTags(checked, text: text) } }
         .confirmationDialog("Usunąć dokument \(docToDelete?.name ?? "")?", item: $docToDelete) { docToDelete in
             Button("Usuń", role: .destructive) { Task { await model.deleteDoc(docToDelete.id) } }
             Button("Anuluj", role: .cancel) {}
-        } message: { _ in Text("\((usageForDeletion?.summary).map { "Używany przez: \($0). " } ?? "")Dokument zniknie z biblioteki i z przypisań projektów. AGENTS.md i wygenerowany CLAUDE.md (albo dopisany do własnego CLAUDE.md import) znikną z projektów, które go używały, przy kolejnej synchronizacji.") }
+        } message: { _ in Text("\((usageForDeletion?.summary).map { "Używany przez: \($0). " } ?? "")Dokument zniknie z biblioteki i z przypisań. Jego AGENTS.md i import w CLAUDE.md znikną z projektów przy kolejnej synchronizacji.") }
         .task(id: docToDelete?.id) { usageForDeletion = docToDelete == nil ? nil : await model.usage(ofDoc: docToDelete!.id) }
     }
 
     private var actionBar: some View {
         ActionBar {
-            if checked.isEmpty {
+            if checked.count < 2 {
                 Button { creatingDoc = true } label: { Label("Dodaj dokument", systemImage: "plus") }.buttonStyle(.borderedProminent)
             } else {
                 Text("Wybrano \(checked.count)").rowMetadata()
                 Button { showBatchTags = true } label: { Label("Dodaj tagi", systemImage: "tag") }.buttonStyle(.borderedProminent)
-                Button("Anuluj") { checked.removeAll() }.buttonStyle(.bordered)
+                Button("Odznacz") { selected.removeAll() }.buttonStyle(.bordered)
             }
             Spacer()
             Text(sortedDocs.count == model.docs.docs.count ? PolishNoun.document(model.docs.docs.count) : "\(sortedDocs.count) z \(model.docs.docs.count)").rowMetadata()
@@ -75,5 +74,4 @@ struct DocsPane: View {
     }
 
     private func doc(in ids: Set<String>) -> AgentDoc? { ids.count == 1 ? model.docs.docs.first { ids.contains($0.id) } : nil }
-    private func checkBinding(_ id: String) -> Binding<Bool> { Binding(get: { checked.contains(id) }, set: { if $0 { checked.insert(id) } else { checked.remove(id) } }) }
 }

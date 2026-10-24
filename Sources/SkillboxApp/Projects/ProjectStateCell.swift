@@ -1,16 +1,18 @@
 import SwiftUI
 import SkillboxCore
 
-/// Second column: a project's status, or how many projects of a group need something.
+/// Second column: a project's (or the Mac's) status, or how many projects of a group need something.
 struct ProjectStateCell: View {
     let row: ProjectTableRow
-    let status: ProjectStatus?
+    let state: ProjectStatus.State?
     let pending: Int
     let problems: Int
 
     var body: some View {
-        if row.project != nil {
-            ProjectStatusBadge(status: status)
+        if row.isMac {
+            if state == nil { Text("Nie skonfigurowano").rowMetadata() } else { ProjectStatusBadge(state: state) }
+        } else if row.project != nil {
+            ProjectStatusBadge(state: state)
         } else {
             HStack(spacing: Space.tight) {
                 if pending > 0 { MetaBadge(text: "\(pending) do synchronizacji", tint: .orange) }

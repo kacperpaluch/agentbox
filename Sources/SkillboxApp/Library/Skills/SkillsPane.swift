@@ -11,7 +11,11 @@ struct SkillsPane: View {
     @State private var showNewSkill = false
     @State private var sort: SkillSort = .name
     @State private var grouping: SkillGrouping = .repository
-    @State private var checked = Set<String>()
+    /// The list's own selection: click, ⌘ and ⇧ work as everywhere on the Mac. One skill opens in the
+    /// detail; several turn the detail and the bar into bulk actions. `model.selection` keeps the one
+    /// skill whose text is loaded.
+    @State private var selected = Set<String>()
+    private var checked: Set<String> { selected.intersection(model.skills.map(\.id)) }
     /// Group names, one per line. Groups start open — a list of closed groups looked empty — and stay
     /// the way they were left between launches.
     @AppStorage("AgentboxCollapsedSkillGroups") private var collapsedStorage = ""
@@ -56,26 +60,34 @@ struct SkillsPane: View {
             // Both panes fill the height: without it an empty detail let the list shrink to its own
             // height and float in the middle, pushing the detail off the right edge.
             .frame(minWidth: 410, idealWidth: 480, maxHeight: .infinity)
-            if let id = model.selection, let skill = model.skills.first(where: { $0.id == id }) {
+            if checked.count > 1 {
+                bulkDetail
+            } else if let id = model.selection, let skill = model.skills.first(where: { $0.id == id }) {
                 SkillDetail(model: model, skill: skill)
             } else {
                 ContentUnavailableView("Wybierz skill", systemImage: "text.book.closed")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .onAppear { if let id = model.selection { selected = [id] } }
+        .onChange(of: selected) {
+            // A header row is not a skill; picking one keeps the skill that was open.
+            if checked.count == 1, let id = checked.first, id != model.selection { model.selection = id }
+        }
         .onChange(of: model.selection) { previous, current in
+            if let current, checked.count < 2, !selected.contains(current) { selected = [current] }
             // A click on a group header selects no skill (nil, or the header's row id). Keep the skill
             // that was open instead of emptying the detail; a deleted skill is not restored.
             let isSkill: (String?) -> Bool = { id in model.skills.contains { $0.id == id } }
             if !isSkill(current), isSkill(previous) { model.selection = previous; return }
             Task { await model.loadMarkdown() }
         }
-        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: tags) { text in let ok = await model.addTags(checked, text: text); if ok { checked.removeAll() }; return ok } }
+        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: tags) { text in await model.addTags(checked, text: text) } }
         .sheet(isPresented: $showNewSkill) { NewSkillView(existingTags: tags, existingIDs: Set(model.skills.map(\.id))) { draft in await model.createSkill(draft) } }
         .confirmationDialog("Usunąć \(PolishNoun.skill(checked.count))?", isPresented: $confirmBatchDelete) {
             Button("Usuń \(PolishNoun.skill(checked.count))", role: .destructive) {
                 let ids = checked
-                checked.removeAll()
+                selected.removeAll()
                 Task { await model.deleteSkills(ids) }
             }
             Button("Anuluj", role: .cancel) {}
@@ -109,12 +121,25 @@ struct SkillsPane: View {
         .background(.quaternary.opacity(0.4))
     }
 
+    /// Several skills selected: what can be done to all of them at once.
+    private var bulkDetail: some View {
+        ContentUnavailableView {
+            Label("Wybrano \(PolishNoun.skill(checked.count))", systemImage: "square.stack.3d.up")
+        } description: {
+            Text(model.skills.filter { checked.contains($0.id) }.map(\.name).sorted().prefix(12).joined(separator: ", "))
+        } actions: {
+            Button { showBatchTags = true } label: { Label("Dodaj tagi", systemImage: "tag") }.buttonStyle(.borderedProminent)
+            Button(role: .destructive) { confirmBatchDelete = true } label: { Label("Usuń…", systemImage: "trash") }.disabled(model.isWorking)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     // One row instead of two stacked toolbars: the add actions swap for a selection bar the moment
-    // something is checked (the Mail/Finder pattern), and filtering lives in the same row as the
-    // running total instead of a separate bar with its own background underneath it.
+    // several skills are selected (the Mail/Finder pattern), and filtering lives in the same row as
+    // the running total instead of a separate bar with its own background underneath it.
     private var actionBar: some View {
         ActionBar {
-            if checked.isEmpty {
+            if checked.count < 2 {
                 Menu {
                     Button { showGit = true } label: { Label("Z repozytorium Git…", systemImage: "arrow.down.circle") }
                     Button { chooseSkill() } label: { Label("Z folderu na dysku…", systemImage: "folder.badge.plus") }
@@ -131,7 +156,7 @@ struct SkillsPane: View {
                 Button { showBatchTags = true } label: { Label("Dodaj tagi", systemImage: "tag") }.buttonStyle(.borderedProminent)
                 Button(role: .destructive) { confirmBatchDelete = true } label: { Label("Usuń", systemImage: "trash") }.buttonStyle(.bordered)
                     .disabled(model.isWorking)
-                Button("Anuluj") { checked.removeAll() }.buttonStyle(.bordered)
+                Button("Odznacz") { selected = model.selection.map { [$0] } ?? [] }.buttonStyle(.bordered)
             }
             Spacer()
             filterMenu
@@ -165,19 +190,17 @@ struct SkillsPane: View {
 
     private var skillList: some View {
         // Native selection: arrow keys and VoiceOver move through skills, which a tap gesture never allowed.
-        List(selection: $model.selection) {
+        List(selection: $selected) {
             ForEach(groups) { group in
                 DisclosureGroup(isExpanded: groupExpansion(group.name)) {
                     ForEach(group.items) { item in
-                        HStack(alignment: .top, spacing: Space.row + 1) {
-                            Toggle("Zaznacz \(item.skill.name)", isOn: checkBinding(item.skill.id)).labelsHidden().toggleStyle(.checkbox).padding(.top, 5)
-                            SkillRow(skill: item.skill, updateAvailable: model.updateAvailable.contains(item.skill.id))
-                        }
-                        .tag(item.skill.id)
+                        SkillRow(skill: item.skill, updateAvailable: model.updateAvailable.contains(item.skill.id))
+                            .tag(item.skill.id)
                     }
                 } label: {
                     HStack(spacing: Space.tight + 2) {
                         Toggle("Zaznacz grupę \(group.name)", isOn: groupCheckBinding(group.skills)).labelsHidden().toggleStyle(.checkbox)
+                            .help("Zaznacz całą grupę")
                         Image(systemName: grouping == .repository ? "shippingbox" : grouping == .tag ? "tag" : grouping == .source ? "tray.full" : "square.grid.2x2").foregroundStyle(.tint)
                         Text(group.name).sectionLabel()
                         Text("\(group.skills.count)").rowMetadata()
@@ -189,10 +212,10 @@ struct SkillsPane: View {
                 }
             }
         }
+        .onDeleteCommand { if !checked.isEmpty { confirmBatchDelete = true } }
     }
 
-    private func checkBinding(_ id: String) -> Binding<Bool> { Binding(get: { checked.contains(id) }, set: { if $0 { checked.insert(id) } else { checked.remove(id) } }) }
-    private func groupCheckBinding(_ skills: [Skill]) -> Binding<Bool> { let ids = Set(skills.map(\.id)); return Binding(get: { !ids.isEmpty && ids.isSubset(of: checked) }, set: { if $0 { checked.formUnion(ids) } else { checked.subtract(ids) } }) }
+    private func groupCheckBinding(_ skills: [Skill]) -> Binding<Bool> { let ids = Set(skills.map(\.id)); return Binding(get: { !ids.isEmpty && ids.isSubset(of: checked) }, set: { if $0 { selected = checked.union(ids) } else { selected = checked.subtracting(ids) } }) }
     private func groupExpansion(_ name: String) -> Binding<Bool> { Binding(get: { !search.isEmpty || !collapsed.contains(name) || grouping == .none }, set: { if $0 { collapsed.remove(name) } else { collapsed.insert(name) } }) }
     private func chooseSkill() { let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; if panel.runModal() == .OK, let url = panel.url { Task { await model.addLocal(url) } } }
 }

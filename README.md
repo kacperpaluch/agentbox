@@ -6,7 +6,7 @@ Agentbox nie uruchamia serwerów MCP i nie zastępuje klientów AI — przygotow
 
 W zakładce skilli można zaznaczyć cały nagłówek grupy (repozytorium, tag lub źródło), a następnie zbiorczo dodać tagi albo usunąć zaznaczone skille. Usunięcie zawsze wymaga potwierdzenia i odłącza skille od projektów; katalogi projektów zmienią się dopiero przy kolejnej synchronizacji.
 
-`Projekty → … → Pluginy Claude…` przekazuje instalację marketplace’ów i pluginów do CLI Claude Code dla wskazanego projektu. Wybierz zakres `Projekt`, aby współdzielić wpis w `.claude/settings.json`, albo `Tylko ten Mac` dla `.claude/settings.local.json`. Przed instalacją Agentbox ostrzega, że plugin może zawierać hooki, MCP i programy wykonywalne.
+Zakładka `Pluginy` w inspektorze projektu przekazuje instalację marketplace’ów i pluginów do CLI Claude Code dla wskazanego projektu. Wybierz zakres `Projekt`, aby współdzielić wpis w `.claude/settings.json`, albo `Tylko ten Mac` dla `.claude/settings.local.json`. Przed instalacją Agentbox ostrzega, że plugin może zawierać hooki, MCP i programy wykonywalne.
 
 Pluginy można też definiować raz w `Biblioteka → Pluginy` (albo `agentbox plugin add|list|assign|remove`), wybrać dla projektów i instalować podczas zwykłej synchronizacji projektu. Definicje da się poprawiać i usuwać, a projekt z zaznaczonym, jeszcze niezainstalowanym pluginem jest oznaczony jako wymagający synchronizacji.
 
@@ -127,15 +127,15 @@ CLI `agentbox refresh` wykonuje ten workflow bez okna wyboru. `agentbox update -
 
 ## Projekty i synchronizacja
 
-Dwuklik na projekcie albo `⋯ → Konfiguracja i pochodzenie…` pokazuje, co Agentbox wybrał i dlaczego: bezpośrednio, przez tag albo z folderu nadrzędnego. Widać wykluczone skille, wyłączone MCP, pliki do dodania lub usunięcia oraz lokalne zmiany skilli. Z tego miejsca otworzysz definicję, edytor źródła przypisań, różnice i przejmowanie zmian. W terminalu: `agentbox project explain <nazwa>`.
+Zaznaczony projekt otwiera się w inspektorze po prawej. `Przegląd` pokazuje, co Agentbox wybrał i dlaczego: bezpośrednio, przez tag albo z folderu nadrzędnego — z wykluczonymi skillami, wyłączonymi MCP, plikami do dodania lub usunięcia i lokalnymi zmianami skilli. `Wybór` zmienia przypisania na miejscu (z jawnym `Zapisz`), `Pluginy` pokazuje pluginy zainstalowane przez Claude Code, a przełącznik `Z folderu / Własne` decyduje, skąd projekt bierze ustawienia. W wierszu tabeli przycisk `Synchronizuj` pojawia się tylko przy projektach ze zmianami do zapisania. W terminalu: `agentbox project explain <nazwa>`.
 
 Stan dotyczy konfiguracji Agentbox i plików, nie faktycznego załadowania narzędzi w sesji klienta AI. Globalny wybór skilli jest pokazany osobno, bez sprawdzania jego synchronizacji.
 
 Projekt wskazuje istniejący folder na dysku oraz obsługiwane narzędzia. Można mu przypisać pojedyncze skille, serwery MCP i dokument `AGENTS.md`/`CLAUDE.md` albo wybierać każdy typ dynamicznie według tagów.
 
-Opcja `Dodaj wiele` przyjmuje folder nadrzędny, wykrywa jego bezpośrednie podfoldery i pozwala utworzyć z nich projekty. Foldery już dodane do Agentbox są pomijane. Ustawienia zapisują się domyślnie na samym folderze nadrzędnym, a jego projekty je dziedziczą — jedna zmiana w folderze obejmuje wszystkie. Pojedynczy projekt może przejść na własne ustawienia w swoim edytorze, a odznaczenie opcji przy dodawaniu daje każdemu projektowi niezależną kopię konfiguracji.
+Opcja `Dodaj wiele` przyjmuje folder nadrzędny, wykrywa jego bezpośrednie podfoldery i pozwala utworzyć z nich projekty. Foldery już dodane do Agentbox są pomijane. Ustawienia zapisują się domyślnie na samym folderze nadrzędnym, a jego projekty je dziedziczą — jedna zmiana w folderze obejmuje wszystkie. Pojedynczy projekt może przejść na własne ustawienia przełącznikiem w inspektorze, a odznaczenie opcji przy dodawaniu daje każdemu projektowi niezależną kopię konfiguracji.
 
-Projekty dodane wcześniej można objąć wspólnymi ustawieniami przyciskiem `Wspólne ustawienia…` w nagłówku ich grupy.
+Projekty dodane wcześniej można objąć wspólnymi ustawieniami przez `⋯ → Wspólne ustawienia…` w nagłówku ich grupy.
 
 Folder nadrzędny może też obserwować nowe podfoldery. Świeżo sklonowane repozytorium pojawia się wtedy jako pytanie nad listą projektów: dodać i zsynchronizować, dodać bez synchronizacji, czy pomijać. Odmowa jest zapamiętywana.
 
@@ -216,11 +216,11 @@ Pliki konfiguracyjne i manifesty powstają tylko wtedy, gdy projekt ma co synchr
 
 ### Skille globalne
 
-`Projekty → Więcej → Skille we wszystkich sesjach…` synchronizuje wybrane skille do katalogów użytkownika zamiast do projektu: `~/.claude/skills`, `~/.codex/skills`, `~/.config/opencode/skills` i `~/.vibe/skills`. Wybór narzędzi, skilli i tagów jest zapisywany, a podgląd pokazuje zmiany przed zapisem. Globalnie trafiają wyłącznie skille — pliki, w których żyłby globalny serwer MCP, to pliki, których Agentbox celowo nigdy nie zapisuje.
+Wiersz `Ten Mac` na górze tabeli `Projekty` synchronizuje wybrane skille do katalogów użytkownika zamiast do projektu: `~/.claude/skills`, `~/.codex/skills`, `~/.config/opencode/skills` i `~/.vibe/skills`. Wybór narzędzi, skilli i tagów jest zapisywany, a podgląd pokazuje zmiany przed zapisem. Globalnie trafiają wyłącznie skille — pliki, w których żyłby globalny serwer MCP, to pliki, których Agentbox celowo nigdy nie zapisuje.
 
 ### Domyślne dla nowych projektów
 
-`Projekty → Domyślne dla nowych projektów → Skonfiguruj…` zapisuje lokalny szablon skilli, serwerów MCP i dokumentów. `Dodaj projekt` oraz `Dodaj wiele` otwierają się z tym wyborem, ale możesz go dowolnie zmienić przed zapisem. Zmiana domyślnych nie wpływa na istniejące projekty.
+`Ustawienia → Domyślne dla nowych projektów → Edytuj…` zapisuje lokalny szablon skilli, serwerów MCP i dokumentów. `Dodaj projekt` oraz `Dodaj wiele` zaczynają od niego (albo od pustego wyboru — przełącznik `Zacznij od`) i można go zmienić przed zapisem. Zmiana domyślnych nie wpływa na istniejące projekty.
 
 ```bash
 swift run agentbox sync global --skills seo-audit,docx --tags seo --tools claude,opencode
@@ -255,7 +255,7 @@ Serwery logujące się przez OAuth zapisuje się tylko jako URL. Logowanie przez
 
 ### Serwery klientów (Codex i Claude Code)
 
-Codex CLI, jego wtyczka IDE i aplikacja ChatGPT Desktop dzielą jeden plik `~/.codex/config.toml` — serwer dodany w którymkolwiek z nich ładuje się automatycznie w każdym projekcie Codexa. Claude Code ma analogiczny mechanizm: serwer dodany w zasięgu `user` (`~/.claude.json`) też trafia wszędzie. Agentbox nie zarządza tymi plikami, tylko je odczytuje i pozwala wyłączyć wybrany serwer dla jednego projektu. W aplikacji otwiera to `Projekty → Serwery klientów…` (`agentbox mcp global list/disable/enable <projekt>` — patrz [instrukcja CLI](docs/CLI.md#globalne-serwery-codex-i-claude-code)). Dla Codexa Agentbox dopisuje samo `enabled = false` bez powtarzania `command`/`args`; dla Claude Code nazwa trafia do `disabledMcpServers` w `.claude/settings.local.json`, obok pozostałych ustawień w tym pliku.
+Codex CLI, jego wtyczka IDE i aplikacja ChatGPT Desktop dzielą jeden plik `~/.codex/config.toml` — serwer dodany w którymkolwiek z nich ładuje się automatycznie w każdym projekcie Codexa. Claude Code ma analogiczny mechanizm: serwer dodany w zasięgu `user` (`~/.claude.json`) też trafia wszędzie. Agentbox nie zarządza tymi plikami, tylko je odczytuje i pozwala wyłączyć wybrany serwer dla jednego projektu. W aplikacji otwiera to `Projekty → Ten Mac → Serwery klientów…` (`agentbox mcp global list/disable/enable <projekt>` — patrz [instrukcja CLI](docs/CLI.md#globalne-serwery-codex-i-claude-code)). Dla Codexa Agentbox dopisuje samo `enabled = false` bez powtarzania `command`/`args`; dla Claude Code nazwa trafia do `disabledMcpServers` w `.claude/settings.local.json`, obok pozostałych ustawień w tym pliku.
 
 ### CLI MCP
 

@@ -8,7 +8,12 @@ struct ProjectNameCell: View {
     let problems: Int
 
     var body: some View {
-        if let project = row.project {
+        if row.isMac {
+            HStack(spacing: Space.row) {
+                Label("Ten Mac", systemImage: "laptopcomputer").rowTitle()
+                Text("skille we wszystkich sesjach").rowMetadata().lineLimit(1)
+            }
+        } else if let project = row.project {
             HStack(spacing: Space.row) {
                 Text(project.name).rowTitle()
                 Text(project.path).rowMetadata().lineLimit(1).truncationMode(.middle).help(project.path)

@@ -1,8 +1,11 @@
 import SwiftUI
 import SkillboxCore
 
+/// A new project with its first choice, or an existing one's name and folder. An existing project's
+/// choice is edited in the inspector; repeating the whole form here meant two places to change it.
 struct ProjectEditor: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.enabledTools) private var enabledTools
     let skills: [Skill]
     let servers: [MCPServer]
     let docs: [AgentDoc]
@@ -26,43 +29,29 @@ struct ProjectEditor: View {
     @State private var selection = AttachmentSelection(tools: Tool.allCases)
     @State private var manageGitignore = false
     @State private var usesOwnSettings = true
+    @State private var start = ProjectStart.defaults
 
     var body: some View {
         // The actions sit outside the ScrollView: this form is long enough that they used to scroll
         // out of reach, and a sheet taller than the window put them under the Dock entirely.
         VStack(spacing: 0) {
             ScrollView { VStack(alignment: .leading, spacing: 14) {
-                Text(project == nil ? "Nowy projekt" : "Edytuj projekt").font(.title2.bold())
+                Text(project == nil ? "Nowy projekt" : "Nazwa i folder").font(.title2.bold())
                 TextField("Nazwa", text: $name)
                 HStack { TextField("Folder projektu", text: $path); Button("Wybierz…") { chooseFolder() } }
-                inheritanceBox
-                AttachmentPicker(skills: skills, servers: servers, docs: docs, claudePlugins: claudePlugins, selection: $selection, manageGitignore: $manageGitignore)
-                    .disabled(!usesOwnSettings)
+                if project == nil {
+                    ProjectStartPicker(start: $start)
+                    AttachmentPicker(skills: skills, servers: servers, docs: docs, claudePlugins: claudePlugins, selection: $selection, manageGitignore: $manageGitignore)
+                }
             }.padding(24) }
             SheetFooter {
                 Button("Anuluj") { dismiss() }
                 Button("Zapisz") { Task { if await save() { dismiss() } } }.buttonStyle(.borderedProminent).disabled(saving || name.isEmpty || path.isEmpty || (usesOwnSettings && selection.tools.isEmpty))
             }
         }
-        .sheetFrame(width: 700, height: 640)
+        .sheetFrame(width: 700, height: project == nil ? 640 : 260)
         .onAppear { load() }
-    }
-
-    @ViewBuilder private var inheritanceBox: some View {
-        if let root {
-            GroupBox("Skąd projekt bierze ustawienia") {
-                VStack(alignment: .leading, spacing: 6) {
-                    Picker("", selection: $usesOwnSettings) {
-                        Text("Z folderu „\(root.name)”").tag(false)
-                        Text("Własne dla tego projektu").tag(true)
-                    }.pickerStyle(.segmented).labelsHidden()
-                    Text(usesOwnSettings
-                         ? "Zmiany w folderze nadrzędnym nie będą już dotyczyć tego projektu."
-                         : "Skille, tagi, serwery MCP i opcja .gitignore pochodzą z folderu nadrzędnego — zmiana tam obejmuje wszystkie projekty, które z niego korzystają. Poniżej widać, co folder ustawia.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }.padding(6)
-            }
-        }
+        .onChange(of: start) { selection = start == .defaults ? initialSelection : AttachmentSelection(tools: enabledTools) }
     }
 
     private func load() {

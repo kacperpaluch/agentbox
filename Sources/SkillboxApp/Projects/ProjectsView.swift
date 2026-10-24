@@ -6,20 +6,19 @@ struct ProjectsView: View {
     @Binding var showProject: Bool
     @State private var showBatch = false
     @State private var syncScope: SyncScope?
-    @State private var configurationProject: Project?
     @State private var editing: Project?
     @State private var previewProject: Project?
     @State private var deleting: Project?
     @State private var deletingMissing = false
     @State private var adopting: Project?
-    @State private var managingPlugins: Project?
     @State private var editingRoot: ProjectRoot?
     @State private var deletingRoot: ProjectRoot?
     @State private var settingUpRoot: ProjectGroup?
     @State private var showDetected = false
-    @State private var showProjectDefaults = false
-    @State private var showGlobalSkills = false
     @State private var showClientServers = false
+    /// Open by default: selecting a row is how a project is looked at now, so a hidden inspector
+    /// would look like a click that did nothing. Remembered between launches.
+    @AppStorage("AgentboxProjectInspector") private var showInspector = true
     @State private var search = ""
     @State private var filter = ProjectFilter.all
     /// Table selection: project ids and `group/…` ids. Click, ⌘, ⇧ and ⌘A work as everywhere on the Mac.
@@ -40,6 +39,9 @@ struct ProjectsView: View {
         nonmutating set { collapsedStorage = newValue.sorted().joined(separator: "\n") }
     }
     private var isFiltering: Bool { !search.isEmpty || filter != .all }
+    /// The Mac's row sits above the folders. A search is about projects, so it hides the row; a
+    /// filter keeps it when the Mac itself matches.
+    private var showsMac: Bool { search.isEmpty && (filter == .all || filter.includes(model.globalState)) }
     private var checkedProjects: [Project] { ProjectTableRow.projects(for: selection, in: shownGroups) }
     private var followable: [Project] { checkedProjects.filter(model.hasOwnSettingsInRoot) }
 
@@ -76,17 +78,22 @@ struct ProjectsView: View {
     var body: some View {
         VStack(spacing: 0) {
             actionBar
-            if !model.detectedFolders.isEmpty { DetectedFoldersBanner(model: model) { showDetected = true } }
-            ProjectDefaultsStrip(model: model) { showProjectDefaults = true }
-            Divider()
+            if !model.detectedFolders.isEmpty { DetectedFoldersBanner(model: model) { showDetected = true }; Divider() }
             projectTable
         }
         .navigationTitle("Projekty")
+        .inspector(isPresented: $showInspector) {
+            inspector.inspectorColumnWidth(min: 330, ideal: 400, max: 560)
+        }
+        .toolbar {
+            ToolbarItem {
+                Button { showInspector.toggle() } label: { Label(showInspector ? "Ukryj inspektor" : "Pokaż inspektor", systemImage: "sidebar.trailing") }
+                    .help(showInspector ? "Ukryj inspektor" : "Pokaż inspektor")
+            }
+        }
         .searchable(text: $search, prompt: "Nazwa lub ścieżka projektu")
         .sheet(isPresented: $showBatch) { BatchProjectView(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, existingProjects: model.projects, existingRoots: model.projectRoots, claudePlugins: model.claudePluginLibrary, initialSelection: model.projectDefaults) { request in await model.addBatch(request) } }
         .sheet(isPresented: $showDetected) { DetectedFoldersView(model: model) }
-        .sheet(isPresented: $showProjectDefaults) { ProjectDefaultsEditor(model: model) }
-        .sheet(isPresented: $showGlobalSkills) { GlobalSelectionEditor(model: model) }
         .sheet(isPresented: $showClientServers) { ClientServersView(model: model) }
         .sheet(item: $settingUpRoot) { group in GroupRootSetupView(model: model, folderPath: group.path, projects: group.projects) }
         .sheet(item: $editingRoot) { root in
@@ -97,28 +104,27 @@ struct ProjectsView: View {
             ) { updated, selection in await model.saveRoot(updated, selection: selection) }
         }
         .sheet(item: $editing) { project in
+            // Name and folder only: the choice itself is edited in the inspector. The resolved
+            // selection is passed so saving writes back exactly what the project has today.
             ProjectEditor(
                 skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, claudePlugins: model.claudePluginLibrary,
                 project: model.storedProject(id: project.id) ?? project,
                 root: model.root(for: project),
                 inheritedFrom: model.inheritsRoot(project) ? model.projects.first { $0.id == project.id } : nil,
-                // Resolved on purpose: a project following its folder opens showing what it actually
-                // gets, so switching to own settings starts from today's state, not an empty form.
                 initialSelection: model.selection(for: .project(project.id), resolvingInheritance: true)
             ) { updated, selection in await model.updateProject(updated, selection: selection) }
         }
-        .sheet(item: $configurationProject) { project in ProjectConfigurationView(model: model, project: project) }
         .sheet(item: $previewProject) { project in MCPPreviewView(model: model, project: project) }
         .sheet(item: $syncScope) { scope in AllProjectsSyncPreviewView(model: model, ids: scope.ids, title: scope.title) }
         .confirmationDialog("Usunąć projekt \(deleting?.name ?? "") z Agentbox?", item: $deleting) { deleting in
             Button("Usuń tylko z Agentbox", role: .destructive) { Task { await model.deleteProject(deleting, removingFiles: false) } }
             Button("Usuń i posprzątaj pliki w projekcie", role: .destructive) { Task { await model.deleteProject(deleting, removingFiles: true) } }
             Button("Anuluj", role: .cancel) {}
-        } message: { _ in Text("Sprzątanie usuwa wyłącznie skille, wpisy MCP i dokumenty zarządzane przez Agentbox. Kopia na czas operacji służy do cofnięcia zmian w razie błędu; po udanej operacji jest usuwana i nie pojawia się w odzyskiwaniu. Pliki można odtworzyć z biblioteki po ponownym dodaniu i skonfigurowaniu projektu oraz synchronizacji.") }
+        } message: { _ in Text("Sprzątanie usuwa tylko skille, wpisy MCP i dokumenty zarządzane przez Agentbox. Folder projektu zostaje.") }
         .confirmationDialog("Usunąć z Agentbox projekty bez folderu (\(model.missingProjects.count))?", isPresented: $deletingMissing) {
             Button("Usuń z Agentbox", role: .destructive) { Task { await model.deleteMissingProjects() } }
             Button("Anuluj", role: .cancel) {}
-        } message: { Text(model.missingProjects.map(\.name).joined(separator: ", ") + "\n\nAgentbox zapomina tylko ich ustawienia; niczego nie usuwa z dysku. Przed zapisem powstaje snapshot biblioteki.") }
+        } message: { Text(model.missingProjects.map(\.name).joined(separator: ", ") + "\n\nAgentbox zapomina tylko ich ustawienia; niczego nie usuwa z dysku.") }
         .confirmationDialog("Usunąć z Agentbox \(PolishNoun.project(checkedProjects.count))?", isPresented: $deletingChecked) {
             Button("Usuń tylko z Agentbox", role: .destructive) { let projects = checkedProjects; Task { await model.deleteProjects(projects, removingFiles: false) } }
             // A project without its folder has no files to clean, and trying would stop the whole action.
@@ -126,17 +132,16 @@ struct ProjectsView: View {
                 Button("Usuń i posprzątaj pliki w projektach", role: .destructive) { let projects = checkedProjects; Task { await model.deleteProjects(projects, removingFiles: true) } }
             }
             Button("Anuluj", role: .cancel) {}
-        } message: { Text(names(checkedProjects) + "\n\nSprzątanie usuwa wyłącznie skille, wpisy MCP i dokumenty zarządzane przez Agentbox. Foldery projektów zostają na dysku.") }
+        } message: { Text(names(checkedProjects) + "\n\nSprzątanie usuwa tylko pliki zarządzane przez Agentbox. Foldery projektów zostają.") }
         .confirmationDialog("Przełączyć na ustawienia folderu \(PolishNoun.project(followable.count))?", isPresented: $followingChecked) {
             Button("Przełącz na ustawienia folderu", role: .destructive) { let projects = followable; Task { await model.followRoot(projects) } }
             Button("Anuluj", role: .cancel) {}
-        } message: { Text(names(followable) + "\n\nIch własne wybory skilli, MCP i dokumentów zostaną usunięte; od teraz dostają to, co ustawiono w folderze. Pliki w projektach zmienią się dopiero przy synchronizacji. Zmianę można cofnąć snapshotem biblioteki.") }
+        } message: { Text(names(followable) + "\n\nIch własne wybory zostaną usunięte. Pliki zmienią się przy synchronizacji.") }
         .sheet(item: $adopting) { project in AdoptSkillsView(model: model, project: project) }
-        .sheet(item: $managingPlugins) { project in ClaudePluginsView(model: model, project: project) }
         .confirmationDialog("Usunąć wspólne ustawienia folderu \(deletingRoot?.name ?? "")?", item: $deletingRoot) { deletingRoot in
             Button("Usuń ustawienia folderu", role: .destructive) { Task { await model.deleteRoot(deletingRoot) } }
             Button("Anuluj", role: .cancel) {}
-        } message: { _ in Text("Projekty zostają. Każdy, który korzystał z ustawień folderu, dostaje ich kopię, więc do repozytoriów trafia dokładnie to samo co dziś. Agentbox przestaje tylko pytać o nowe podfoldery.") }
+        } message: { _ in Text("Projekty zostają i dostają kopię ustawień folderu, więc ich pliki się nie zmienią.") }
     }
 
     @ViewBuilder private var projectTable: some View {
@@ -148,11 +153,11 @@ struct ProjectsView: View {
                 TableColumn("Projekt") { row in
                     ProjectNameCell(row: row, pending: count(.pending, in: row.group.projects), problems: count(.problems, in: row.group.projects))
                 }
-                .width(min: 220, ideal: 380)
+                .width(min: 200, ideal: 280)
                 TableColumn("Stan") { row in
-                    ProjectStateCell(row: row, status: row.project.flatMap { model.statuses[$0.id] }, pending: count(.pending, in: row.group.projects), problems: count(.problems, in: row.group.projects))
+                    ProjectStateCell(row: row, state: state(of: row), pending: count(.pending, in: row.group.projects), problems: count(.problems, in: row.group.projects))
                 }
-                .width(min: 130, ideal: 170)
+                .width(min: 120, ideal: 150)
                 TableColumn("Wyjątki") { row in
                     if let project = row.project {
                         ProjectExceptionsCell(
@@ -166,12 +171,13 @@ struct ProjectsView: View {
                         )
                     }
                 }
-                .width(min: 110, ideal: 170)
+                .width(min: 80, ideal: 120)
                 TableColumn("Akcje") { row in
-                    ProjectActionsCell(row: row, status: row.project.flatMap { model.statuses[$0.id] }, pending: count(.pending, in: row.group.projects), isWorking: model.isWorking, perform: perform)
+                    ProjectActionsCell(row: row, state: state(of: row), perform: perform)
                 }
-                .width(min: 170, ideal: 210)
+                .width(min: 90, ideal: 100)
             } rows: {
+                if showsMac { TableRow(ProjectTableRow.mac) }
                 ForEach(entries, id: \.group.id) { entry in
                     DisclosureTableRow(ProjectTableRow(group: entry.group), isExpanded: groupExpansion(entry.group.path)) {
                         ForEach(entry.shown) { project in TableRow(ProjectTableRow(project: project, in: entry.group)) }
@@ -181,7 +187,7 @@ struct ProjectsView: View {
             .contextMenu(forSelectionType: String.self) { ids in contextMenu(for: ids, in: entries) } primaryAction: { ids in open(ids, in: entries) }
             .onDeleteCommand { if !checkedProjects.isEmpty { deletingChecked = true } }
             .overlay {
-                if entries.isEmpty {
+                if entries.isEmpty && !showsMac {
                     if filter == .all { ContentUnavailableView.search }
                     else { ContentUnavailableView("Nic nie pasuje", systemImage: "line.3.horizontal.decrease.circle", description: Text("Brak projektów w widoku „\(filter.rawValue)”.")) }
                 }
@@ -189,7 +195,12 @@ struct ProjectsView: View {
         }
     }
 
+    private func state(of row: ProjectTableRow) -> ProjectStatus.State? {
+        row.isMac ? model.globalState : row.project.flatMap { model.statuses[$0.id]?.state }
+    }
+
     private func row(_ id: String, in entries: [(group: ProjectGroup, shown: [Project])]) -> ProjectTableRow? {
+        if id == ProjectTableRow.macID { return .mac }
         for (group, shown) in entries {
             if ProjectTableRow(group: group).id == id { return ProjectTableRow(group: group) }
             if let project = shown.first(where: { $0.id.uuidString == id }) { return ProjectTableRow(project: project, in: group) }
@@ -214,10 +225,11 @@ struct ProjectsView: View {
         }
     }
 
-    /// Double click or Return: a project opens what it gets and why; a folder opens its settings.
+    /// Double click or Return: a project or the Mac opens the inspector; a folder opens its settings.
     private func open(_ ids: Set<String>, in entries: [(group: ProjectGroup, shown: [Project])]) {
         guard ids.count == 1, let id = ids.first, let row = row(id, in: entries) else { return }
-        if let project = row.project { perform(.configure(project)) }
+        if row.isMac { perform(.inspectMac) }
+        else if let project = row.project { perform(.inspect(project)) }
         else if let root = row.group.root { perform(.rootSettings(root)) }
         else { perform(.setUpRoot(row.group)) }
     }
@@ -225,11 +237,12 @@ struct ProjectsView: View {
     private func perform(_ action: ProjectRowAction) {
         switch action {
         case .sync(let project): previewProject = project
-        case .configure(let project): configurationProject = project
+        case .inspect(let project): selection = [project.id.uuidString]; showInspector = true
         case .edit(let project): editing = project
         case .adopt(let project): adopting = project
-        case .plugins(let project): managingPlugins = project
         case .delete(let project): deleting = project
+        case .inspectMac: selection = [ProjectTableRow.macID]; showInspector = true
+        case .clientServers: showClientServers = true
         case .syncGroup(let group): syncScope = SyncScope(ids: Set(group.projects.map(\.id)), title: "Synchronizacja: \(group.name)")
         case .rootSettings(let root): editingRoot = root
         case .setUpRoot(let group): settingUpRoot = group
@@ -239,11 +252,27 @@ struct ProjectsView: View {
 
     private func syncChecked() { syncScope = SyncScope(ids: Set(checkedProjects.map(\.id)), title: "Synchronizacja zaznaczonych projektów") }
 
+    /// What the inspector shows follows the table's selection: one row is looked at, several are
+    /// acted on from the bar above the table.
+    @ViewBuilder private var inspector: some View {
+        let entries = shownGroups
+        if selection.count == 1, let id = selection.first, let row = row(id, in: entries) {
+            if row.isMac { MacInspector(model: model) }
+            else if let project = row.project { ProjectInspector(model: model, project: project).id(project.id) }
+            else { GroupInspector(model: model, group: row.group, perform: perform) }
+        } else if selection.count > 1 {
+            ContentUnavailableView("Wybrano \(PolishNoun.project(checkedProjects.count))", systemImage: "square.stack.3d.up", description: Text("Akcje dla zaznaczonych są nad tabelą."))
+        } else {
+            ContentUnavailableView("Zaznacz projekt", systemImage: "sidebar.trailing", description: Text("Zobaczysz, co dostaje, i zmienisz wybór bez otwierania okien."))
+        }
+    }
+
     private var actionBar: some View {
         ActionBar {
             if checkedProjects.count < 2 {
                 Button { syncScope = SyncScope(ids: nil, title: "Synchronizacja wszystkich projektów") } label: { Label("Synchronizuj wszystkie", systemImage: "arrow.triangle.2.circlepath") }
                     .buttonStyle(.borderedProminent)
+                    .fixedSize()
                     .disabled(model.projects.isEmpty || model.isWorking)
                 Menu {
                     Button { showProject = true } label: { Label("Jeden projekt…", systemImage: "folder.badge.plus") }
@@ -254,9 +283,6 @@ struct ProjectsView: View {
                 Menu {
                     Button { Task { await model.refreshProjects() } } label: { Label("Sprawdź stan projektów", systemImage: "arrow.clockwise") }
                         .disabled((model.projects.isEmpty && model.projectRoots.isEmpty) || model.isCheckingStatuses)
-                    Button { showClientServers = true } label: { Label("Serwery klientów…", systemImage: "server.rack") }
-                    Button { showGlobalSkills = true } label: { Label("Skille we wszystkich sesjach…", systemImage: "person.crop.circle") }
-                    Divider()
                     Button(role: .destructive) { deletingMissing = true } label: { Label("Usuń projekty bez folderu (\(model.missingProjects.count))…", systemImage: "questionmark.folder") }
                         .disabled(model.missingProjects.isEmpty || model.isWorking)
                     Divider()

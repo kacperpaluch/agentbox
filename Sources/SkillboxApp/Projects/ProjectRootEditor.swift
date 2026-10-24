@@ -31,12 +31,12 @@ struct ProjectRootEditor: View {
                 Text(root.path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 Text(followingProjects == 0
                      ? "Żaden projekt nie korzysta jeszcze z tych ustawień."
-                     : "Te ustawienia obejmują \(followingProjects) projektów. Projekty z własnymi ustawieniami pozostają nietknięte.")
+                     : "Obejmują \(followingProjects) projektów; te z własnymi ustawieniami zostają nietknięte.")
                     .font(.callout).foregroundStyle(.secondary)
                 GroupBox("Nowe podfoldery") {
                     VStack(alignment: .leading, spacing: 6) {
                         Toggle("Pytaj, gdy w tym folderze pojawi się nowy podfolder", isOn: $watchesNewFolders).toggleStyle(.checkbox)
-                        Text("Agentbox sprawdza folder przy każdym odświeżeniu listy projektów i proponuje dodanie oraz synchronizację nowych podfolderów.").font(.caption).foregroundStyle(.secondary)
+                        Text("Agentbox zaproponuje dodanie i synchronizację nowych podfolderów.").font(.caption).foregroundStyle(.secondary)
                         if !ignoredPaths.isEmpty {
                             HStack {
                                 Text("Pominięte podfoldery: \(ignoredPaths.count)").font(.caption).foregroundStyle(.secondary)

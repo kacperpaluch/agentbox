@@ -18,7 +18,7 @@ struct DocEditorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(original.id).font(.title2.bold())
-            Text("Ten sam tekst trafia jako AGENTS.md w każdym projekcie, do którego jest przypisany. CLAUDE.md tych projektów to wygenerowany import @AGENTS.md — synchronizuje się razem z AGENTS.md, bez osobnej edycji.").font(.callout).foregroundStyle(.secondary)
+            Text("Tekst trafia jako AGENTS.md; CLAUDE.md dostaje import @AGENTS.md, bez osobnej edycji.").font(.callout).foregroundStyle(.secondary)
             TextField("Nazwa", text: $name)
             HStack {
                 TextField("tagi, oddzielone przecinkami", text: $tags)

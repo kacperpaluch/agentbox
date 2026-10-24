@@ -47,7 +47,7 @@ struct MCPImportView: View {
                 SecureField("Klucz API OpenAI", text: $openAIKey); TextField("Model", text: $openAIModel).frame(width: 160)
                 Button("Usuń zapamiętany klucz") { forgetOpenAIKey() }.disabled(working)
             }
-            Text("Klucz zostaje zapisany w pęku kluczy, a model w ustawieniach — przy kolejnym dodawaniu są już wypełnione. Treść instrukcji zostanie wysłana do OpenAI; wynik nie zostanie zapisany automatycznie — najpierw go przejrzysz.").font(.caption).foregroundStyle(.orange)
+            Text("Treść instrukcji zostanie wysłana do OpenAI. Wynik najpierw przejrzysz. Klucz trafia do pęku kluczy.").font(.caption).foregroundStyle(.orange)
         }
         if showFormatHelp { formatHelp }
         TextEditor(text: $source).font(.system(.body, design: .monospaced)).frame(minHeight: 220).overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))

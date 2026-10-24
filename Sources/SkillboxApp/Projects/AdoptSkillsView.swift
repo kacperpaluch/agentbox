@@ -18,7 +18,7 @@ struct AdoptSkillsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Przejmij z projektu").font(.title2.bold())
-            Text("Wszystko, co w \(project.name) czeka na przeniesienie do biblioteki: katalogi ze `SKILL.md`, których biblioteka jeszcze nie zna, oraz zarządzane skille zmienione tutaj po ostatniej synchronizacji. Nic nie znika z projektu.").font(.caption).foregroundStyle(.secondary)
+            Text("Nowe katalogi ze `SKILL.md` i skille zmienione w \(project.name) od ostatniej synchronizacji. Nic nie znika z projektu.").font(.caption).foregroundStyle(.secondary)
             if !adoptError.isEmpty { Label(adoptError, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).textSelection(.enabled) }
             if !error.isEmpty { Text(error).foregroundStyle(.red) }
             else if candidates == nil { ProgressView() }

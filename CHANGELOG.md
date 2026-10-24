@@ -6,6 +6,18 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-10-24
+
+### Zmieniono
+
+- Projekty mają inspektor po prawej stronie. Zaznaczony projekt pokazuje w nim status, przełącznik `Z folderu / Własne` i trzy zakładki: `Przegląd` (co dostaje i dlaczego), `Wybór` (przypisania z przypiętym `Zapisz`/`Przywróć`) i `Pluginy` (co Claude Code ma zainstalowane, instalacja ręczna). Zastępuje to osobne okna `Konfiguracja i pochodzenie…`, `Pluginy Claude…` oraz wybór w `Edytuj…`, który teraz zmienia tylko nazwę i folder (`Nazwa i folder…`). Zmiana wyboru projektu dziedziczącego z folderu zmienia folder — inspektor mówi, ile projektów obejmie.
+- `Ten Mac` jest pierwszym wierszem tabeli projektów, ze statusem synchronizacji skilli globalnych. Jego inspektor łączy dawne `Więcej → Skille we wszystkich sesjach…` i `Serwery klientów…`.
+- `Domyślne dla nowych projektów` przeniesiono z paska nad tabelą do `Ustawienia → Ogólne`. Formularze `Dodaj projekt` i `Dodaj wiele` mają przełącznik `Zacznij od: Domyślne ustawienia / Pusty wybór`.
+- Wykluczenia bez osobnej sekcji: skill wciągnięty tagiem ma przy nazwie ten tag, a odznaczenie go pomija skill w tym miejscu; ponowne zaznaczenie cofa wykluczenie. Tagi są nad listą skilli, a dokument i `.gitignore` są w zwiniętym `Więcej opcji`, którego nagłówek pokazuje ich wartości.
+- Przycisk `Synchronizuj` pojawia się w wierszu tylko przy projekcie ze zmianami; wiersze aktualne i nagłówki grup mają sam status i menu `⋯`.
+- `Biblioteka`: skille, serwery MCP, dokumenty i pluginy zaznacza się natywnie (klik, ⌘, ⇧) zamiast kolumny pól wyboru. Kilka zaznaczonych skilli zamienia podgląd w akcje zbiorcze; Delete pyta o usunięcie.
+- Krótsze opisy i komunikaty potwierdzeń w całej aplikacji; szczegóły przeniesiono do podpowiedzi i instrukcji użytkownika.
+
 ## [0.38.1] - 2026-10-23
 
 ### Naprawiono

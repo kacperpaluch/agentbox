@@ -13,10 +13,10 @@ struct MCPPane: View {
     @State private var usageForDeletion: UsageReport?
     @State private var showAdd = false
     @State private var bulkJSON: IdentifiableString?
-    @State private var checked = Set<UUID>()
-    /// The highlighted row. Return or a double click opens it, as in Finder; a tap gesture reached
-    /// neither the keyboard nor VoiceOver.
-    @State private var selected: UUID?
+    /// The list's own selection (click, ⌘, ⇧). Return or a double click opens a single server, as in
+    /// Finder; selecting several turns the bar into bulk actions.
+    @State private var selected = Set<UUID>()
+    private var checked: Set<UUID> { selected.intersection(model.mcp.servers.map(\.id)) }
     @State private var showBatchTags = false
     private var existingTags: [String] { Array(Set(model.mcp.servers.flatMap { $0.tags ?? [] })).sorted() }
     private var filtered: [MCPServer] {
@@ -35,11 +35,8 @@ struct MCPPane: View {
             } else {
                 List(selection: $selected) {
                     ForEach(filtered) { server in
-                        HStack(alignment: .top, spacing: Space.row + 1) {
-                            Toggle("Zaznacz \(server.name)", isOn: checkBinding(server.id)).labelsHidden().toggleStyle(.checkbox).padding(.top, 5)
-                            MCPServerRow(server: server, usageKey: AnyHashable([AnyHashable(server.id), AnyHashable(server.tags), AnyHashable(model.selections)]), usage: { await model.usage(ofServer: server.id) }, onDetails: { editingServer = server }, onDuplicate: { serverToDuplicate = server }, onDelete: { serverToDelete = server })
-                        }
-                        .tag(server.id)
+                        MCPServerRow(server: server, usageKey: AnyHashable([AnyHashable(server.id), AnyHashable(server.tags), AnyHashable(model.selections)]), usage: { await model.usage(ofServer: server.id) }, onDetails: { editingServer = server }, onDuplicate: { serverToDuplicate = server }, onDelete: { serverToDelete = server })
+                            .tag(server.id)
                     }
                 }
                 .contextMenu(forSelectionType: UUID.self) { ids in
@@ -48,6 +45,8 @@ struct MCPPane: View {
                         Button("Duplikuj…") { serverToDuplicate = server }
                         Divider()
                         Button("Usuń…", role: .destructive) { serverToDelete = server }
+                    } else if ids.count > 1 {
+                        Button("Dodaj tagi (\(ids.count))…") { selected = ids; showBatchTags = true }
                     }
                 } primaryAction: { ids in editingServer = server(in: ids) }
             }
@@ -60,7 +59,7 @@ struct MCPPane: View {
         .sheet(item: $editingServer) { server in MCPServerEditor(model: model, server: server, existingTags: existingTags) }
         .sheet(item: $serverToDuplicate) { server in MCPDuplicateView(model: model, server: server) }
         .sheet(item: $bulkJSON) { text in MCPBulkJSONView(model: model, text: text.value) }
-        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: .server) { text in let ok = await model.addMCPServerTags(checked, text: text); if ok { checked.removeAll() }; return ok } }
+        .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: .server) { text in await model.addMCPServerTags(checked, text: text) } }
         .confirmationDialog("Usunąć serwer \(serverToDelete?.name ?? "")?", item: $serverToDelete) { serverToDelete in Button("Usuń", role: .destructive) { Task { await model.deleteMCPServer(serverToDelete.id) } }; Button("Anuluj", role: .cancel) {} } message: { _ in Text(serverToDelete.map { server in
             (usageForDeletion?.summary).map { "Używany przez: \($0). Serwer zostanie usunięty także z przypisań projektów." }
                 ?? "Serwer \(server.name) nie jest przypisany do żadnego projektu."
@@ -72,7 +71,7 @@ struct MCPPane: View {
     // bar the moment something is.
     private var actionBar: some View {
         ActionBar {
-            if checked.isEmpty {
+            if checked.count < 2 {
                 Button { showAdd = true } label: { Label("Dodaj serwer", systemImage: "plus") }
                     .buttonStyle(.borderedProminent)
                 Button { Task { bulkJSON = IdentifiableString(value: await model.exportMCPConfigurationJSON()) } } label: {
@@ -83,7 +82,7 @@ struct MCPPane: View {
             } else {
                 Text("Wybrano \(checked.count)").rowMetadata()
                 Button { showBatchTags = true } label: { Label("Dodaj tagi", systemImage: "tag") }.buttonStyle(.borderedProminent)
-                Button("Anuluj") { checked.removeAll() }.buttonStyle(.bordered)
+                Button("Odznacz") { selected.removeAll() }.buttonStyle(.bordered)
             }
             Spacer()
             Text(filtered.count == model.mcp.servers.count ? PolishNoun.server(model.mcp.servers.count) : "\(filtered.count) z \(model.mcp.servers.count)").rowMetadata()
@@ -91,6 +90,5 @@ struct MCPPane: View {
     }
 
     private func server(in ids: Set<UUID>) -> MCPServer? { ids.count == 1 ? model.mcp.servers.first { ids.contains($0.id) } : nil }
-    private func checkBinding(_ id: UUID) -> Binding<Bool> { Binding(get: { checked.contains(id) }, set: { if $0 { checked.insert(id) } else { checked.remove(id) } }) }
 
 }

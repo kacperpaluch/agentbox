@@ -42,7 +42,7 @@ struct ClientServersView: View {
     }
 
     private var explanation: some View {
-        Text("Serwery poniżej nie są zarządzane przez Agentbox — Codex albo Claude Code same je ładują w każdym projekcie. Odznaczenie folderu albo projektu przy serwerze dopisuje dla niego lokalny override (bez zmiany globalnego pliku); przełącznik zapisuje tylko wybór — zmiana trafia na dysk po „Synchronizuj wszystkie” w Projektach.")
+        Text("Codex i Claude Code ładują te serwery w każdym projekcie. Odznaczenie wyłącza serwer tylko tam; zmiana trafi na dysk przy synchronizacji.")
             .font(.caption).foregroundStyle(.secondary)
             .listRowSeparator(.hidden)
     }
