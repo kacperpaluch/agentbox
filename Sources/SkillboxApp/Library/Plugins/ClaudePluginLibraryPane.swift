@@ -46,7 +46,7 @@ struct ClaudePluginLibraryPane: View {
         .confirmationDialog("Usunąć plugin \(deleting?.name ?? "") z biblioteki?", item: $deleting) { deleting in
             Button("Usuń z biblioteki", role: .destructive) { Task { await model.deleteLibraryClaudePlugin(deleting) } }
             Button("Anuluj", role: .cancel) {}
-        } message: { _ in Text("\((usageForDeletion?.summary).map { "Wybrany przez: \($0). " } ?? "")Definicja zniknie z biblioteki i z wyboru projektów. Zainstalowane kopie usuniesz w inspektorze projektu, w zakładce Pluginy.") }
+        } message: { _ in Text("\((usageForDeletion?.summary).map { "Wybrany przez: \($0). " } ?? "")Definicja zniknie z biblioteki i z wyboru projektów. Zainstalowane kopie usuniesz w inspektorze projektu, na końcu zakładki Przegląd.") }
         .task(id: deleting?.id) { usageForDeletion = deleting == nil ? nil : await model.usage(ofPlugin: deleting!.id) }
     }
 }

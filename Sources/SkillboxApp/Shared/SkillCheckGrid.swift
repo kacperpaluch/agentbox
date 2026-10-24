@@ -8,9 +8,10 @@ struct SkillCheckGrid: View {
     let title: String
     let skills: [Skill]
     @Binding var selection: AttachmentSelection
+    var emptyText = "Biblioteka jest pusta."
     var body: some View {
         GroupBox(title) {
-            if skills.isEmpty { Text("Biblioteka jest pusta.").foregroundStyle(.secondary).padding(6) }
+            if skills.isEmpty { Text(emptyText).foregroundStyle(.secondary).padding(6).frame(maxWidth: .infinity, alignment: .leading) }
             else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) {
                     ForEach(skills.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { skill in

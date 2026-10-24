@@ -6,7 +6,7 @@ Agentbox nie uruchamia serwerów MCP i nie zastępuje klientów AI — przygotow
 
 W zakładce skilli można zaznaczyć cały nagłówek grupy (repozytorium, tag lub źródło), a następnie zbiorczo dodać tagi albo usunąć zaznaczone skille. Usunięcie zawsze wymaga potwierdzenia i odłącza skille od projektów; katalogi projektów zmienią się dopiero przy kolejnej synchronizacji.
 
-Zakładka `Pluginy` w inspektorze projektu przekazuje instalację marketplace’ów i pluginów do CLI Claude Code dla wskazanego projektu. Wybierz zakres `Projekt`, aby współdzielić wpis w `.claude/settings.json`, albo `Tylko ten Mac` dla `.claude/settings.local.json`. Przed instalacją Agentbox ostrzega, że plugin może zawierać hooki, MCP i programy wykonywalne.
+Menu `⋯` w inspektorze projektu → `Zainstaluj plugin Claude ręcznie…` przekazuje instalację marketplace’ów i pluginów do CLI Claude Code dla wskazanego projektu. Wybierz zakres `Projekt`, aby współdzielić wpis w `.claude/settings.json`, albo `Tylko ten Mac` dla `.claude/settings.local.json`. Przed instalacją Agentbox ostrzega, że plugin może zawierać hooki, MCP i programy wykonywalne.
 
 Pluginy można też definiować raz w `Biblioteka → Pluginy` (albo `agentbox plugin add|list|assign|remove`), wybrać dla projektów i instalować podczas zwykłej synchronizacji projektu. Definicje da się poprawiać i usuwać, a projekt z zaznaczonym, jeszcze niezainstalowanym pluginem jest oznaczony jako wymagający synchronizacji.
 
@@ -127,7 +127,7 @@ CLI `agentbox refresh` wykonuje ten workflow bez okna wyboru. `agentbox update -
 
 ## Projekty i synchronizacja
 
-Zaznaczony projekt otwiera się w inspektorze po prawej. `Przegląd` pokazuje, co Agentbox wybrał i dlaczego: bezpośrednio, przez tag albo z folderu nadrzędnego — z wykluczonymi skillami, wyłączonymi MCP, plikami do dodania lub usunięcia i lokalnymi zmianami skilli. `Wybór` zmienia przypisania na miejscu (z jawnym `Zapisz`), `Pluginy` pokazuje pluginy zainstalowane przez Claude Code, a przełącznik `Z folderu / Własne` decyduje, skąd projekt bierze ustawienia. W wierszu tabeli przycisk `Synchronizuj` pojawia się tylko przy projektach ze zmianami do zapisania. W terminalu: `agentbox project explain <nazwa>`.
+Zaznaczony projekt otwiera się w inspektorze po prawej. `Przegląd` pokazuje, co Agentbox wybrał i dlaczego: bezpośrednio, przez tag albo z folderu nadrzędnego — z wykluczonymi skillami, wyłączonymi MCP, plikami do dodania lub usunięcia i lokalnymi zmianami skilli. `Wybór` zmienia przypisania na miejscu w zwijanych sekcjach (z jawnym `Zapisz`), pluginy zainstalowane przez Claude Code są na końcu `Przeglądu`, a przełącznik `Z folderu / Własne` decyduje, skąd projekt bierze ustawienia. W wierszu tabeli przycisk `Synchronizuj` pojawia się tylko przy projektach ze zmianami do zapisania. W terminalu: `agentbox project explain <nazwa>`.
 
 Stan dotyczy konfiguracji Agentbox i plików, nie faktycznego załadowania narzędzi w sesji klienta AI. Globalny wybór skilli jest pokazany osobno, bez sprawdzania jego synchronizacji.
 

@@ -311,8 +311,9 @@ import SkillboxCore
     func deleteLibraryClaudePlugin(_ plugin: ClaudePluginDefinition) async { await perform { try await self.service?.deleteLibraryClaudePlugin(id: plugin.id); self.message = "Usunięto plugin \(plugin.name) z biblioteki" } }
     func selectedClaudePluginIDs(for project: Project) async throws -> [UUID] { try await service?.selectedClaudePluginIDs(projectID: project.id) ?? [] }
     func saveClaudePluginSelection(project: Project, ids: [UUID]) async { await perform { try await self.service?.setClaudePluginSelection(projectID: project.id, ids: ids); self.message = "Zapisano pluginy Claude dla \(project.name)" } }
-    func installClaudePlugin(project: Project, marketplace: String?, plugin: String, scope: ClaudePluginScope) async {
-        await perform {
+    @discardableResult
+    func installClaudePlugin(project: Project, marketplace: String?, plugin: String, scope: ClaudePluginScope) async -> Bool {
+        await performing {
             try await self.service?.installClaudePlugin(projectPath: project.path, marketplace: marketplace, plugin: plugin, scope: scope)
             self.message = "Zainstalowano plugin Claude w projekcie \(project.name)"
         }

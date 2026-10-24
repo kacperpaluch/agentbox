@@ -12,28 +12,33 @@ struct ProjectInspector: View {
     @State private var syncing = false
     @State private var adopting = false
     @State private var confirmingFollow = false
+    @State private var installingPlugin = false
 
     private var state: ProjectStatus.State? { model.statuses[project.id]?.state }
     private var root: ProjectRoot? { model.root(for: project) }
-    private var tabs: [InspectorTab] { model.enabledTools.contains(.claude) ? InspectorTab.allCases : [.overview, .attachments] }
+    private var usesClaude: Bool { model.enabledTools.contains(.claude) && project.tools.contains(.claude) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header.padding(Space.page)
             Divider()
-            Picker("Widok", selection: $tab) { ForEach(tabs) { Text($0.rawValue).tag($0) } }
+            Picker("Widok", selection: $tab) { ForEach(InspectorTab.allCases) { Text($0.rawValue).tag($0) } }
                 .pickerStyle(.segmented).labelsHidden()
                 .padding(.horizontal, Space.page).padding(.vertical, Space.row)
             Divider()
-            switch tabs.contains(tab) ? tab : .overview {
-            case .overview: scrolling { ProjectOverviewSection(model: model, project: project) { adopting = true } }
+            switch tab {
+            case .overview:
+                scrolling {
+                    ProjectOverviewSection(model: model, project: project) { adopting = true }
+                    if usesClaude { ClaudeInstalledPluginsSection(model: model, project: project) }
+                }
             // Scrolls itself, so its save bar can stay pinned below the form.
             case .attachments: ProjectAttachmentsSection(model: model, project: project)
-            case .plugins: scrolling { ClaudePluginsSection(model: model, project: project) }
             }
         }
         .sheet(isPresented: $syncing) { MCPPreviewView(model: model, project: project) }
         .sheet(isPresented: $adopting) { AdoptSkillsView(model: model, project: project) }
+        .sheet(isPresented: $installingPlugin) { ClaudePluginInstallView(model: model, project: project) }
         .confirmationDialog("Przełączyć \(project.name) na ustawienia folderu?", isPresented: $confirmingFollow) {
             Button("Przełącz na ustawienia folderu", role: .destructive) { Task { await model.followRoot([model.storedProject(id: project.id) ?? project]) } }
             Button("Anuluj", role: .cancel) {}
@@ -45,6 +50,11 @@ struct ProjectInspector: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(project.name).font(.title3.bold()).lineLimit(1)
                 Spacer()
+                Menu("Więcej akcji", systemImage: "ellipsis.circle") {
+                    Button("Przejmij z projektu…") { adopting = true }
+                    if usesClaude { Button("Zainstaluj plugin Claude ręcznie…") { installingPlugin = true } }
+                }
+                .labelStyle(.iconOnly).menuStyle(.borderlessButton).fixedSize()
                 if isPending {
                     Button("Synchronizuj…") { syncing = true }.buttonStyle(.borderedProminent).disabled(model.isWorking)
                 } else {
@@ -59,7 +69,7 @@ struct ProjectInspector: View {
     }
 
     private func scrolling(@ViewBuilder _ content: () -> some View) -> some View {
-        ScrollView { content().padding(Space.page).frame(maxWidth: .infinity, alignment: .leading) }
+        ScrollView { VStack(alignment: .leading, spacing: 0) { content() }.padding(Space.page).frame(maxWidth: .infinity, alignment: .leading) }
     }
 
     private var isPending: Bool { if case .pending? = state { true } else { false } }

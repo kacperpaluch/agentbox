@@ -6,6 +6,15 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.39.1] - 2026-10-24
+
+### Zmieniono
+
+- Formularz wyboru (inspektor, nowy projekt, folder, domyślne, Ten Mac) ma pole `Szukaj skilli i serwerów MCP`, które zawęża obie listy bez zmiany zaznaczeń. Nagłówki list pokazują `wybrane N z M`, także gdy filtr chowa część pozycji.
+- Lista skilli w formularzu nie ma już własnego paska przewijania — przewija się razem z całym formularzem, jak lista serwerów MCP.
+- `Skille`, `Serwery MCP`, `Pluginy Claude` i `Więcej opcji` w formularzu wyboru są zwijanymi sekcjami. Nagłówek każdej mówi, ile jest wybrane i przez jakie tagi; zwinięte sekcje są zapamiętywane.
+- Inspektor projektu ma dwie zakładki zamiast trzech. Pluginy zainstalowane przez Claude Code są na końcu `Przeglądu` (tylko gdy jakieś są), a ręczna instalacja otwiera się z menu `⋯` w nagłówku inspektora jako osobne okno, które zostaje otwarte przy błędzie.
+
 ## [0.39.0] - 2026-10-24
 
 ### Zmieniono
