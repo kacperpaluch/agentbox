@@ -42,7 +42,7 @@ struct AttachmentPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            GroupBox("Narzędzia") { LazyVGrid(columns: [GridItem(.adaptive(minimum: 110))], alignment: .leading) { ForEach(enabledTools, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: setBinding(tool, in: toolsBinding)).toggleStyle(.checkbox).fixedSize() } }.padding(6) }
+            GroupBox("Narzędzia") { CheckGrid(minimum: 110) { ForEach(enabledTools, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: setBinding(tool, in: toolsBinding)).toggleStyle(.checkbox).fixedSize() } }.padding(6) }
             TextField(includesServersAndDocs ? "Szukaj skilli i serwerów MCP" : "Szukaj skilli", text: $query)
                 .textFieldStyle(.roundedBorder)
             section("skills", title: "Skille", summary: summary(chosenSkills, of: skills.count, tags: selection.skillTags)) {
@@ -55,7 +55,7 @@ struct AttachmentPicker: View {
                     if !mcpTags.isEmpty { TagCheckGrid(title: "Tagi", tags: mcpTags, selection: serverTagsBinding) }
                     GroupBox("Lista") {
                         if shownServers.isEmpty { Text(query.isEmpty ? "Brak serwerów w bibliotece." : noMatch).foregroundStyle(.secondary).padding(6).frame(maxWidth: .infinity, alignment: .leading) }
-                        else { LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(shownServers.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { server in serverToggle(server) } }.padding(6) }
+                        else { CheckGrid(minimum: 190) { ForEach(shownServers.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { server in serverToggle(server) } }.padding(6) }
                     }
                 }
             }
@@ -128,7 +128,7 @@ struct AttachmentPicker: View {
     private var pluginIDsBinding: Binding<Set<UUID>> { Binding(get: { Set(selection.claudePluginIDs ?? []) }, set: { selection.claudePluginIDs = $0.sorted { $0.uuidString < $1.uuidString } }) }
     private var pluginSection: some View {
         GroupBox("Lista") {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) { ForEach(claudePlugins) { item in Toggle(item.name, isOn: setBinding(item.id, in: pluginIDsBinding)).toggleStyle(.checkbox).help(item.plugin) } }.padding(6)
+            CheckGrid(minimum: 190) { ForEach(claudePlugins) { item in Toggle(item.name, isOn: setBinding(item.id, in: pluginIDsBinding)).toggleStyle(.checkbox).help(item.plugin) } }.padding(6)
         }
     }
     /// A project can hold exactly one `AGENTS.md`, so the stored list is at most one long.

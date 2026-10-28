@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.39.2] - 2026-10-28
+
+### Naprawiono
+
+- Przewijanie formularza wyboru (zakładka `Wybór` w inspektorze i pozostałe formularze) nie odskakuje już w górę przy długiej liście skilli lub serwerów MCP.
+
 ## [0.39.1] - 2026-10-24
 
 ### Zmieniono

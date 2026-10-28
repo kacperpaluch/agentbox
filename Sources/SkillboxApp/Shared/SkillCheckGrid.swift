@@ -13,7 +13,7 @@ struct SkillCheckGrid: View {
         GroupBox(title) {
             if skills.isEmpty { Text(emptyText).foregroundStyle(.secondary).padding(6).frame(maxWidth: .infinity, alignment: .leading) }
             else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 190))], alignment: .leading) {
+                CheckGrid(minimum: 190) {
                     ForEach(skills.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { skill in
                         let tag = SkillPick.coveringTag(skill, in: selection)
                         Toggle(isOn: Binding(get: { SkillPick.isIncluded(skill, in: selection) }, set: { selection = SkillPick.setting(skill, included: $0, in: selection) })) {
