@@ -186,10 +186,12 @@ extension SkillboxService {
         var result: [ClaudePlugin] = []
         for scope in ClaudePluginScope.allCases {
             let file = project.appending(path: scope.settingsPath)
-            guard FileManager.default.fileExists(atPath: file.path),
-                  let data = try? Data(contentsOf: file),
-                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let enabled = root["enabledPlugins"] as? [String: Any] else { continue }
+            guard FileManager.default.fileExists(atPath: file.path) else { continue }
+            // A damaged settings file is reported, not shown as "no plugins installed".
+            guard let root = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any] else {
+                throw SkillboxError.invalidSkill("\(file.path) nie jest obiektem JSON")
+            }
+            guard let enabled = root["enabledPlugins"] as? [String: Any] else { continue }
             result += enabled.compactMap { name, value in
                 guard let isEnabled = Self.enabledFlag(value) else { return nil }
                 return ClaudePlugin(id: name, scope: scope, enabled: isEnabled)

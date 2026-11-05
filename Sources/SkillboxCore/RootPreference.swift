@@ -1,10 +1,13 @@
 import Foundation
 
 public enum AgentboxRootPreference {
-    public static func load(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL? {
+    /// `nil` when no folder was chosen. A file that exists but cannot be read throws: falling back
+    /// to the default folder would quietly open a different library than the one the user chose.
+    public static func load(home: URL = FileManager.default.homeDirectoryForCurrentUser) throws -> URL? {
         let file = home.appending(path: ".config/agentbox/root")
-        guard let text = try? String(contentsOf: file, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
-        return URL(fileURLWithPath: text)
+        guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+        let text = try String(contentsOf: file, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : URL(fileURLWithPath: text)
     }
 
     public static func save(_ root: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser) throws {

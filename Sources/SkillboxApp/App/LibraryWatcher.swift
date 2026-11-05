@@ -37,14 +37,16 @@ final class LibraryWatcher {
     /// The latency lets the system coalesce a burst — copying a skill directory is many events for
     /// one logical change — while `noDefer` still delivers the first one straight away, so a single
     /// saved file does not sit waiting for the full second.
-    func start(root: URL, onChange: @escaping @MainActor () -> Void) {
+    /// Returns whether the stream was created; a failure leaves the window without outside updates.
+    @discardableResult
+    func start(root: URL, onChange: @escaping @MainActor () -> Void) -> Bool {
         stop()
         let standardized = root.standardizedFileURL
         self.root = standardized
-        let context = Box(root: standardized, onChange: onChange)
+        let context = Unmanaged.passRetained(Box(root: standardized, onChange: onChange))
         var streamContext = FSEventStreamContext(
             version: 0,
-            info: Unmanaged.passRetained(context).toOpaque(),
+            info: context.toOpaque(),
             retain: nil,
             release: { pointer in pointer.map { Unmanaged<Box>.fromOpaque($0).release() } },
             copyDescription: nil
@@ -64,10 +66,16 @@ final class LibraryWatcher {
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             1.0,
             UInt32(kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer)
-        ) else { return }
+        ) else {
+            // No stream took ownership, so its `release` will never run for this box.
+            context.release()
+            self.root = nil
+            return false
+        }
         stream = created
         FSEventStreamSetDispatchQueue(created, DispatchQueue.main)
-        FSEventStreamStart(created)
+        guard FSEventStreamStart(created) else { stop(); return false }
+        return true
     }
 
     func stop() {

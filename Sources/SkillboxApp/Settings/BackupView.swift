@@ -23,7 +23,7 @@ struct BackupView: View {
                     VStack(alignment: .leading, spacing: Space.section - 2) {
                         Toggle("Automatycznie twórz pełny backup lokalny raz dziennie", isOn: $autoBackup)
                         Text("Kopie są przechowywane lokalnie w folderze biblioteki. Zawierają także projekty oraz wartości MCP.").rowMetadata()
-                        if let latest = model.fullBackups.first {
+                        if let latest = model.fullBackups.first(where: { $0.problem == nil }) {
                             Text("Ostatni pełny backup: \(latest.createdAt, format: .relative(presentation: .named)) (\(latest.createdAt, format: .dateTime))").rowMetadata()
                         } else { Text("Ostatni pełny backup: jeszcze żaden.").rowMetadata() }
                         if let error = model.automaticBackupError { Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
@@ -49,13 +49,18 @@ struct BackupView: View {
                             if model.fullBackups.isEmpty { Text("Brak pełnych backupów.").foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
                             ForEach(model.fullBackups) { backup in
                                 HStack {
-                                    Image(systemName: "archivebox.fill").foregroundStyle(.tint)
+                                    Image(systemName: backup.problem == nil ? "archivebox.fill" : "exclamationmark.triangle.fill").foregroundStyle(backup.problem == nil ? AnyShapeStyle(.tint) : AnyShapeStyle(.orange))
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(backup.createdAt, format: .dateTime).rowTitle()
-                                        Text("Agentbox \(backup.applicationVersion) · \(backup.name)").rowMetadata()
+                                        if let problem = backup.problem {
+                                            Text("Uszkodzony — nie da się go przywrócić: \(problem)").font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+                                            Text(backup.name).rowMetadata()
+                                        } else {
+                                            Text("Agentbox \(backup.applicationVersion) · \(backup.name)").rowMetadata()
+                                        }
                                     }
                                     Spacer()
-                                    Button("Przywróć") { fullBackupToRestore = backup }.buttonStyle(.bordered)
+                                    if backup.problem == nil { Button("Przywróć") { fullBackupToRestore = backup }.buttonStyle(.bordered) }
                                     Button("Usuń", role: .destructive) { fullBackupToDelete = backup }.buttonStyle(.bordered)
                                 }
                             }

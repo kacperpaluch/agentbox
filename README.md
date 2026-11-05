@@ -48,7 +48,7 @@ Od wersji 0.3.0 Agentbox sprawdza raz dziennie podpisany kanał aktualizacji Spa
 
 ## Folder biblioteki
 
-Domyślna lokalizacja to `~/Library/Application Support/Skillbox`. Stara nazwa została zachowana, aby aktualizacja aplikacji nie odcięła wcześniej utworzonych danych. W `Ustawienia → Folder biblioteki` można podłączyć istniejącą bibliotekę bez kopiowania albo wskazać pusty katalog, do którego zostaną skopiowane aktualne dane.
+Domyślna lokalizacja to `~/Library/Application Support/Skillbox`. Stara nazwa została zachowana, aby aktualizacja aplikacji nie odcięła wcześniej utworzonych danych. W `Ustawienia → Folder biblioteki` można podłączyć istniejącą bibliotekę bez kopiowania albo wskazać pusty katalog, do którego zostaną skopiowane aktualne dane. Gdy bieżąca biblioteka jest niedostępna, nie ma czego kopiować — wtedy wskaż folder istniejącej biblioteki. Nieudane kopiowanie usuwa to, co zdążyło trafić do wybranego folderu.
 
 ```text
 Skillbox/

@@ -6,6 +6,8 @@ struct ProjectsView: View {
     @Binding var showProject: Bool
     @State private var showBatch = false
     @State private var syncScope: SyncScope?
+    /// The preview for projects added from the detected-folders sheet, shown once that sheet is gone.
+    @State private var pendingSyncScope: SyncScope?
     @State private var editing: Project?
     @State private var previewProject: Project?
     @State private var deleting: Project?
@@ -78,7 +80,7 @@ struct ProjectsView: View {
     var body: some View {
         VStack(spacing: 0) {
             actionBar
-            if !model.detectedFolders.isEmpty { DetectedFoldersBanner(model: model) { showDetected = true }; Divider() }
+            if !model.detectedFolders.isEmpty { DetectedFoldersBanner(model: model, review: { showDetected = true }, synchronize: { syncScope = Self.newProjectsScope($0) }); Divider() }
             projectTable
         }
         .navigationTitle("Projekty")
@@ -93,7 +95,7 @@ struct ProjectsView: View {
         }
         .searchable(text: $search, prompt: "Nazwa lub ścieżka projektu")
         .sheet(isPresented: $showBatch) { BatchProjectView(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, existingProjects: model.projects, existingRoots: model.projectRoots, claudePlugins: model.claudePluginLibrary, initialSelection: model.projectDefaults) { request in await model.addBatch(request) } }
-        .sheet(isPresented: $showDetected) { DetectedFoldersView(model: model) }
+        .sheet(isPresented: $showDetected, onDismiss: { if let pending = pendingSyncScope { syncScope = pending; pendingSyncScope = nil } }) { DetectedFoldersView(model: model) { pendingSyncScope = Self.newProjectsScope($0) } }
         .sheet(isPresented: $showClientServers) { ClientServersView(model: model) }
         .sheet(item: $settingUpRoot) { group in GroupRootSetupView(model: model, folderPath: group.path, projects: group.projects) }
         .sheet(item: $editingRoot) { root in
@@ -249,6 +251,8 @@ struct ProjectsView: View {
         case .deleteRoot(let root): deletingRoot = root
         }
     }
+
+    private static func newProjectsScope(_ projects: [Project]) -> SyncScope { SyncScope(ids: Set(projects.map(\.id)), title: "Synchronizacja nowych projektów") }
 
     private func syncChecked() { syncScope = SyncScope(ids: Set(checkedProjects.map(\.id)), title: "Synchronizacja zaznaczonych projektów") }
 

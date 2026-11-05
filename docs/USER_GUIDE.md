@@ -263,7 +263,7 @@ Podfoldery, które leżą w folderze w chwili jego tworzenia i nie stają się p
 
 Nowy podfolder — na przykład świeżo sklonowane repozytorium — pojawia się jako baner nad listą projektów, a liczba wykrytych folderów jest widoczna jako plakietka przy `Projekty` w menu bocznym. `Przejrzyj…` otwiera listę wykrytych folderów, w której można:
 
-- `Dodaj i synchronizuj` — dodaje projekty i od razu synchronizuje je ustawieniami folderu,
+- `Dodaj i synchronizuj…` — dodaje projekty i otwiera podgląd synchronizacji z dokładnymi ścieżkami i zmianami; nic nie trafia do projektów przed jego zatwierdzeniem (ten sam przycisk jest na banerze),
 - `Dodaj bez synchronizacji` — dodaje projekty i zostawia synchronizację na później,
 - `Pomijaj zaznaczone` — zapamiętuje odmowę, więc Agentbox nie zapyta o te foldery ponownie,
 - `Później` — zostawia pytanie na następny raz.
@@ -339,7 +339,7 @@ Sekcja `Automatyzacja` pokazuje ostatnią udaną pełną kopię. Błąd automaty
 
 Pełny backup lokalny chroni projekty i wszystkie wartości MCP. Powstaje automatycznie raz dziennie, gdy automatyzacja w `Ustawienia → Backup i odzyskiwanie → Automatyzacja` jest włączona; przycisk `Utwórz teraz` robi to samo na żądanie. Tworzy czytelną kopię w `<biblioteka>/backups/full/<data>/`. Zawiera `catalog.json`, `selections.json`, `projects.local.json`, `mcp.json`, `docs.json`, metadane `backup.json` oraz cały katalog `skills/`. Hasła i tokeny są widoczne lokalnie w `mcp.json`.
 
-Folder `backups/` jest lokalny i nie jest wysyłany przez Agentbox do Gita. Pełny backup nie jest szyfrowany — nie umieszczaj go w chmurze ani repozytorium bez dodatkowego szyfrowania. Zachowywanych jest 14 ostatnich kopii; starsze są usuwane automatycznie, więc miejsce na dysku nie rośnie bez końca. Przed przywróceniem Agentbox waliduje wszystkie pliki JSON i katalog skilli, następnie zapisuje aktualny stan w `backups/restore-rollbacks/`. Nieudana operacja automatycznie odtwarza poprzednie dane. Z interfejsu można również usunąć wybraną pełną kopię po potwierdzeniu.
+Folder `backups/` jest lokalny i nie jest wysyłany przez Agentbox do Gita. Pełny backup nie jest szyfrowany — nie umieszczaj go w chmurze ani repozytorium bez dodatkowego szyfrowania. Zachowywanych jest 14 ostatnich kopii; starsze są usuwane automatycznie, więc miejsce na dysku nie rośnie bez końca. Przed przywróceniem Agentbox waliduje wszystkie pliki JSON i katalog skilli, następnie zapisuje aktualny stan w `backups/restore-rollbacks/`. Nieudana operacja automatycznie odtwarza poprzednie dane. Z interfejsu można również usunąć wybraną pełną kopię po potwierdzeniu. Kopia, której `backup.json` nie da się odczytać, nie znika z listy: jest oznaczona jako uszkodzona, z powodem, bez przycisku `Przywróć`, i można ją usunąć. Taka kopia nie liczy się jako ostatni backup, więc automatyzacja utworzy nową.
 
 ## Pliki projektu i Git
 

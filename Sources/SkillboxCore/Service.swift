@@ -472,7 +472,8 @@ public actor SkillboxService {
     @discardableResult
     public func addProject(name: String, path: String, tools: [Tool]) async throws -> Project {
         let url = URL(fileURLWithPath: path).standardizedFileURL
-        guard fm.fileExists(atPath: url.path) else { throw SkillboxError.projectNotFound(path) }
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(path) }
         var config = try await store.configuration()
         guard !config.projects.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(name) już istnieje") }
         let project = Project(name: name, path: url.path)
@@ -520,10 +521,6 @@ public actor SkillboxService {
         // manifests first — the same `unsyncProject` a removal uses. A folder that was moved no
         // longer exists at the old path, and its files travelled with it to the new one.
         let previousPath = config.projects[index].path
-        if URL(fileURLWithPath: previousPath).standardizedFileURL.path != URL(fileURLWithPath: project.path).standardizedFileURL.path,
-           fm.fileExists(atPath: previousPath, isDirectory: &isDirectory), isDirectory.boolValue {
-            _ = try await unsyncProject(id: project.id)
-        }
         config.projects[index] = project
         // A project following its parent folder reads the folder's selection, so writing one under
         // its own id would only leave a record nothing ever uses.
@@ -532,7 +529,16 @@ public actor SkillboxService {
         } else {
             config.selections[project.id.uuidString] = Self.pruned(selection, catalog: try await store.catalog(), mcp: try await store.mcpConfiguration(), docs: try await store.docsConfiguration())
         }
-        try await store.save(config)
+        // Everything the save needs is read above. The old folder is cleaned and the new record
+        // saved as one transaction: a failed save puts the old folder's files back, so the record
+        // and the disk never disagree about where the project's files are.
+        if URL(fileURLWithPath: previousPath).standardizedFileURL.path != URL(fileURLWithPath: project.path).standardizedFileURL.path,
+           fm.fileExists(atPath: previousPath, isDirectory: &isDirectory), isDirectory.boolValue {
+            let updated = config
+            _ = try await unsyncProject(id: project.id, commit: { try await self.store.save(updated) })
+        } else {
+            try await store.save(config)
+        }
     }
 
     static func prunedServerIDs(_ serverIDs: [UUID], tags: [String], servers: [MCPServer]) -> [UUID] {
@@ -681,7 +687,7 @@ public actor SkillboxService {
         for tool in project.tools {
             let target = URL(fileURLWithPath: project.path).appending(path: tool.projectSkillsPath)
             let managed = try Self.managedSkillIDs(at: target)
-            let entries = (try? fm.contentsOfDirectory(at: target, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+            let entries = fm.fileExists(atPath: target.path) ? try fm.contentsOfDirectory(at: target, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) : []
             for entry in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
                 let id = entry.lastPathComponent
                 guard !managed.contains(id), !known.contains(id) else { continue }
@@ -720,8 +726,19 @@ public actor SkillboxService {
         let existing = try fm.contentsOfDirectory(at: target, includingPropertiesForKeys: nil)
             .filter { $0.lastPathComponent != ".DS_Store" }
         guard existing.isEmpty else { throw SkillboxError.invalidSkill("wybrany folder nie jest pusty") }
-        for item in try fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil) {
-            try fm.copyItem(at: item, to: target.appending(path: item.lastPathComponent))
+        // The folder was empty, so everything copied into it is ours to take back. A half-made
+        // copy would hold `mcp.json` outside any backup and block the next attempt as "not empty".
+        var copied: [URL] = []
+        do {
+            for item in try fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil) {
+                let destination = target.appending(path: item.lastPathComponent)
+                try fm.copyItem(at: item, to: destination)
+                copied.append(destination)
+            }
+        } catch {
+            var report = RollbackReport()
+            for item in copied.reversed() { report.attempt(item.path) { try fm.removeItem(at: item) } }
+            throw report.error(after: error)
         }
     }
 
@@ -746,7 +763,7 @@ public actor SkillboxService {
         // A tool unticked in the project keeps its manifest until this cleanup runs; syncing an
         // empty selection into its target removes everything the manifest lists and the manifest
         // itself, instead of leaving orphaned files in the repository.
-        for tool in Self.abandonedTools(project: project, among: config.activeTools) {
+        for tool in try Self.abandonedTools(project: project, among: config.activeTools) {
             let target = try Self.managedTarget(project: URL(fileURLWithPath: project.path), tool: tool)
             results[tool] = try await sync(skills: [], to: target, dryRun: dryRun)
         }
@@ -1024,13 +1041,13 @@ public actor SkillboxService {
         // A library written before 0.29.0 can still hold a repository's `.git` inside a skill; it
         // must not reach the project, where Git records it as an embedded repository.
         let embedded = staging.appending(path: ".git")
-        if fm.fileExists(atPath: embedded.path) { try fm.removeItem(at: embedded) }
+        do { if fm.fileExists(atPath: embedded.path) { try fm.removeItem(at: embedded) } }
+        catch { var report = RollbackReport(); report.attempt(staging.path) { try fm.removeItem(at: staging) }; throw report.error(after: error) }
         let previous = destination.deletingLastPathComponent().appending(path: ".skillbox-previous-\(UUID().uuidString)")
         let existed = fm.fileExists(atPath: destination.path)
         if existed { try fm.moveItem(at: destination, to: previous) }
         do {
             try fm.moveItem(at: staging, to: destination)
-            if existed { try? fm.removeItem(at: previous) }
         } catch {
             try? fm.removeItem(at: staging)
             var report = RollbackReport()
@@ -1038,6 +1055,11 @@ public actor SkillboxService {
                 report.attempt(destination.path) { try fm.moveItem(at: previous, to: destination) }
             }
             throw report.error(after: error, keeping: report.succeeded ? nil : previous.path)
+        }
+        // Reported rather than swallowed: the old version would stay in the user's repository.
+        if existed {
+            do { try fm.removeItem(at: previous) }
+            catch { throw SkillboxError.commandFailed("nie można usunąć poprzedniej wersji \(previous.path): \(error.localizedDescription)") }
         }
     }
 }

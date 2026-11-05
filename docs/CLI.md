@@ -263,4 +263,6 @@ Kilka rzeczy jest wyłącznie w aplikacji, bo wymagają wyboru albo okna:
 
 ## Kody zakończenia i błędy
 
-Powodzenie kończy proces kodem `0`. Błąd jest wypisywany na standardowe wyjście błędów i kończy proces kodem `1`, dzięki czemu CLI może być używane w skryptach.
+Powodzenie kończy proces kodem `0`. Błąd jest wypisywany na standardowe wyjście błędów i kończy proces kodem `1`, dzięki czemu CLI może być używane w skryptach. Błąd użycia — nieznana komenda, brak podkomendy albo brak wymaganych argumentów — wypisuje składnię na standardowe wyjście błędów i kończy proces kodem `2`. `agentbox`, `agentbox help` i `--help` to zwykła pomoc z kodem `0`.
+
+`--file -` czyta treść ze standardowego wejścia; dane, które nie są tekstem UTF-8, są odrzucane zamiast tworzyć pusty skill lub dokument. Nieczytelny plik `~/.config/agentbox/root` jest błędem — CLI nie przełącza się wtedy po cichu na domyślną bibliotekę.

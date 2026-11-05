@@ -33,6 +33,21 @@ public enum AgentboxCommand {
         public let errorDescription: String?
     }
 
+    /// A command typed wrong — missing arguments or an unknown name. It carries the usage text, and
+    /// the executable exits with status 2, so a script cannot take a typo for a successful run.
+    public struct UsageError: LocalizedError {
+        public let errorDescription: String?
+        init(_ text: String) { errorDescription = text }
+    }
+
+    /// Standard input as text. Bytes that are not UTF-8 are refused instead of becoming an empty skill.
+    private static func standardInputText() throws -> String {
+        guard let text = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) else {
+            throw SkillboxError.invalidSkill("standardowe wejście nie jest tekstem UTF-8")
+        }
+        return text
+    }
+
     private static func requireAllSynced(_ lines: [String], outcomes: [ProjectSyncOutcome]) throws -> [String] {
         let failed = outcomes.filter { $0.state != .synced && $0.state != .upToDate }.count
         guard failed == 0 else { throw PartialFailure(lines: lines, errorDescription: "\(failed) z \(PolishNoun.projectGenitive(outcomes.count)) nie zostało zsynchronizowanych") }
@@ -54,7 +69,7 @@ public enum AgentboxCommand {
             let file = option("--file", in: args)
             let content: String
             switch file {
-            case "-": content = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            case "-": content = try standardInputText()
             case .some(let path): content = try String(contentsOf: URL(fileURLWithPath: path), encoding: .utf8)
             case .none: content = "Opisz tutaj, co skill ma robić.\n"
             }
@@ -77,11 +92,11 @@ public enum AgentboxCommand {
             }
             return ["Dodano \(try await service.addLocal(path: value, id: id).id)"]
         case "tag":
-            guard rest.count >= 2 else { return ["Użycie: agentbox tag <skill> <tag...>"] }
+            guard rest.count >= 2 else { throw UsageError("Użycie: agentbox tag <skill> <tag...>") }
             try await service.setTags(skillID: rest[0], tags: Array(rest.dropFirst()))
             return ["Zapisano tagi"]
         case "update":
-            guard let target = rest.first else { return ["Użycie: agentbox update <skill|--all> [--dry-run]"] }
+            guard let target = rest.first else { throw UsageError("Użycie: agentbox update <skill|--all> [--dry-run]") }
             let plan = try await service.previewSkillUpdates(ids: target == "--all" ? nil : [target])
             if args.contains("--dry-run") { return updatePreviewLines(plan) }
             let updated = try await service.applySkillUpdates(plan.updates)
@@ -114,7 +129,7 @@ public enum AgentboxCommand {
         case "tools":
             if rest.first == "set", rest.count >= 2 {
                 try await service.setEnabledTools(try rest[1].split(separator: ",").map { try tool(String($0)) })
-            } else if !rest.isEmpty { return ["Użycie: agentbox tools [set claude,codex]"] }
+            } else if !rest.isEmpty { throw UsageError("Użycie: agentbox tools [set claude,codex]") }
             let enabled = try await service.enabledTools()
             return Tool.allCases.map { "\(enabled.contains($0) ? "✓" : "–") \($0.rawValue)" }
         case "project": return try await project(rest, service: service, args: args)
@@ -123,12 +138,12 @@ public enum AgentboxCommand {
         case "mcp": return try await mcp(rest, service: service, args: args)
         case "docs": return try await docs(rest, service: service, args: args)
         case "plugin", "plugins": return try await plugin(rest, service: service, args: args)
-        default: return [help]
+        default: throw UsageError("Nieznana komenda: \(command)\n\n" + help)
         }
     }
 
     private static func project(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
-        guard let action = rest.first else { return [projectUsage] }
+        guard let action = rest.first else { throw UsageError(projectUsage) }
         switch action {
         case "list":
             return try await service.listProjects().map { "\($0.name)\t\($0.path)\t\($0.tools.map(\.rawValue).joined(separator: ","))" }
@@ -223,7 +238,9 @@ public enum AgentboxCommand {
             // Existing projects in the folder join it; --keep-own names the ones that stay on their
             // own settings instead of the folder's.
             let folderURL = URL(fileURLWithPath: rest[2]).standardizedFileURL
-            let inside = try await service.storedProjects().filter { URL(fileURLWithPath: $0.path).standardizedFileURL.deletingLastPathComponent().path == folderURL.path }
+            // Compared after symlinks are resolved: a project added through a link is still inside.
+            let resolvedFolder = folderURL.resolvingSymlinksInPath().path
+            let inside = try await service.storedProjects().filter { URL(fileURLWithPath: $0.path).standardizedFileURL.resolvingSymlinksInPath().deletingLastPathComponent().path == resolvedFolder }
             guard !inside.isEmpty else { throw SkillboxError.projectNotFound("brak projektów w \(folderURL.path)") }
             let keepOwn = Set(csv("--keep-own", in: args))
             let owners = inside.filter { keepOwn.contains($0.name) }.map(\.id)
@@ -279,7 +296,7 @@ public enum AgentboxCommand {
             guard let root = try await service.projectRoots().first(where: { $0.name == rest[1] }) else { throw SkillboxError.projectNotFound(rest[1]) }
             try await service.clearIgnoredFolders(rootID: root.id)
             return ["Wyczyszczono listę pominiętych podfolderów w \(root.name)"]
-        default: return [projectUsage]
+        default: throw UsageError(projectUsage)
         }
     }
 
@@ -294,7 +311,7 @@ public enum AgentboxCommand {
     private static let projectUsage = "Użycie: agentbox project add <nazwa> <folder> [--tools claude,codex,opencode,vibe] | set <nazwa> [--skills a,b] [--tags web] | add-tool <narzędzie> | list | status | explain <nazwa> | adopt <nazwa> [--yes] | adopt-changes <nazwa> [--yes] | unsync <nazwa> | remove <nazwa> [--clean] | remove-missing [--yes] | root-adopt <nazwa> <folder> [--skills a,b] [--tags x] [--keep-own projekt] | root-add <nazwa> <folder> [--tools t] [--skills a,b] [--tags x] [--folders alpha,beta] [--no-watch] | roots | scan [--root nazwa] | adopt-new [--root nazwa] [--yes] [--sync] | ignore-new [--root nazwa] | unignore <folder>"
 
     private static func sync(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
-        guard let mode = rest.first else { return [syncUsage] }
+        guard let mode = rest.first else { throw UsageError(syncUsage) }
         let dry = args.contains("--dry-run")
         switch mode {
         case "project" where rest.count >= 2:
@@ -339,7 +356,7 @@ public enum AgentboxCommand {
                 }
             }
             return try requireAllSynced(lines, outcomes: outcomes)
-        default: return [syncUsage]
+        default: throw UsageError(syncUsage)
         }
     }
 
@@ -378,7 +395,7 @@ public enum AgentboxCommand {
         let backupName: String
         if updated.isEmpty { backupName = try await service.createFullBackup(applicationVersion: "CLI").name }
         else {
-            guard let backup = try await service.fullBackups().first else { throw SkillboxError.commandFailed("Brak pełnego backupu po aktualizacji") }
+            guard let backup = try await service.fullBackups().first(where: { $0.problem == nil }) else { throw SkillboxError.commandFailed("Brak pełnego backupu po aktualizacji") }
             backupName = backup.name
         }
         lines += updateLines(SkillUpdateResult(updated: updated, unchanged: plan.unchanged))
@@ -426,7 +443,7 @@ public enum AgentboxCommand {
     }
 
     private static func mcp(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
-        guard let action = rest.first else { return [mcpUsage] }
+        guard let action = rest.first else { throw UsageError(mcpUsage) }
         let config = try await service.mcpConfiguration()
         switch action {
         case "list":
@@ -463,7 +480,7 @@ public enum AgentboxCommand {
             return ["Zsynchronizowano MCP"]
         case "global" where rest.count >= 2:
             return try await mcpGlobal(Array(rest.dropFirst()), service: service, args: args)
-        default: return [mcpUsage]
+        default: throw UsageError(mcpUsage)
         }
     }
 
@@ -478,9 +495,9 @@ public enum AgentboxCommand {
     /// the only way to reach a project that inherits from one — its own record holds no MCP
     /// selection to change.
     private static func mcpGlobal(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
-        guard let action = rest.first else { return [mcpUsage] }
+        guard let action = rest.first else { throw UsageError(mcpUsage) }
         if action == "defaults" { return try await mcpGlobalDefaults(rest, service: service) }
-        guard rest.count >= 2 else { return [mcpUsage] }
+        guard rest.count >= 2 else { throw UsageError(mcpUsage) }
         let target = try await resolveGlobalTarget(rest[1], folder: args.contains("--folder"), service: service)
         switch action {
         case "list":
@@ -504,7 +521,7 @@ public enum AgentboxCommand {
             let verb = turningOff ? "Wyłączono" : "Włączono z powrotem"
             let sync = target.isFolder ? "agentbox sync all" : "agentbox sync project \(target.name)"
             return ["\(verb) \(name) (\(parsedTool.rawValue)) dla \(target.name) — uruchom `\(sync)`, żeby zapisać zmianę"]
-        default: return [mcpUsage]
+        default: throw UsageError(mcpUsage)
         }
     }
 
@@ -524,7 +541,7 @@ public enum AgentboxCommand {
         switch rest[1] {
         case "add": names.insert(name)
         case "remove": names.remove(name)
-        default: return [mcpUsage]
+        default: throw UsageError(mcpUsage)
         }
         try await service.setDefaultDisabledGlobalServers(tool: parsedTool, names: Array(names))
         let verb = rest[1] == "add" ? "będą startować z wyłączonym" : "nie będą już startować z wyłączonym"
@@ -559,7 +576,7 @@ public enum AgentboxCommand {
     }
 
     private static func docs(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
-        guard let action = rest.first else { return [docsUsage] }
+        guard let action = rest.first else { throw UsageError(docsUsage) }
         switch action {
         case "list":
             let config = try await service.docsConfiguration()
@@ -568,7 +585,7 @@ public enum AgentboxCommand {
             let file = option("--file", in: args)
             let content: String
             switch file {
-            case "-": content = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            case "-": content = try standardInputText()
             case .some(let path): content = try String(contentsOf: URL(fileURLWithPath: path), encoding: .utf8)
             case .none: content = ""
             }
@@ -594,7 +611,7 @@ public enum AgentboxCommand {
             let project = try await resolve(rest[1], service: service)
             _ = try await service.syncDocs(projectID: project.id)
             return ["Zsynchronizowano dokumenty"]
-        default: return [docsUsage]
+        default: throw UsageError(docsUsage)
         }
     }
 
@@ -605,7 +622,7 @@ public enum AgentboxCommand {
     /// installed — so a scripted `agentbox refresh` could apply a selection nobody could make
     /// without opening the app.
     private static func plugin(_ rest: [String], service: SkillboxService, args: [String]) async throws -> [String] {
-        guard let action = rest.first else { return [pluginUsage] }
+        guard let action = rest.first else { throw UsageError(pluginUsage) }
         switch action {
         case "list":
             let definitions = try await service.libraryClaudePlugins()
@@ -638,7 +655,7 @@ public enum AgentboxCommand {
             return ids.isEmpty
                 ? ["Wyczyszczono wybór pluginów dla \(project.name)"]
                 : ["Przypisano pluginy do \(project.name): \(names.joined(separator: ", ")) — uruchom `agentbox sync project \(project.name)`, żeby je zainstalować"]
-        default: return [pluginUsage]
+        default: throw UsageError(pluginUsage)
         }
     }
 

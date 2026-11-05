@@ -18,12 +18,19 @@ final class GlobalMCPTests: AgentboxTestCase {
         try #"{"mcpServers":{"hubspot":{"type":"http","url":"https://mcp.hubspot.com"}},"projects":{"/some/path":{"mcpServers":{"local-only":{"command":"x"}}}}}"#
             .write(to: home.appending(path: ".claude.json"), atomically: true, encoding: .utf8)
 
-        XCTAssertEqual(Set(GlobalMCPDiscovery.codexGlobalServerNames(home: home)), ["apple-mail", "quoted-name"])
-        XCTAssertEqual(GlobalMCPDiscovery.claudeGlobalServerNames(home: home), ["hubspot"])
+        XCTAssertEqual(Set(try GlobalMCPDiscovery.codexGlobalServerNames(home: home)), ["apple-mail", "quoted-name"])
+        XCTAssertEqual(try GlobalMCPDiscovery.claudeGlobalServerNames(home: home), ["hubspot"])
 
         let empty = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-        XCTAssertEqual(GlobalMCPDiscovery.codexGlobalServerNames(home: empty), [])
-        XCTAssertEqual(GlobalMCPDiscovery.claudeGlobalServerNames(home: empty), [])
+        XCTAssertEqual(try GlobalMCPDiscovery.codexGlobalServerNames(home: empty), [])
+        XCTAssertEqual(try GlobalMCPDiscovery.claudeGlobalServerNames(home: empty), [])
+    }
+
+    func testDamagedGlobalConfigurationIsAnErrorNotAnEmptyList() throws {
+        let home = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try "{ zepsuty".write(to: home.appending(path: ".claude.json"), atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(try GlobalMCPDiscovery.claudeGlobalServerNames(home: home))
     }
     func testGlobalMCPServersExcludesAlreadyAssignedNamesAndUnrelatedTools() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)

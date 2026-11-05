@@ -74,7 +74,7 @@ struct MCPPane: View {
             if checked.count < 2 {
                 Button { showAdd = true } label: { Label("Dodaj serwer", systemImage: "plus") }
                     .buttonStyle(.borderedProminent)
-                Button { Task { bulkJSON = IdentifiableString(value: await model.exportMCPConfigurationJSON()) } } label: {
+                Button { Task { do { bulkJSON = IdentifiableString(value: try await model.exportMCPConfigurationJSON()) } catch { model.reportError(error) } } } label: {
                     Label("Edytuj całą konfigurację", systemImage: "curlybraces")
                 }
                 .buttonStyle(.bordered)

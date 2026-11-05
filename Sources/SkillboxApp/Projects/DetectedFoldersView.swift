@@ -6,6 +6,9 @@ import SkillboxCore
 struct DetectedFoldersView: View {
     @Environment(\.dismiss) private var dismiss
     let model: AppModel
+    /// Called with the projects just added when the user asked to synchronize them; the preview
+    /// opens once this sheet is gone.
+    let synchronize: ([Project]) -> Void
     @State private var selected = Set<String>()
 
     private var groups: [(name: String, folders: [DetectedProjectFolder])] {
@@ -39,8 +42,8 @@ struct DetectedFoldersView: View {
                 Button("Pomijaj zaznaczone") { let folders = chosen; Task { if await model.ignoreDetected(folders) { dismiss() } } }.disabled(selected.isEmpty || model.isWorking)
                 Spacer()
                 Button("Później") { dismiss() }
-                Button("Dodaj bez synchronizacji") { let folders = chosen; Task { if await model.addDetected(folders, synchronizing: false) { dismiss() } } }.disabled(selected.isEmpty || model.isWorking)
-                Button("Dodaj i synchronizuj") { let folders = chosen; Task { if await model.addDetected(folders, synchronizing: true) { dismiss() } } }.buttonStyle(.borderedProminent).disabled(selected.isEmpty || model.isWorking)
+                Button("Dodaj bez synchronizacji") { let folders = chosen; Task { if await model.addDetected(folders) != nil { dismiss() } } }.disabled(selected.isEmpty || model.isWorking)
+                Button("Dodaj i synchronizuj…") { let folders = chosen; Task { if let added = await model.addDetected(folders) { if !added.isEmpty { synchronize(added) }; dismiss() } } }.buttonStyle(.borderedProminent).disabled(selected.isEmpty || model.isWorking)
             }
         }
         .padding(24)

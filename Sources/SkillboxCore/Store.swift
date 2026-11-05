@@ -217,7 +217,8 @@ public actor SkillboxStore {
         }
     }
     public func secrets() throws -> [String: String] { try read(secretsURL, fallback: [:]) }
-    public func replaceSecrets(_ values: [String: String]) throws { try writeSecrets(values) }
+    /// Test seam for libraries written before 0.18.0; nothing in the app writes this file any more.
+    func replaceSecrets(_ values: [String: String]) throws { try writeSecrets(values) }
     private func writeSecrets(_ values: [String: String]) throws {
         try Self.writeData(encoder.encode(values), to: secretsURL)
     }
@@ -241,7 +242,7 @@ public actor SkillboxStore {
     public func restoreSnapshot(named name: String) throws -> [String] {
         guard name == URL(fileURLWithPath: name).lastPathComponent, !name.contains("..") else { throw SkillboxError.unsafePath(name) }
         let directory = snapshotsDirectory.appending(path: name).standardizedFileURL
-        guard directory.deletingLastPathComponent() == snapshotsDirectory.standardizedFileURL else { throw SkillboxError.unsafePath(directory.path) }
+        guard Self.isDirectChild(directory, of: snapshotsDirectory) else { throw SkillboxError.unsafePath(directory.path) }
         let targets = ["catalog.json": catalogURL, "projects.local.json": localURL, "selections.json": selectionsURL, "mcp.json": mcpURL, "docs.json": docsURL]
         var replacements: [URL: Data] = [:]
         for (filename, target) in targets {
@@ -278,9 +279,16 @@ public actor SkillboxStore {
     public func fullBackups() throws -> [FullBackupInfo] {
         let directory = root.appending(path: "backups/full")
         guard fm.fileExists(atPath: directory.path) else { return [] }
-        return try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]).compactMap { item in
-            guard let metadata = try? decoder.decode(FullBackupMetadata.self, from: Data(contentsOf: item.appending(path: "backup.json"))) else { return nil }
-            return FullBackupInfo(name: item.lastPathComponent, createdAt: metadata.createdAt, applicationVersion: metadata.applicationVersion)
+        return try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]).map { item in
+            do {
+                let metadata = try decoder.decode(FullBackupMetadata.self, from: Data(contentsOf: item.appending(path: "backup.json")))
+                return FullBackupInfo(name: item.lastPathComponent, createdAt: metadata.createdAt, applicationVersion: metadata.applicationVersion)
+            } catch {
+                // A backup that cannot be read is still listed, with the reason: hiding it would make
+                // a part of the recovery story disappear without a word.
+                let date = (try? item.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return FullBackupInfo(name: item.lastPathComponent, createdAt: date, applicationVersion: "?", problem: error.localizedDescription)
+            }
         }.sorted { $0.createdAt > $1.createdAt }
     }
 
@@ -331,7 +339,7 @@ public actor SkillboxStore {
     public func restoreFullBackup(named name: String) throws {
         guard name == URL(fileURLWithPath: name).lastPathComponent, !name.contains("..") else { throw SkillboxError.unsafePath(name) }
         let package = root.appending(path: "backups/full/\(name)").standardizedFileURL
-        guard package.deletingLastPathComponent() == root.appending(path: "backups/full").standardizedFileURL else { throw SkillboxError.unsafePath(name) }
+        guard Self.isDirectChild(package, of: root.appending(path: "backups/full")) else { throw SkillboxError.unsafePath(name) }
         let metadata = try decoder.decode(FullBackupMetadata.self, from: Data(contentsOf: package.appending(path: "backup.json")))
         guard metadata.formatVersion == 1 else { throw SkillboxError.invalidSkill("nieobsługiwana wersja pełnego backupu") }
         _ = try decoder.decode(Catalog.self, from: Data(contentsOf: package.appending(path: "catalog.json")))
@@ -405,8 +413,15 @@ public actor SkillboxStore {
     public func deleteFullBackup(named name: String) throws {
         guard name == URL(fileURLWithPath: name).lastPathComponent, !name.contains("..") else { throw SkillboxError.unsafePath(name) }
         let target = root.appending(path: "backups/full/\(name)").standardizedFileURL
-        guard target.deletingLastPathComponent() == root.appending(path: "backups/full").standardizedFileURL else { throw SkillboxError.unsafePath(name) }
+        guard Self.isDirectChild(target, of: root.appending(path: "backups/full")) else { throw SkillboxError.unsafePath(name) }
         try fm.removeItem(at: target)
+    }
+
+    /// Checked after symlinks are resolved, not by spelling: an entry that is a link to somewhere
+    /// else is a direct child by name only, and restoring from it would read data from outside.
+    static func isDirectChild(_ item: URL, of parent: URL) -> Bool {
+        item.resolvingSymlinksInPath().deletingLastPathComponent() == parent.standardizedFileURL.resolvingSymlinksInPath()
+            && item.standardizedFileURL.deletingLastPathComponent() == parent.standardizedFileURL
     }
 
     private func pruneFullRestoreBackups(at directory: URL, keeping limit: Int) throws {

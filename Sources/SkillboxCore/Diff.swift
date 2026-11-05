@@ -67,7 +67,8 @@ public enum TextDiff {
     /// The difference between a file on disk and the content a synchronization would put there.
     /// An empty `content` means the file is to be removed, so everything in it counts as removed.
     public static func lines(file: String, content: String, context: Int = 3) -> [DiffLine] {
-        let existing = (try? String(contentsOf: URL(fileURLWithPath: file), encoding: .utf8)) ?? ""
-        return lines(old: existing, new: content, context: context)
+        guard FileManager.default.fileExists(atPath: file) else { return lines(old: "", new: content, context: context) }
+        do { return lines(old: try String(contentsOf: URL(fileURLWithPath: file), encoding: .utf8), new: content, context: context) }
+        catch { return [DiffLine(kind: .gap, text: "Nie można odczytać \(file): \(error.localizedDescription)", id: 0)] }
     }
 }

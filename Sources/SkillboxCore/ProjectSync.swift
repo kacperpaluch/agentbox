@@ -104,14 +104,17 @@ extension SkillboxService {
 
     /// Removes everything Agentbox wrote into a project, using its manifests as the only source of
     /// truth, and leaves the project folder otherwise untouched.
+    ///
+    /// `commit` runs as the last step of the same transaction: when it fails, the files removed
+    /// here are put back. `updateProject` uses it to save the project's new folder.
     @discardableResult
-    public func unsyncProject(id: UUID) async throws -> [String] {
+    public func unsyncProject(id: UUID, commit: (() async throws -> Void)? = nil) async throws -> [String] {
         let config = try await store.configuration()
         guard let project = config.resolvedProjects.first(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
         let projectURL = URL(fileURLWithPath: project.path)
         let fm = FileManager.default
         // Including tools the project no longer lists, so their manifests are cleaned up too.
-        let tools = project.tools + Self.abandonedTools(project: project)
+        let tools = try project.tools + Self.abandonedTools(project: project)
         var targets = try tools.map { try SkillboxService.managedTarget(project: projectURL, tool: $0) }
         let mcpPreviews = try await previewMCPRemovingEverything(project: project)
         targets += mcpPreviews.map { URL(fileURLWithPath: $0.file) }
@@ -162,6 +165,8 @@ extension SkillboxService {
             if let leftovers = try? fm.contentsOfDirectory(atPath: skillboxDirectory.path), leftovers.allSatisfy({ $0 == ".DS_Store" }) {
                 try? fm.removeItem(at: skillboxDirectory)
             }
+            try Self.injectedFailure?("unsync:commit")
+            try await commit?()
         } catch {
             throw Self.rollingBack(error, project: projectURL, backup: backup, metadata: metadata, scratch: scratch)
         }
@@ -213,7 +218,7 @@ extension SkillboxService {
 
     private func previewMCPRemovingEverything(project: Project) async throws -> [MCPPreview] {
         let secrets = try await store.secrets()
-        let tools = project.tools + Self.abandonedTools(project: project)
+        let tools = try project.tools + Self.abandonedTools(project: project)
         return try tools.map { try MCPRenderer.preview(tool: $0, project: URL(fileURLWithPath: project.path), servers: [], secrets: secrets) }
     }
 
@@ -223,9 +228,9 @@ extension SkillboxService {
     ///
     /// `among` limits this to the clients this Mac uses: a client switched off in the settings is
     /// left alone, files included. Only `unsyncProject`, which must remove everything, looks at all.
-    static func abandonedTools(project: Project, among tools: [Tool] = Tool.allCases) -> [Tool] {
+    static func abandonedTools(project: Project, among tools: [Tool] = Tool.allCases) throws -> [Tool] {
         let url = URL(fileURLWithPath: project.path)
-        let mcpManaged = MCPRenderer.managedTools(url)
+        let mcpManaged = try MCPRenderer.managedTools(url)
         return tools.filter { tool in
             guard !project.tools.contains(tool) else { return false }
             if FileManager.default.fileExists(atPath: url.appending(path: tool.projectSkillsPath).appending(path: ".skillbox.json").path) { return true }
@@ -239,7 +244,7 @@ extension SkillboxService {
         let catalog = try await store.catalog()
         let selected = SkillboxService.selectedSkills(in: catalog, for: project)
         let library = await store.skillsDirectory
-        let perTool: [(Tool, [Skill])] = project.tools.map { ($0, selected) } + Self.abandonedTools(project: project, among: config.activeTools).map { ($0, []) }
+        let perTool: [(Tool, [Skill])] = try project.tools.map { ($0, selected) } + Self.abandonedTools(project: project, among: config.activeTools).map { ($0, []) }
         let skills = try perTool.map { tool, current in
             try SkillboxService.skillPreview(tool: tool, target: try SkillboxService.managedTarget(project: URL(fileURLWithPath: project.path), tool: tool), current: current, library: library)
         }
@@ -401,7 +406,7 @@ extension SkillboxService {
         report.attempt("projekt \(project.lastPathComponent)") {
             try applySyncBackup(project: project, backup: backup, metadata: metadata)
         }
-        if !report.succeeded { keptBackups.insert(scratch) }
+        if !report.succeeded { KeptScratch.keep(scratch) }
         return report.error(after: error, keeping: report.succeeded ? nil : backup.path)
     }
 
@@ -413,16 +418,14 @@ extension SkillboxService {
                     scratch: scratch)
     }
 
-    /// Scratch directories a failed rollback left behind on purpose. `scratchDirectory` names each
-    /// one uniquely, so nothing else ever looks here; the set exists only so the `defer` that
-    /// normally cleans up can tell those apart.
-    nonisolated(unsafe) private static var keptBackups = Set<URL>()
-    static func shouldKeepScratch(_ url: URL) -> Bool { keptBackups.contains(url) }
+    static func shouldKeepScratch(_ url: URL) -> Bool { KeptScratch.contains(url) }
 
     private static func makeSyncBackup(project: URL, targets: [URL], in backupRoot: URL) throws -> (URL, SyncBackupMetadata) {
         let fm = FileManager.default
         let backup = backupRoot.appending(path: UUID().uuidString)
-        try fm.createDirectory(at: backup, withIntermediateDirectories: true)
+        // The copies can hold a generated MCP file with a token, like every other rollback copy.
+        try fm.createDirectory(at: backupRoot, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try fm.createDirectory(at: backup, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         var entries: [SyncBackupEntry] = []
         for (index, target) in targets.enumerated() {
             let standardized = target.standardizedFileURL

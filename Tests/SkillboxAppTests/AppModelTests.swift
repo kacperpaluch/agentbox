@@ -608,4 +608,56 @@ final class AppModelTests: XCTestCase {
         process.waitUntilExit()
         XCTAssertEqual(process.terminationStatus, 0)
     }
+
+    // MARK: Review of 0.39.2
+
+    /// An action that worked and a reload that then failed are two facts. The success entry keeps
+    /// the action's own text, and the reload's error lands in history as an error.
+    func testFailedReloadAfterASuccessfulActionIsNotRecordedAsSuccess() async throws {
+        let model = try await makeModel()
+        await model.addLocal(try makeSkill("demo"))
+        try "{ zepsuty".write(to: root.appending(path: "library/selections.json"), atomically: true, encoding: .utf8)
+
+        await model.saveTags("demo", text: "nowy")
+
+        let successes = model.operationLog.filter { $0.kind == .success }.map(\.text)
+        XCTAssertEqual(successes.first, "Zapisano tagi", "wpis sukcesu niesie tekst akcji: \(successes)")
+        XCTAssertTrue(successes.allSatisfy { ["Zapisano tagi", "Dodano skill z dysku"].contains($0) }, "żaden błąd nie trafia do historii jako sukces: \(successes)")
+        XCTAssertTrue(model.operationLog.contains { $0.kind == .error }, "błąd przeładowania jest w historii")
+    }
+
+    /// Adding detected subfolders writes nothing into them: synchronizing goes through the preview.
+    func testAddingDetectedFoldersDoesNotSynchronizeThem() async throws {
+        let model = try await makeModel()
+        await model.addLocal(try makeSkill("demo"))
+        let parent = try makeProjectFolder("workspace")
+        try FileManager.default.createDirectory(at: parent.appending(path: "a"), withIntermediateDirectories: true)
+        _ = await model.addBatch(BatchProjectRequest(root: ProjectRoot(name: "grupa", path: parent.path, tools: [.claude], skillIDs: ["demo"]), folders: [parent.appending(path: "a").path], selection: AttachmentSelection(tools: [.claude], skillIDs: ["demo"])))
+        let fresh = parent.appending(path: "nowy")
+        try FileManager.default.createDirectory(at: fresh, withIntermediateDirectories: true)
+        await model.scanRoots()
+        XCTAssertEqual(model.detectedFolders.map(\.name), ["nowy"])
+
+        let added = await model.addDetected(model.detectedFolders)
+
+        XCTAssertEqual(added?.map(\.name), ["nowy"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fresh.appending(path: ".claude").path), "nic nie trafia do projektu bez podglądu")
+    }
+
+    /// With the library unavailable there is nothing to copy, so an empty folder must not become a
+    /// fresh library reported as the user's own.
+    func testMovingAnUnavailableLibraryDoesNotCreateAnEmptyOne() async throws {
+        let blocked = root.appending(path: "plik-zamiast-folderu")
+        try "x".write(to: blocked, atomically: true, encoding: .utf8)
+        let model = AppModel(root: blocked, startsAutomatically: false)
+        XCTAssertNotNil(model.serviceError)
+        let target = try makeProjectFolder("nowa-biblioteka")
+
+        await model.moveLibrary(to: target)
+
+        XCTAssertNil(model.service)
+        XCTAssertEqual(model.rootPath, blocked.path)
+        XCTAssertFalse(SkillboxService.isExistingLibrary(at: target), "w wybranym folderze nie powstaje pusta biblioteka")
+        XCTAssertEqual(model.operationLog.first?.kind, .error, "błąd zostaje w historii operacji")
+    }
 }

@@ -251,7 +251,9 @@ public struct FullBackupInfo: Identifiable, Hashable, Sendable {
     public var name: String
     public var createdAt: Date
     public var applicationVersion: String
-    public init(name: String, createdAt: Date, applicationVersion: String) { self.name = name; self.createdAt = createdAt; self.applicationVersion = applicationVersion }
+    /// Why the backup cannot be read; `nil` for a backup that can be restored.
+    public var problem: String?
+    public init(name: String, createdAt: Date, applicationVersion: String, problem: String? = nil) { self.name = name; self.createdAt = createdAt; self.applicationVersion = applicationVersion; self.problem = problem }
 }
 
 public struct SyncResult: Sendable {

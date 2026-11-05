@@ -6,6 +6,8 @@ import SkillboxCore
 struct DetectedFoldersBanner: View {
     let model: AppModel
     let review: () -> Void
+    /// Called with the projects just added, so they go through the usual synchronization preview.
+    let synchronize: ([Project]) -> Void
 
     var body: some View {
         HStack(spacing: Space.section - 2) {
@@ -16,7 +18,7 @@ struct DetectedFoldersBanner: View {
             }
             Spacer()
             Button("Przejrzyj…", action: review).buttonStyle(.borderedProminent)
-            Button("Dodaj i synchronizuj") { let folders = model.detectedFolders; Task { await model.addDetected(folders, synchronizing: true) } }.buttonStyle(.bordered).disabled(model.isWorking)
+            Button("Dodaj i synchronizuj…") { let folders = model.detectedFolders; Task { if let added = await model.addDetected(folders), !added.isEmpty { synchronize(added) } } }.buttonStyle(.bordered).disabled(model.isWorking)
         }
         .padding(.horizontal, Space.page).padding(.vertical, Space.row + 2)
         .background(.quaternary.opacity(0.4))

@@ -1,4 +1,13 @@
 import Foundation
+import os
+
+/// Scratch copies a failed rollback left behind on purpose, so the `defer` that normally removes
+/// them keeps these. Every service instance shares the set, hence the lock instead of an actor.
+enum KeptScratch {
+    private static let urls = OSAllocatedUnfairLock(initialState: Set<URL>())
+    static func keep(_ url: URL) { urls.withLock { _ = $0.insert(url) } }
+    static func contains(_ url: URL) -> Bool { urls.withLock { $0.contains(url) } }
+}
 
 /// Collects what a rollback could not put back, so the failure is reported instead of swallowed.
 ///

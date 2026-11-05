@@ -202,8 +202,24 @@ final class CommandLineTests: AgentboxTestCase {
 
         await XCTAssertThrowsErrorAsync(try await AgentboxCommand.run(["plugin", "add", "SEO", "seo@vendor", "--scope", "globalny"], service: service))
         await XCTAssertThrowsErrorAsync(try await AgentboxCommand.run(["plugin", "remove", "nie-ma-takiego"], service: service))
-        let lines = try await AgentboxCommand.run(["plugin"], service: service)
-        XCTAssertTrue(lines[0].hasPrefix("Użycie: agentbox plugin"), lines[0])
+        do {
+            _ = try await AgentboxCommand.run(["plugin"], service: service)
+            XCTFail("brak podkomendy to błąd użycia")
+        } catch let usage as AgentboxCommand.UsageError {
+            XCTAssertTrue(usage.localizedDescription.hasPrefix("Użycie: agentbox plugin"), usage.localizedDescription)
+        }
+    }
+
+    func testUsageMistakesAreErrorsNotSuccessfulOutput() async throws {
+        let (service, _) = try cliLibrary()
+        for args in [["nieznana-komenda"], ["tag", "tylko-skill"], ["project", "literowka"], ["sync"]] {
+            do {
+                let lines = try await AgentboxCommand.run(args, service: service)
+                XCTFail("\(args) zakończyło się sukcesem: \(lines)")
+            } catch is AgentboxCommand.UsageError {}
+        }
+        let help = try await AgentboxCommand.run(["help"], service: service)
+        XCTAssertTrue(help[0].hasPrefix("Agentbox"), "pomoc, o którą poproszono, pozostaje zwykłym wynikiem")
     }
 
 

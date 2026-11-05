@@ -49,10 +49,12 @@ struct ClientServersView: View {
 
     @ViewBuilder
     private func toolSection(_ tool: Tool, title: String, source: String) -> some View {
-        let names = model.globalMCPServerNames(tool: tool)
+        let (names, error) = model.globalMCPServerNames(tool: tool)
         let groups = model.globalMCPGroups(tool: tool)
         Section {
-            if names.isEmpty {
+            if let error {
+                Label("Nie można odczytać listy serwerów: \(error)", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+            } else if names.isEmpty {
                 Text("Nie znaleziono żadnych globalnych serwerów.").font(.caption).foregroundStyle(.secondary)
             } else if groups.isEmpty {
                 Text("Znaleziono \(names.count), ale żaden projekt nie ma zaznaczonego \(title) — nie ma tu więc czego wyłączać.").font(.caption).foregroundStyle(.secondary)

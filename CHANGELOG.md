@@ -6,6 +6,27 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-11-05
+
+### Zmieniono
+
+- `Dodaj i synchronizuj…` przy wykrytych podfolderach (baner i lista) dodaje projekty i otwiera podgląd synchronizacji, zamiast synchronizować je od razu bez pokazania ścieżek i zmian. Nieudana synchronizacja któregoś projektu jest teraz błędem w historii, a nie zielonym wpisem.
+- CLI: błąd użycia (nieznana komenda, brak podkomendy lub argumentów) kończy się kodem `2` ze składnią na standardowym wyjściu błędów, zamiast wypisywać pomoc z kodem `0`.
+
+### Naprawiono
+
+- Gdy akcja się udała, a odświeżenie okna po niej nie, historia operacji zapisywała treść błędu jako zielony wpis sukcesu. Teraz sukces ma tekst akcji, a błąd odświeżenia jest osobnym wpisem błędu.
+- Zmiana folderu biblioteki: błąd trafia do historii operacji. Przy niedostępnej bibliotece wskazanie pustego folderu nie tworzy już nowej, pustej biblioteki z komunikatem „skopiowana”. Nieudane kopiowanie sprząta wybrany folder, a błąd na ostatnim kroku nie zostawia okna w połowie przełączonego.
+- Zmiana folderu projektu czyści stary folder i zapisuje nowy rekord w jednej transakcji — nieudany zapis przywraca pliki w starym folderze.
+- Pełny backup z nieczytelnym `backup.json` jest widoczny na liście jako uszkodzony, zamiast znikać.
+- Uszkodzone `~/.claude.json` lub `~/.codex/config.toml` jest zgłaszane w `Serwery klientów`, zamiast wyglądać jak brak serwerów globalnych. Tak samo uszkodzone ustawienia pluginów Claude, manifest MCP projektu i nieczytelny katalog skilli projektu są błędem, a nie pustą listą.
+- Nieczytelny `~/.config/agentbox/root` nie otwiera już po cichu domyślnej biblioteki — ani w aplikacji, ani w CLI.
+- `agentbox new|docs new --file -` odrzuca dane, które nie są UTF-8, zamiast tworzyć pusty skill lub dokument.
+- `agentbox project root-adopt` znajduje projekty także wtedy, gdy folder podano przez dowiązanie symboliczne.
+- Przywracanie snapshotu i pełnego backupu oraz usuwanie backupu sprawdzają ścieżkę po rozwiązaniu dowiązań symbolicznych.
+- Kopia ratunkowa synchronizacji projektu powstaje z uprawnieniami 0700, jak pozostałe kopie mogące zawierać token.
+- Drobne: nieudana obserwacja folderu biblioteki jest zgłaszana w historii; eksport konfiguracji MCP pokazuje błąd zamiast pustego edytora; podgląd pliku, którego nie da się odczytać, mówi o tym zamiast pokazywać pusty plik; pozostałość po podmianie skilla w projekcie jest zgłaszana; ścieżka projektu musi być folderem także w CLI.
+
 ## [0.39.2] - 2026-10-28
 
 ### Naprawiono

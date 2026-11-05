@@ -213,10 +213,10 @@ extension SkillboxService {
         let assignedNames = Set(Self.assignedServers(selection: local.storedSelection(for: .project(selectionID)), mcp: mcp).map(\.name))
         var refs: [GlobalMCPServerRef] = []
         if tools.contains(.codex) {
-            refs += GlobalMCPDiscovery.codexGlobalServerNames(home: home).filter { !assignedNames.contains($0) }.map { GlobalMCPServerRef(tool: .codex, name: $0) }
+            refs += try GlobalMCPDiscovery.codexGlobalServerNames(home: home).filter { !assignedNames.contains($0) }.map { GlobalMCPServerRef(tool: .codex, name: $0) }
         }
         if tools.contains(.claude) {
-            refs += GlobalMCPDiscovery.claudeGlobalServerNames(home: home).filter { !assignedNames.contains($0) }.map { GlobalMCPServerRef(tool: .claude, name: $0) }
+            refs += try GlobalMCPDiscovery.claudeGlobalServerNames(home: home).filter { !assignedNames.contains($0) }.map { GlobalMCPServerRef(tool: .claude, name: $0) }
         }
         return refs.sorted { $0.tool.rawValue == $1.tool.rawValue ? $0.name < $1.name : $0.tool.rawValue < $1.tool.rawValue }
     }
@@ -298,16 +298,14 @@ extension SkillboxService {
 }
 
 enum MCPRenderer {
-    /// Scratch copies a failed rollback deliberately left behind — see `RollbackReport`.
-    nonisolated(unsafe) private static var keptBackups = Set<URL>()
     private static let start = "# >>> skillbox managed MCP >>>"
     private static let end = "# <<< skillbox managed MCP <<<"
 
     /// Every tool the project-local MCP manifest still has entries for — including a tool whose only
     /// remaining entry is a `-disabled-global` opt-out (see `renderedClaudeDisabledGlobal`), so that
     /// stale opt-out alone still counts as "this tool has something to clean up".
-    static func managedTools(_ project: URL) -> Set<Tool> {
-        let raw = ((try? manifest(project)) ?? [:]).filter { !$0.value.isEmpty }
+    static func managedTools(_ project: URL) throws -> Set<Tool> {
+        let raw = try manifest(project).filter { !$0.value.isEmpty }
         return Set(raw.keys.compactMap { key in
             Tool.init(rawValue: key) ?? Tool.init(rawValue: key.replacingOccurrences(of: "-disabled-global", with: ""))
         })
@@ -413,7 +411,7 @@ enum MCPRenderer {
         let fm = FileManager.default
         // Scratch copies for this write only; removed whether it succeeds or fails.
         let backup = SkillboxService.scratchDirectory()
-        defer { if !keptBackups.contains(backup) { try? fm.removeItem(at: backup) } }
+        defer { if !KeptScratch.contains(backup) { try? fm.removeItem(at: backup) } }
         var state = try manifest(project)
         var originals: [(file: URL, backup: URL?, existed: Bool)] = []
         try protectGeneratedFiles(project, previews: previews)
@@ -457,7 +455,7 @@ enum MCPRenderer {
             }
             // The scratch copy is normally dropped by `defer`; a rollback that failed is the one
             // case where it has to outlive the call, so the path in the message points at it.
-            if !report.succeeded { keptBackups.insert(backup) }
+            if !report.succeeded { KeptScratch.keep(backup) }
             throw report.error(after: error, keeping: report.succeeded ? nil : backup.path)
         }
     }

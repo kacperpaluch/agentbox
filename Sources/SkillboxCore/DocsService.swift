@@ -114,8 +114,6 @@ extension SkillboxService {
 /// to read the same instructions as other agents without duplicating the text. Both files always move
 /// together: there is no way to synchronize one without the other.
 enum DocsRenderer {
-    /// Scratch copies a failed rollback deliberately left behind — see `RollbackReport`.
-    nonisolated(unsafe) private static var keptBackups = Set<URL>()
     private struct ManifestFile: Codable { var docID: String? }
 
     private static func manifestURL(_ project: URL) -> URL { project.appending(path: ".skillbox/docs-manifest.json") }
@@ -254,7 +252,7 @@ enum DocsRenderer {
         let fm = FileManager.default
         // Scratch copies for this write only; removed whether it succeeds or fails.
         let backup = SkillboxService.scratchDirectory()
-        defer { if !keptBackups.contains(backup) { try? fm.removeItem(at: backup) } }
+        defer { if !KeptScratch.contains(backup) { try? fm.removeItem(at: backup) } }
         var currentID = try manifestDocID(project)
         var originals: [(file: URL, backup: URL?, existed: Bool)] = []
         do {
@@ -282,7 +280,7 @@ enum DocsRenderer {
                     if original.existed, let saved = original.backup { try fm.copyItem(at: saved, to: original.file) }
                 }
             }
-            if !report.succeeded { keptBackups.insert(backup) }
+            if !report.succeeded { KeptScratch.keep(backup) }
             throw report.error(after: error, keeping: report.succeeded ? nil : backup.path)
         }
     }
