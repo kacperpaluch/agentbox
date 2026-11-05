@@ -292,7 +292,7 @@ public enum AgentboxCommand {
                 for project in added {
                     let preview = try await service.syncProjectTransaction(projectID: project.id)
                     output.append("Zsynchronizowano \(project.name)")
-                    output += lines(for: preview)
+                    output += Self.lines(for: preview)
                 }
             }
             return output
@@ -326,7 +326,7 @@ public enum AgentboxCommand {
         case "project" where rest.count >= 2:
             let project = try await resolve(rest[1], service: service)
             let preview = dry ? try await service.previewProjectSync(projectID: project.id) : try await service.syncProjectTransaction(projectID: project.id)
-            return lines(for: preview)
+            return Self.lines(for: preview)
         case "global":
             let ids = csv("--skills", in: args), tags = csv("--tags", in: args)
             var draft: AttachmentSelection?
@@ -353,7 +353,7 @@ public enum AgentboxCommand {
         case "all":
             let missing = try await service.projectsWithoutFolder().map { "? \($0.name) — brak folderu, pominięto" }
             guard !dry else {
-                return try await service.previewAllProjectsSync().flatMap { ["\($0.project.name):"] + lines(for: $0.preview) } + missing
+                return try await service.previewAllProjectsSync().flatMap { ["\($0.project.name):"] + Self.lines(for: $0.preview) } + missing
             }
             let outcomes = try await service.syncAllProjectsTransactions()
             let lines = missing + outcomes.map { outcome in
