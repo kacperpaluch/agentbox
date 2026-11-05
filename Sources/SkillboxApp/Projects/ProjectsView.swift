@@ -118,7 +118,7 @@ struct ProjectsView: View {
         }
         .sheet(item: $previewProject) { project in MCPPreviewView(model: model, project: project) }
         .sheet(item: $syncScope) { scope in AllProjectsSyncPreviewView(model: model, ids: scope.ids, title: scope.title) }
-        .confirmationDialog("Usunąć projekt \(deleting?.name ?? "") z Agentbox?", item: $deleting) { deleting in
+        .confirmationDialog("Usunąć projekt \(deleting?.name ?? "") z Agentbox?", presenting: $deleting) { deleting in
             Button("Usuń tylko z Agentbox", role: .destructive) { Task { await model.deleteProject(deleting, removingFiles: false) } }
             Button("Usuń i posprzątaj pliki w projekcie", role: .destructive) { Task { await model.deleteProject(deleting, removingFiles: true) } }
             Button("Anuluj", role: .cancel) {}
@@ -140,7 +140,7 @@ struct ProjectsView: View {
             Button("Anuluj", role: .cancel) {}
         } message: { Text(names(followable) + "\n\nIch własne wybory zostaną usunięte. Pliki zmienią się przy synchronizacji.") }
         .sheet(item: $adopting) { project in AdoptSkillsView(model: model, project: project) }
-        .confirmationDialog("Usunąć wspólne ustawienia folderu \(deletingRoot?.name ?? "")?", item: $deletingRoot) { deletingRoot in
+        .confirmationDialog("Usunąć wspólne ustawienia folderu \(deletingRoot?.name ?? "")?", presenting: $deletingRoot) { deletingRoot in
             Button("Usuń ustawienia folderu", role: .destructive) { Task { await model.deleteRoot(deletingRoot) } }
             Button("Anuluj", role: .cancel) {}
         } message: { _ in Text("Projekty zostają i dostają kopię ustawień folderu, więc ich pliki się nie zmienią.") }

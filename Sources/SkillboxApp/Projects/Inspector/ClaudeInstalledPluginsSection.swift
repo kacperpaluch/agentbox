@@ -28,7 +28,7 @@ struct ClaudeInstalledPluginsSection: View {
             }
         }
         .task(id: [AnyHashable(project.id), AnyHashable(model.generation)]) { await reload() }
-        .confirmationDialog("Usunąć plugin \(uninstalling?.id ?? "")?", item: $uninstalling) { uninstalling in
+        .confirmationDialog("Usunąć plugin \(uninstalling?.id ?? "")?", presenting: $uninstalling) { uninstalling in
             Button("Usuń plugin", role: .destructive) { Task { await model.uninstallClaudePlugin(project: project, plugin: uninstalling); self.uninstalling = nil } }
             Button("Anuluj", role: .cancel) {}
         } message: { _ in Text(inheritsRoot

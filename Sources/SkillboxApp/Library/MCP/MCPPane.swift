@@ -64,7 +64,7 @@ struct MCPPane: View {
         .sheet(item: $serverToDuplicate) { server in MCPDuplicateView(model: model, server: server) }
         .sheet(item: $bulkJSON) { text in MCPBulkJSONView(model: model, text: text.value) }
         .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: .server) { text in await model.addMCPServerTags(checked, text: text) } }
-        .confirmationDialog("Usunąć serwer \(serverToDelete?.name ?? "")?", item: $serverToDelete) { serverToDelete in Button("Usuń", role: .destructive) { Task { await model.deleteMCPServer(serverToDelete.id) } }; Button("Anuluj", role: .cancel) {} } message: { _ in Text(serverToDelete.map { server in
+        .confirmationDialog("Usunąć serwer \(serverToDelete?.name ?? "")?", presenting: $serverToDelete) { serverToDelete in Button("Usuń", role: .destructive) { Task { await model.deleteMCPServer(serverToDelete.id) } }; Button("Anuluj", role: .cancel) {} } message: { _ in Text(serverToDelete.map { server in
             (usageForDeletion?.summary).map { "Używany przez: \($0). Serwer zostanie usunięty także z przypisań projektów." }
                 ?? "Serwer \(server.name) nie jest przypisany do żadnego projektu."
         } ?? "Serwer zostanie usunięty także z bezpośrednich przypisań projektów.") }

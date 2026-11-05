@@ -36,7 +36,7 @@ struct TagManagerView: View {
         .sheetFrame(width: 640, height: 560)
         .overlay { if model.isWorking { WorkingOverlay(progress: model.progress) } }
         .task { await load() }
-        .confirmationDialog(pending.map { $0.merges ? "Połączyć #\($0.from.name) z #\($0.to)?" : "Zmienić #\($0.from.name) na #\($0.to)?" } ?? "", item: $pending) { rename in
+        .confirmationDialog(pending.map { $0.merges ? "Połączyć #\($0.from.name) z #\($0.to)?" : "Zmienić #\($0.from.name) na #\($0.to)?" } ?? "", presenting: $pending) { rename in
             Button(rename.merges ? "Połącz" : "Zmień nazwę") { Task { await apply(rename) } }
             Button("Anuluj", role: .cancel) {}
         } message: { rename in

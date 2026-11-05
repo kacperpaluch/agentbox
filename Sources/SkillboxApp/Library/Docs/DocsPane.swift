@@ -58,7 +58,7 @@ struct DocsPane: View {
         .sheet(isPresented: $creatingDoc) { NewDocView(existingTags: existingTags, existingIDs: Set(model.docs.docs.map(\.id))) { draft in await model.createDoc(id: draft.id, name: draft.name, tags: draft.tags, content: draft.content) } }
         .sheet(item: $editingDoc) { doc in DocEditorView(model: model, doc: doc, existingTags: existingTags) }
         .sheet(isPresented: $showBatchTags) { BatchTagView(count: checked.count, existingTags: existingTags, noun: .document) { text in await model.addDocTags(checked, text: text) } }
-        .confirmationDialog("Usunąć dokument \(docToDelete?.name ?? "")?", item: $docToDelete) { docToDelete in
+        .confirmationDialog("Usunąć dokument \(docToDelete?.name ?? "")?", presenting: $docToDelete) { docToDelete in
             Button("Usuń", role: .destructive) { Task { await model.deleteDoc(docToDelete.id) } }
             Button("Anuluj", role: .cancel) {}
         } message: { _ in Text("\((usageForDeletion?.summary).map { "Używany przez: \($0). " } ?? "")Dokument zniknie z biblioteki i z przypisań. Jego AGENTS.md i import w CLAUDE.md znikną z projektów przy kolejnej synchronizacji.") }

@@ -65,7 +65,7 @@ struct GlobalServerRow: View {
         }
         .confirmationDialog(
             pendingPromotion.map { "Dać „\($0.row.project.name)” własne ustawienia?" } ?? "",
-            item: $pendingPromotion
+            presenting: $pendingPromotion
         ) { pending in
             Button("Tak, przełącz \(name) tylko dla tego projektu") {
                 Task { await model.setGlobalServerDisabled(row: pending.row, tool: tool, name: name, disabled: pending.disabled) }

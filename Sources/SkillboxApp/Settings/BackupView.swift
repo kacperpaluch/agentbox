@@ -74,9 +74,9 @@ struct BackupView: View {
         }
         .navigationTitle(embedded ? "Ustawienia" : "Backup")
         .task { await model.loadFullBackups(); await model.loadRecovery() }
-        .confirmationDialog("Przywrócić pełny backup?", item: $fullBackupToRestore) { backup in Button("Przywróć wszystkie dane", role: .destructive) { Task { await model.restoreFullBackup(backup) } }; Button("Anuluj", role: .cancel) {} } message: { _ in Text("Aktualna biblioteka, projekty, skille, MCP i sekrety zostaną zastąpione. Agentbox najpierw zachowa pełną kopię aktualnego stanu w backups/restore-rollbacks.") }
-        .confirmationDialog("Usunąć pełny backup?", item: $fullBackupToDelete) { backup in Button("Usuń backup", role: .destructive) { Task { await model.deleteFullBackup(backup) } }; Button("Anuluj", role: .cancel) {} } message: { _ in Text("Ta kopia zawierająca również sekrety zostanie trwale usunięta z lokalnego folderu backups/full.") }
-        .confirmationDialog("Przywrócić snapshot biblioteki?", item: $snapshotToRestore) { snapshotToRestore in
+        .confirmationDialog("Przywrócić pełny backup?", presenting: $fullBackupToRestore) { backup in Button("Przywróć wszystkie dane", role: .destructive) { Task { await model.restoreFullBackup(backup) } }; Button("Anuluj", role: .cancel) {} } message: { _ in Text("Aktualna biblioteka, projekty, skille, MCP i sekrety zostaną zastąpione. Agentbox najpierw zachowa pełną kopię aktualnego stanu w backups/restore-rollbacks.") }
+        .confirmationDialog("Usunąć pełny backup?", presenting: $fullBackupToDelete) { backup in Button("Usuń backup", role: .destructive) { Task { await model.deleteFullBackup(backup) } }; Button("Anuluj", role: .cancel) {} } message: { _ in Text("Ta kopia zawierająca również sekrety zostanie trwale usunięta z lokalnego folderu backups/full.") }
+        .confirmationDialog("Przywrócić snapshot biblioteki?", presenting: $snapshotToRestore) { snapshotToRestore in
             Button("Przywróć bibliotekę", role: .destructive) { Task { await model.restoreLibrary(snapshotToRestore) } }
             Button("Anuluj", role: .cancel) {}
         } message: { _ in Text("Obecny stan zostanie zachowany jako nowy snapshot. Wrócą metadane biblioteki, w tym mcp.json z wartościami MCP (np. tokenami) z tamtej chwili. Katalog skills i klucz OpenAI zostają bez zmian.") }
