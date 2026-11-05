@@ -5,7 +5,7 @@ extension SkillboxService {
 
     public func saveMCPServer(_ server: MCPServer) async throws {
         var config = try await store.mcpConfiguration()
-        guard server.name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil else { throw SkillboxError.invalidSkill("nazwa MCP może zawierać litery, cyfry, _ i -") }
+        guard server.name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil else { throw SkillboxError.invalidInput("nazwa MCP może zawierać litery, cyfry, _ i -") }
         // Project tag assignments are stored lowercased, so server tags must be too — a server
         // tagged "SEO" was silently never matched by a project tag saved as "seo".
         var stored = server
@@ -28,7 +28,7 @@ extension SkillboxService {
             throw SkillboxError.mcpConflict("serwer MCP nie istnieje")
         }
         guard name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil else {
-            throw SkillboxError.invalidSkill("nazwa MCP może zawierać litery, cyfry, _ i -")
+            throw SkillboxError.invalidInput("nazwa MCP może zawierać litery, cyfry, _ i -")
         }
         guard !config.servers.contains(where: { $0.name == name }) else {
             throw SkillboxError.mcpConflict("serwer \(name) już istnieje")
@@ -72,7 +72,7 @@ extension SkillboxService {
     public func saveMCPServer(_ server: MCPServer, managedFields fields: [MCPManagedField]) async throws {
         var config = try await store.mcpConfiguration()
         let index = config.servers.firstIndex(where: { $0.id == server.id })
-        guard server.name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil else { throw SkillboxError.invalidSkill("nazwa MCP może zawierać litery, cyfry, _ i -") }
+        guard server.name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil else { throw SkillboxError.invalidInput("nazwa MCP może zawierać litery, cyfry, _ i -") }
         guard !config.servers.contains(where: { $0.id != server.id && $0.name == server.name }) else { throw SkillboxError.mcpConflict("serwer \(server.name) już istnieje") }
         let updated = try Self.applyingFields(fields, to: server)
         if let index { config.servers[index] = updated } else { config.servers.append(updated) }
@@ -128,7 +128,7 @@ extension SkillboxService {
     public func setMCPServers(projectID: UUID, serverIDs: [UUID], tags: [String]) async throws {
         let local = try await store.configuration()
         if let project = local.projects.first(where: { $0.id == projectID }), local.inheritsRoot(project) {
-            throw SkillboxError.invalidSkill("projekt \(project.name) korzysta z ustawień folderu nadrzędnego — przypisz serwery do folderu albo nadaj projektowi własne ustawienia")
+            throw SkillboxError.invalidInput("projekt \(project.name) korzysta z ustawień folderu nadrzędnego — przypisz serwery do folderu albo nadaj projektowi własne ustawienia")
         }
         var config = local
         var selection = config.storedSelection(for: .project(projectID))
@@ -290,7 +290,7 @@ extension SkillboxService {
         let local = try await store.configuration()
         if let project = local.projects.first(where: { $0.id == projectID }), local.inheritsRoot(project) {
             let folder = local.root(for: project)?.name ?? "nadrzędnego"
-            throw SkillboxError.invalidSkill("projekt \(project.name) dziedziczy ustawienia z folderu \(folder) — użyj `agentbox mcp global <disable|enable> \(folder) … --folder`, żeby zmienić je dla całego folderu, albo nadaj projektowi własne ustawienia w aplikacji")
+            throw SkillboxError.invalidInput("projekt \(project.name) dziedziczy ustawienia z folderu \(folder) — użyj `agentbox mcp global <disable|enable> \(folder) … --folder`, żeby zmienić je dla całego folderu, albo nadaj projektowi własne ustawienia w aplikacji")
         }
         guard let project = local.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
         try await setDisabledGlobalServers(selectionID: local.selectionID(for: project), tool: tool, names: names)

@@ -4,9 +4,10 @@ import SkillboxCore
 struct MCPImportView: View {
     @Environment(\.dismiss) private var dismiss
     let model: AppModel
-    let onOpenManual: () -> Void
-    private enum AddMode: String, CaseIterable, Identifiable {
-        case creator = "Kreator", json = "JSON", ai = "AI"
+    /// The manual form is not a tab here: "Ręcznie…" in the pane opens it straight away, instead
+    /// of a tab whose only content was a button leading to it.
+    enum AddMode: String, CaseIterable, Identifiable {
+        case json = "JSON", ai = "AI"
         var id: String { rawValue }
     }
     @State private var source = ""
@@ -16,7 +17,7 @@ struct MCPImportView: View {
     @State private var selected = Set<String>()
     @State private var showFormatHelp = false
     @State private var singleServerName = ""
-    @State private var mode: AddMode = .creator
+    @State var mode: AddMode = .json
     @State private var openAIKey = ""
     @AppStorage("AgentboxOpenAIModel") private var openAIModel = "gpt-5-mini"
     private var usesAI: Bool { mode == .ai }
@@ -26,16 +27,6 @@ struct MCPImportView: View {
         Text("Wybierz sposób dodania. Każda ścieżka kończy się przeglądem konfiguracji przed zapisem.").font(.caption).foregroundStyle(.secondary)
         Picker("Sposób dodania", selection: $mode) { ForEach(AddMode.allCases) { Text($0.rawValue).tag($0) } }
             .pickerStyle(.segmented)
-        if mode == .creator {
-            GroupBox("Kreator ręczny") {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Wypełnij formularz: nazwa, sposób połączenia, argumenty, zmienne i nagłówki.").foregroundStyle(.secondary)
-                    Button("Otwórz kreator") { onOpenManual(); dismiss() }.buttonStyle(.borderedProminent)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Space.row)
-            }
-        } else {
         HStack {
             Text(usesAI ? "Wklej instrukcję instalacji, fragment README albo opisz serwer." : "Wklej mapę serwerów albo konfigurację jednego serwera.").font(.caption).foregroundStyle(.secondary)
             Spacer()
@@ -61,8 +52,7 @@ struct MCPImportView: View {
             }.padding(6).frame(maxWidth: .infinity, alignment: .leading) }
         }
         if !error.isEmpty { Text(error).foregroundStyle(.red).textSelection(.enabled) }
-        }
-    }.padding(24) }; Divider(); HStack { if working { ProgressView() }; if summary != nil { Text(needsReanalysis ? "Zmień nazwę → Analizuj ponownie" : "Wybrano: \(selected.count)").font(.caption).foregroundStyle(needsReanalysis ? .orange : .secondary) }; Spacer(); Button("Anuluj") { dismiss() }; if mode != .creator { Button(usesAI ? "Przygotuj z AI" : "Analizuj") { Task { await prepare() } }.disabled(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (usesAI && openAIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) || working); Button("Importuj wybrane") { Task { await importNow() } }.buttonStyle(.borderedProminent).disabled(summary == nil || selected.isEmpty || needsReanalysis || working) } }.padding(16).background(.bar)
+    }.padding(24) }; Divider(); HStack { if working { ProgressView() }; if summary != nil { Text(needsReanalysis ? "Zmień nazwę → Analizuj ponownie" : "Wybrano: \(selected.count)").font(.caption).foregroundStyle(needsReanalysis ? .orange : .secondary) }; Spacer(); Button("Anuluj") { dismiss() }; Button(usesAI ? "Przygotuj z AI" : "Analizuj") { Task { await prepare() } }.disabled(source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (usesAI && openAIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) || working); Button("Importuj wybrane") { Task { await importNow() } }.buttonStyle(.borderedProminent).disabled(summary == nil || selected.isEmpty || needsReanalysis || working) }.padding(16).background(.bar)
     }.sheetFrame(width: 760, height: 680).task { if openAIKey.isEmpty { openAIKey = OpenAIKeyStore.load() } } }
     private func forgetOpenAIKey() {
         do { try OpenAIKeyStore.delete(); openAIKey = ""; error = "" }

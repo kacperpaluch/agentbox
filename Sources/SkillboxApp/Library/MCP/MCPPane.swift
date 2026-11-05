@@ -11,7 +11,8 @@ struct MCPPane: View {
     @State private var serverToDelete: MCPServer?
     /// Read while the dialog is open, so the question says how far the deletion reaches.
     @State private var usageForDeletion: UsageReport?
-    @State private var showAdd = false
+    /// Which import the sheet opens on; `nil` while it is closed.
+    @State private var importMode: MCPImportView.AddMode?
     @State private var bulkJSON: IdentifiableString?
     /// The list's own selection (click, ⌘, ⇧). Return or a double click opens a single server, as in
     /// Finder; selecting several turns the bar into bulk actions.
@@ -29,7 +30,14 @@ struct MCPPane: View {
         VStack(spacing: 0) {
             actionBar
             if model.mcp.servers.isEmpty {
-                ContentUnavailableView("Brak serwerów MCP", systemImage: "network", description: Text("Zaimportuj konfigurację z JSON albo dodaj serwer ręcznie."))
+                ContentUnavailableView {
+                    Label("Brak serwerów MCP", systemImage: "network")
+                } description: {
+                    Text("Wklej konfigurację, którą już masz — np. z ~/.claude.json albo README serwera — albo wypełnij formularz.")
+                } actions: {
+                    Button("Wklej JSON…") { importMode = .json }.buttonStyle(.borderedProminent)
+                    Button("Dodaj ręcznie…") { newServer() }
+                }
             } else if filtered.isEmpty {
                 ContentUnavailableView("Nic nie pasuje", systemImage: "magnifyingglass", description: Text("Zmień wyszukiwanie albo wybrany tag."))
             } else {
@@ -51,11 +59,7 @@ struct MCPPane: View {
                 } primaryAction: { ids in editingServer = server(in: ids) }
             }
         }
-        .sheet(isPresented: $showAdd) {
-            MCPImportView(model: model) {
-                editingServer = MCPServer(name: "", transport: .stdio)
-            }
-        }
+        .sheet(item: $importMode) { mode in MCPImportView(model: model, mode: mode) }
         .sheet(item: $editingServer) { server in MCPServerEditor(model: model, server: server, existingTags: existingTags) }
         .sheet(item: $serverToDuplicate) { server in MCPDuplicateView(model: model, server: server) }
         .sheet(item: $bulkJSON) { text in MCPBulkJSONView(model: model, text: text.value) }
@@ -69,11 +73,24 @@ struct MCPPane: View {
 
     // Same contextual-bar pattern as the Library: add actions when nothing is checked, a selection
     // bar the moment something is.
+    private var addMenu: some View {
+        Menu {
+            Button { newServer() } label: { Label("Ręcznie…", systemImage: "square.and.pencil") }
+            Button { importMode = .json } label: { Label("Wklej JSON…", systemImage: "curlybraces") }
+            Button { importMode = .ai } label: { Label("Z opisu przez AI…", systemImage: "sparkles") }
+        } label: { Label("Dodaj serwer", systemImage: "plus") }
+        .menuStyle(.borderedButton)
+        .menuIndicator(.visible)
+        .tint(.accentColor)
+        .fixedSize()
+    }
+
+    private func newServer() { editingServer = MCPServer(name: "", transport: .stdio) }
+
     private var actionBar: some View {
         ActionBar {
             if checked.count < 2 {
-                Button { showAdd = true } label: { Label("Dodaj serwer", systemImage: "plus") }
-                    .buttonStyle(.borderedProminent)
+                addMenu
                 Button { Task { do { bulkJSON = IdentifiableString(value: try await model.exportMCPConfigurationJSON()) } catch { model.reportError(error) } } } label: {
                     Label("Edytuj całą konfigurację", systemImage: "curlybraces")
                 }

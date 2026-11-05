@@ -14,6 +14,8 @@ Podczas pracy ze źródłami można używać `swift run agentbox --help` albo `.
 SKILLBOX_HOME="$HOME/Documents/AgentboxData" agentbox list
 ```
 
+Wersję polecenia pokazuje `agentbox --version` (także `agentbox version`). Działa nawet wtedy, gdy biblioteki nie da się otworzyć.
+
 ## Skille
 
 ```bash
@@ -22,6 +24,8 @@ agentbox new moje-notatki [--name "Moje notatki"] [--description "Zasady"] [--ta
 agentbox add ./folder-skilla [--id nazwa]
 agentbox add https://github.com/user/repo.git [--path skills] [--branch main] [--id nazwa]
 agentbox tag nazwa-skilla seo audit
+agentbox tags
+agentbox tags rename stary nowy
 agentbox update nazwa-skilla
 agentbox update --all
 agentbox attach nazwa-skilla ./scripts ./szablon.txt [--replace]
@@ -35,7 +39,7 @@ agentbox adopt-library [--yes]
 
 `attach` kopiuje pliki i foldery do skilla lokalnego: folder pod swoją nazwą, plik obok `SKILL.md`, z zachowaniem uprawnień. Istniejąca nazwa jest odrzucana bez `--replace`; `SKILL.md` nie można podmienić tą drogą. `files` wypisuje pliki dodatkowe skilla: ścieżkę, rozmiar w bajtach i `x` dla pliku wykonywalnego.
 
-`add` kopiuje lokalny skill albo importuje wszystkie znalezione `SKILL.md` z Git. Skill z dysku dostaje identyfikator z pola `name` w nagłówku `SKILL.md`; gdy go brak albo nie nadaje się na identyfikator — z nazwy folderu. `--id` ma pierwszeństwo. `tag` zastępuje listę tagów wskazanego skilla. `update` działa dla skilli pochodzących z Git. `delete` usuwa skill z biblioteki i jego bezpośrednie przypisania do projektów — tak samo jak `Usuń` w szczegółach skilla; nie rusza katalogu źródłowego ani repozytorium.
+`add` kopiuje lokalny skill albo importuje wszystkie znalezione `SKILL.md` z Git. Skill z dysku dostaje identyfikator z pola `name` w nagłówku `SKILL.md`; gdy go brak albo nie nadaje się na identyfikator — z nazwy folderu. `--id` ma pierwszeństwo. `tag` zastępuje listę tagów wskazanego skilla. `tags` wypisuje każdy tag z liczbą skilli, serwerów MCP, dokumentów i miejsc, które go używają; `tags rename` zmienia nazwę tagu wszędzie naraz — także w wyborach projektów, folderów i Tego Maca — a nazwa, która już istnieje, łączy oba tagi. `update` działa dla skilli pochodzących z Git. `delete` usuwa skill z biblioteki i jego bezpośrednie przypisania do projektów — tak samo jak `Usuń` w szczegółach skilla; nie rusza katalogu źródłowego ani repozytorium.
 
 `adopt-library` wylicza foldery z `SKILL.md` leżące w `skills/` biblioteki, których nie ma w katalogu — np. skill zapisany tam bezpośrednio przez asystenta AI — a z `--yes` dodaje do katalogu wszystkie, które się do tego nadają. Identyfikatorem jest nazwa folderu; folder z niepoprawną nazwą, z polem `name` innym niż nazwa folderu albo będący dowiązaniem symbolicznym jest wypisany z powodem (`✗`) i pominięty, a polecenie kończy się wtedy kodem błędu 1.
 

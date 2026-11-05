@@ -15,19 +15,28 @@ Pasek boczny ma trzy pozycje, odpowiadające dwóm pojęciom: rzeczom, które zb
 | `Biblioteka` | skille, serwery MCP i dokumenty — jedna lista z przełącznikiem typu, wspólnym wyszukiwaniem i filtrem tagów |
 | `Projekty` | ten Mac, foldery nadrzędne i projekty w jednej tabeli; zaznaczony wiersz otwiera się w inspektorze po prawej |
 | `Ustawienia` | folder biblioteki, aktualizacje, CLI, domyślne dla nowych projektów oraz `Backup i odzyskiwanie` |
-| `Ustawienia` | folder biblioteki, aktualizacje, CLI |
+
+Liczba przy `Projekty` w pasku bocznym mówi, ile projektów czeka na synchronizację albo ma problem (pomarańczowa, gdy jest problem: brak folderu albo zablokowana synchronizacja). Szara liczba obok to nowe podfoldery w obserwowanych folderach.
 
 Wcześniej tych pozycji było osiem. `Skille`, `MCP` i `Dokumenty` to jedna biblioteka z trzema rodzajami wpisu, a domyślne ustawienia to konfiguracja projektów, nie osobny ekran. Backup i odzyskiwanie są częścią ustawień. Żadna funkcja nie zniknęła — zmieniła się tylko oś podziału.
 
 ## Pierwsze uruchomienie
 
+Pusta biblioteka i pusta lista projektów same podpowiadają pierwszy krok: przyciski dodania skilla z dysku lub z Git, wklejenia konfiguracji MCP i wskazania folderu z repozytoriami.
+
 1. Dodaj skill z lokalnego katalogu albo repozytorium Git.
 2. Opcjonalnie ustaw `Ustawienia → Domyślne dla nowych projektów → Edytuj…`, wybierając skille, MCP i dokumenty.
 3. Dodaj projekt; formularz startuje z tym wyborem, który możesz zmienić przed zapisem.
-3. Przypisz skille bezpośrednio lub przez tagi dynamiczne.
-4. Opcjonalnie zaimportuj serwery MCP i przypisz im tagi.
-5. W projekcie wybierz `Synchronizuj wszystko`, sprawdź plan zmian i zatwierdź.
-6. W `Ustawienia → Backup i odzyskiwanie` włącz automatyczne pełne kopie lokalne lub utwórz kopię ręcznie.
+4. Przypisz skille bezpośrednio lub przez tagi dynamiczne.
+5. Opcjonalnie zaimportuj serwery MCP i przypisz im tagi.
+6. W projekcie wybierz `Synchronizuj wszystko`, sprawdź plan zmian i zatwierdź.
+7. W `Ustawienia → Backup i odzyskiwanie` włącz automatyczne pełne kopie lokalne lub utwórz kopię ręcznie.
+
+### Wyszukiwanie i tagi
+
+Pole wyszukiwania w `Biblioteka` przeszukuje nazwy, tagi oraz treść — `SKILL.md` skilli i tekst dokumentów. Wiersz znaleziony tylko po treści ma oznaczenie `w treści`. Serwery MCP są wyszukiwane po nazwie i tagach. Biblioteka pamięta ostatnio otwarty rodzaj wpisu (Skille, MCP, Dokumenty, Pluginy).
+
+`Tagi…` obok filtra tagów pokazuje każdy tag z liczbą skilli, serwerów, dokumentów i miejsc (projektów, folderów, Tego Maca i domyślnych dla nowych projektów), które go używają. `Zmień nazwę…` zmienia tag wszędzie naraz, w jednym zapisie ze snapshotem biblioteki — także w wyborach projektów, więc projekt przypisujący przez stary tag dalej dostaje te same skille. Nazwa, która już istnieje, łączy oba tagi. W terminalu: `agentbox tags` i `agentbox tags rename <stary> <nowy>`.
 
 ## Aktualizacje aplikacji
 
@@ -59,7 +68,7 @@ Importer przyjmuje zarówno mapę `mcpServers`, jak i pojedynczą definicję, na
 
 ### Kreator AI
 
-W `Biblioteka → MCP → Dodaj serwer` wybierz zakładkę `AI`, wklej fragment instrukcji lub README i podaj klucz API OpenAI. Klucz zapisuje się w pęku kluczy macOS, a model w ustawieniach aplikacji, więc następnym razem oba pola są już wypełnione — przycisk `Usuń zapamiętany klucz` usuwa wpis z pęku kluczy. Błąd zapisu lub usunięcia klucza jest zgłaszany, a nie pomijany. Klucz nie trafia do biblioteki ani do kopii zapasowych. Agentbox wysyła do OpenAI wyłącznie tekst instrukcji, nigdy zawartość istniejących konfiguracji ani sekretów. Wynik nie jest automatycznie zapisywany: najpierw przechodzi przez analizę JSON, wybór serwerów i klasyfikację wartości. Sprawdź wynik przed importem — AI może przygotować format, ale nie zastępuje weryfikacji dokumentacji serwera.
+`Biblioteka → MCP → Dodaj serwer` ma trzy drogi: `Ręcznie…` otwiera od razu formularz serwera, `Wklej JSON…` importer konfiguracji, a `Z opisu przez AI…` kreator AI. W kreatorze AI wklej fragment instrukcji lub README i podaj klucz API OpenAI. Klucz zapisuje się w pęku kluczy macOS, a model w ustawieniach aplikacji, więc następnym razem oba pola są już wypełnione — przycisk `Usuń zapamiętany klucz` usuwa wpis z pęku kluczy. Błąd zapisu lub usunięcia klucza jest zgłaszany, a nie pomijany. Klucz nie trafia do biblioteki ani do kopii zapasowych. Agentbox wysyła do OpenAI wyłącznie tekst instrukcji, nigdy zawartość istniejących konfiguracji ani sekretów. Wynik nie jest automatycznie zapisywany: najpierw przechodzi przez analizę JSON, wybór serwerów i klasyfikację wartości. Sprawdź wynik przed importem — AI może przygotować format, ale nie zastępuje weryfikacji dokumentacji serwera.
 
 - `Zmienna systemowa` — Agentbox zapisuje nazwę zmiennej, a wartość ma dostarczyć środowisko procesu klienta AI.
 - Każda zwykła wartość, w tym hasło lub token, trafia jawnie do lokalnego `mcp.json` oraz pełnego backupu lokalnego.
@@ -292,7 +301,9 @@ Obce skille i ręczne wpisy MCP nie są przejmowane przez Agentbox. Konflikt naz
 
 ## Historia operacji i błędy
 
-Przycisk z ikoną historii na pasku narzędzi otwiera listę sukcesów i błędów z bieżącej sesji. Komunikat może zniknąć z dolnej części okna, ale pozostaje w historii i można skopiować jego treść.
+`Narzędzia → Historia operacji` pokazuje 100 ostatnich sukcesów i błędów, także z poprzednich uruchomień. Komunikat może zniknąć z dolnej części okna, ale pozostaje w historii; przycisk przy wpisie kopiuje go razem z datą, a `Kopiuj wszystko` całą listę — do zgłoszenia problemu albo notatki.
+
+Historia jest zapisywana w `~/Library/Application Support/Agentbox/operation-log.json` z uprawnieniami 0600 (folder 0700), poza folderem biblioteki. Komunikaty mogą zawierać ścieżki i fragmenty konfiguracji — sprawdź je, zanim wkleisz je komuś. Plik, którego nie da się odczytać, zostaje odłożony obok z dopiskiem `damaged`, a nie nadpisany.
 
 W przypadku błędu synchronizacji:
 
@@ -311,7 +322,7 @@ Przed zmianą plików danych Agentbox zachowuje rotacyjne snapshoty w:
 <biblioteka>/.agentbox-snapshots/
 ```
 
-Snapshot zawiera bieżące wersje `catalog.json`, `selections.json`, `projects.local.json`, `mcp.json` i `docs.json`. Zachowywanych jest 10 ostatnich snapshotów.
+Snapshot zawiera bieżące wersje `catalog.json`, `selections.json`, `projects.local.json`, `mcp.json` i `docs.json`. Zachowywanych jest 10 ostatnich snapshotów oraz najnowszy z każdego z ostatnich 7 dni, więc seria drobnych zmian nie wypycha wczorajszego stanu.
 
 W `Ustawienia → Backup i odzyskiwanie → Snapshoty biblioteki` można wybrać kopię na podstawie daty i przywrócić zapisane w niej pliki. Przywracany `mcp.json` zawiera lokalne wartości MCP — także tokeny — w wersji z chwili snapshotu. Katalog `skills/` i klucz OpenAI w pęku kluczy nie są zmieniane. Przed przywróceniem Agentbox tworzy snapshot aktualnego stanu.
 

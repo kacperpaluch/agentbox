@@ -93,13 +93,13 @@ extension SkillboxService {
         stored.name = plugin.name.trimmingCharacters(in: .whitespacesAndNewlines)
         stored.plugin = plugin.plugin.trimmingCharacters(in: .whitespacesAndNewlines)
         stored.marketplace = plugin.marketplace.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !stored.name.isEmpty else { throw SkillboxError.invalidSkill("podaj nazwę pluginu") }
-        guard !stored.plugin.isEmpty else { throw SkillboxError.invalidSkill("podaj identyfikator pluginu") }
+        guard !stored.name.isEmpty else { throw SkillboxError.invalidInput("podaj nazwę pluginu") }
+        guard !stored.plugin.isEmpty else { throw SkillboxError.invalidInput("podaj identyfikator pluginu") }
         guard !others.contains(where: { $0.plugin == stored.plugin && $0.scope == stored.scope }) else {
             throw SkillboxError.duplicateSkill(stored.plugin)
         }
         guard !others.contains(where: { $0.name.caseInsensitiveCompare(stored.name) == .orderedSame }) else {
-            throw SkillboxError.invalidSkill("plugin o nazwie \(stored.name) już jest w bibliotece")
+            throw SkillboxError.invalidInput("plugin o nazwie \(stored.name) już jest w bibliotece")
         }
         return stored
     }
@@ -189,7 +189,7 @@ extension SkillboxService {
             guard FileManager.default.fileExists(atPath: file.path) else { continue }
             // A damaged settings file is reported, not shown as "no plugins installed".
             guard let root = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any] else {
-                throw SkillboxError.invalidSkill("\(file.path) nie jest obiektem JSON")
+                throw SkillboxError.invalidInput("\(file.path) nie jest obiektem JSON")
             }
             guard let enabled = root["enabledPlugins"] as? [String: Any] else { continue }
             result += enabled.compactMap { name, value in
@@ -217,7 +217,7 @@ extension SkillboxService {
     public func installClaudePlugin(projectPath: String, marketplace: String?, plugin: String, scope: ClaudePluginScope) throws {
         let source = marketplace?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let identifier = plugin.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !identifier.isEmpty else { throw SkillboxError.invalidSkill("podaj nazwę pluginu") }
+        guard !identifier.isEmpty else { throw SkillboxError.invalidInput("podaj nazwę pluginu") }
         let project = URL(fileURLWithPath: projectPath).standardizedFileURL
         guard FileManager.default.fileExists(atPath: project.path) else { throw SkillboxError.projectNotFound(projectPath) }
         let executable = try Self.claudeExecutable()

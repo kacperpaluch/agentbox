@@ -78,10 +78,10 @@ extension SkillboxService {
         }
         var config = try await store.configuration()
         guard !config.roots.contains(where: { $0.name.caseInsensitiveCompare(root.name) == .orderedSame }) else {
-            throw SkillboxError.invalidSkill("folder nadrzędny o nazwie \(root.name) już istnieje")
+            throw SkillboxError.invalidInput("folder nadrzędny o nazwie \(root.name) już istnieje")
         }
         guard !config.roots.contains(where: { URL(fileURLWithPath: $0.path).standardizedFileURL.path == rootURL.path }) else {
-            throw SkillboxError.invalidSkill("folder \(rootURL.path) jest już dodany jako nadrzędny")
+            throw SkillboxError.invalidInput("folder \(rootURL.path) jest już dodany jako nadrzędny")
         }
         var stored = root
         stored.path = rootURL.path
@@ -119,7 +119,7 @@ extension SkillboxService {
             throw SkillboxError.projectNotFound(root.name)
         }
         guard !config.roots.contains(where: { $0.id != root.id && $0.name.caseInsensitiveCompare(root.name) == .orderedSame }) else {
-            throw SkillboxError.invalidSkill("folder nadrzędny o nazwie \(root.name) już istnieje")
+            throw SkillboxError.invalidInput("folder nadrzędny o nazwie \(root.name) już istnieje")
         }
         var roots = config.roots
         var stored = root
@@ -165,10 +165,10 @@ extension SkillboxService {
         }
         var config = try await store.configuration()
         guard !config.roots.contains(where: { $0.name.caseInsensitiveCompare(root.name) == .orderedSame }) else {
-            throw SkillboxError.invalidSkill("folder nadrzędny o nazwie \(root.name) już istnieje")
+            throw SkillboxError.invalidInput("folder nadrzędny o nazwie \(root.name) już istnieje")
         }
         guard !config.roots.contains(where: { URL(fileURLWithPath: $0.path).standardizedFileURL.path == rootURL.path }) else {
-            throw SkillboxError.invalidSkill("folder \(rootURL.path) jest już dodany jako nadrzędny")
+            throw SkillboxError.invalidInput("folder \(rootURL.path) jest już dodany jako nadrzędny")
         }
         let followers = Set(following), owners = Set(keepingOwnSettings)
         for id in followers.union(owners) where !config.projects.contains(where: { $0.id == id }) {

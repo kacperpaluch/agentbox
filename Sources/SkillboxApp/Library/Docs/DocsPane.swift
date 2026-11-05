@@ -20,7 +20,7 @@ struct DocsPane: View {
     private var existingTags: [String] { Array(Set(model.docs.docs.flatMap(\.tags))).sorted() }
     private var sortedDocs: [AgentDoc] {
         model.docs.docs
-            .filter { libraryMatches(name: $0.name, id: $0.id, tags: $0.tags, search: search, selectedTag: selectedTag) }
+            .filter { libraryMatches(name: $0.name, id: $0.id, tags: $0.tags, content: $0.content, search: search, selectedTag: selectedTag) }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
@@ -28,13 +28,19 @@ struct DocsPane: View {
         VStack(spacing: 0) {
             actionBar
             if model.docs.docs.isEmpty {
-                ContentUnavailableView("Brak dokumentów", systemImage: "doc.text", description: Text("Dodaj tekst, który ma trafić jako AGENTS.md do wybranych projektów. CLAUDE.md w tych projektach powstanie automatycznie."))
+                ContentUnavailableView {
+                    Label("Brak dokumentów", systemImage: "doc.text")
+                } description: {
+                    Text("Dodaj tekst, który ma trafić jako AGENTS.md do wybranych projektów. CLAUDE.md w tych projektach powstanie automatycznie.")
+                } actions: {
+                    Button("Dodaj dokument…") { creatingDoc = true }.buttonStyle(.borderedProminent)
+                }
             } else if sortedDocs.isEmpty {
                 ContentUnavailableView("Nic nie pasuje", systemImage: "magnifyingglass", description: Text("Zmień wyszukiwanie albo wybrany tag."))
             } else {
                 List(selection: $selected) {
                     ForEach(sortedDocs) { doc in
-                        DocRow(doc: doc, usageKey: AnyHashable([AnyHashable(doc.id), AnyHashable(doc.tags), AnyHashable(model.selections)]), usage: { await model.usage(ofDoc: doc.id) }, onEdit: { editingDoc = doc }, onDelete: { docToDelete = doc })
+                        DocRow(doc: doc, matchedInContent: !search.isEmpty && !libraryNameMatches(name: doc.name, id: doc.id, tags: doc.tags, search: search), usageKey: AnyHashable([AnyHashable(doc.id), AnyHashable(doc.tags), AnyHashable(model.selections)]), usage: { await model.usage(ofDoc: doc.id) }, onEdit: { editingDoc = doc }, onDelete: { docToDelete = doc })
                             .tag(doc.id)
                     }
                 }

@@ -286,7 +286,7 @@ swift run agentbox docs preview website
 swift run agentbox docs sync website
 ```
 
-Przed zapisem danych Agentbox tworzy także lokalny snapshot `catalog.json`, `projects.local.json`, `selections.json`, `mcp.json` i `docs.json` w `.agentbox-snapshots/`. Zachowuje 10 ostatnich snapshotów; folder snapshotów nie jest częścią pełnych kopii.
+Przed zapisem danych Agentbox tworzy także lokalny snapshot `catalog.json`, `projects.local.json`, `selections.json`, `mcp.json` i `docs.json` w `.agentbox-snapshots/`. Zachowuje 10 ostatnich snapshotów oraz najnowszy z każdego z ostatnich 7 dni; folder snapshotów nie jest częścią pełnych kopii.
 
 ## Pełny backup lokalny
 

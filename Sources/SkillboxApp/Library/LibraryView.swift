@@ -12,9 +12,11 @@ import SkillboxCore
 struct LibraryView: View {
     let model: AppModel
     @Binding var showGit: Bool
-    @State private var kind: LibraryKind = .skills
+    /// Remembered between launches: someone working with MCP servers should not start on skills.
+    @AppStorage("AgentboxLibraryKind") private var kind: LibraryKind = .skills
     @State private var search = ""
     @State private var selectedTag = ""
+    @State private var showTags = false
 
     /// Every tag in use by the kind on screen. Kept per-kind: offering an MCP tag while browsing
     /// documents would only ever filter the list down to nothing.
@@ -41,13 +43,14 @@ struct LibraryView: View {
         .navigationTitle("Biblioteka")
         .searchable(text: $search, prompt: searchPrompt)
         .onChange(of: kind) { selectedTag = "" }
+        .sheet(isPresented: $showTags) { TagManagerView(model: model) }
     }
 
     private var searchPrompt: String {
         switch kind {
-        case .skills: "Nazwa lub tag skilla"
+        case .skills: "Nazwa, tag lub treść SKILL.md"
         case .mcp: "Nazwa lub tag serwera"
-        case .docs: "Nazwa lub tag dokumentu"
+        case .docs: "Nazwa, tag lub treść dokumentu"
         case .plugins: "Nazwa pluginu lub marketplace"
         }
     }
@@ -70,6 +73,8 @@ struct LibraryView: View {
                 }
                 .frame(maxWidth: 210)
             }
+            Button { showTags = true } label: { Label("Tagi…", systemImage: "tag") }
+                .help("Zmień nazwę tagu albo połącz dwa tagi w całej bibliotece")
             Spacer()
         }
         .padding(.horizontal, Space.page)

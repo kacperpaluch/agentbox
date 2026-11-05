@@ -62,7 +62,7 @@ public actor SkillboxStore {
             // which file to restore from `Kopie zapasowe`.
             guard let data = try? Data(contentsOf: url),
                   let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-                throw SkillboxError.invalidSkill("nie można odczytać \(url.lastPathComponent) — plik nie jest poprawnym JSON-em. Przywróć go w `Kopie zapasowe`, zanim Agentbox zmieni cokolwiek w projektach")
+                throw SkillboxError.invalidInput("nie można odczytać \(url.lastPathComponent) — plik nie jest poprawnym JSON-em. Przywróć go w `Kopie zapasowe`, zanim Agentbox zmieni cokolwiek w projektach")
             }
             return value
         }
@@ -208,6 +208,13 @@ public actor SkillboxStore {
         try writeTogether((try localWrites(config)) + [(try encoder.encode(mcp), mcpURL), (try encoder.encode(docs), docsURL)])
     }
 
+    /// Renaming a tag reaches all four: skills, projects' choices, servers and documents.
+    public func save(_ catalog: Catalog, _ config: LocalConfiguration, _ mcp: MCPConfiguration, _ docs: DocsConfiguration) throws {
+        try requireUnchanged([(catalog.storedVersion, [catalogURL]), (config.storedVersion, localFiles), (mcp.storedVersion, [mcpURL]), (docs.storedVersion, [docsURL])])
+        try snapshotLibrary()
+        try writeTogether([(try encoder.encode(catalog), catalogURL)] + (try localWrites(config)) + [(try encoder.encode(mcp), mcpURL), (try encoder.encode(docs), docsURL)])
+    }
+
     private func writeTogether(_ writes: [(data: Data, url: URL)]) throws {
         let rollback = try FileRollback(files: writes.map(\.url))
         try rollback.perform {
@@ -259,7 +266,7 @@ public actor SkillboxStore {
             }
             replacements[target] = data
         }
-        guard !replacements.isEmpty else { throw SkillboxError.invalidSkill("snapshot nie zawiera danych do przywrócenia") }
+        guard !replacements.isEmpty else { throw SkillboxError.invalidInput("snapshot nie zawiera danych do przywrócenia") }
         // Written in a fixed order. Dictionary order is arbitrary, so a restore that failed halfway
         // used to leave a different set of files behind on every run — impossible to reason about
         // from a bug report, and impossible to test.
@@ -341,7 +348,7 @@ public actor SkillboxStore {
         let package = root.appending(path: "backups/full/\(name)").standardizedFileURL
         guard Self.isDirectChild(package, of: root.appending(path: "backups/full")) else { throw SkillboxError.unsafePath(name) }
         let metadata = try decoder.decode(FullBackupMetadata.self, from: Data(contentsOf: package.appending(path: "backup.json")))
-        guard metadata.formatVersion == 1 else { throw SkillboxError.invalidSkill("nieobsługiwana wersja pełnego backupu") }
+        guard metadata.formatVersion == 1 else { throw SkillboxError.invalidInput("nieobsługiwana wersja pełnego backupu") }
         _ = try decoder.decode(Catalog.self, from: Data(contentsOf: package.appending(path: "catalog.json")))
         _ = try decoder.decode(LocalConfiguration.self, from: Data(contentsOf: package.appending(path: "projects.local.json")))
         _ = try decoder.decode(MCPConfiguration.self, from: Data(contentsOf: package.appending(path: "mcp.json")))
@@ -360,7 +367,7 @@ public actor SkillboxStore {
             _ = try decoder.decode(SelectionsConfiguration.self, from: Data(contentsOf: package.appending(path: "selections.json")))
         }
         var isDirectory: ObjCBool = false
-        guard fm.fileExists(atPath: package.appending(path: "skills").path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.invalidSkill("backup nie zawiera katalogu skills") }
+        guard fm.fileExists(atPath: package.appending(path: "skills").path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.invalidInput("backup nie zawiera katalogu skills") }
         let rollbackRoot = root.appending(path: "backups/restore-rollbacks")
         let rollback = rollbackRoot.appending(path: UUID().uuidString)
         try fm.createDirectory(at: rollback, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -486,16 +493,21 @@ public actor SkillboxStore {
             // A snapshot of `mcp.json` is a copy of whatever secrets it holds.
             try Self.restrictIfSensitive(copy, fm: fm)
         }
-        try pruneSnapshots(keeping: 10)
+        try pruneSnapshots(keeping: 10, days: 7)
     }
 
-    private func pruneSnapshots(keeping limit: Int) throws {
+    /// Keeps the `limit` newest snapshots plus the newest one of each of the last `days` days. Ten
+    /// slots alone meant a burst of small edits — tags one by one — pushed out yesterday's state.
+    private func pruneSnapshots(keeping limit: Int, days: Int) throws {
         guard fm.fileExists(atPath: snapshotsDirectory.path) else { return }
         let items = try fm.contentsOfDirectory(at: snapshotsDirectory, includingPropertiesForKeys: [.contentModificationDateKey])
-        let sorted = items.sorted {
-            ((try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) >
-            ((try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
-        }
-        for item in sorted.dropFirst(limit) { try fm.removeItem(at: item) }
+        let dated = items.map { ($0, (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) }
+            .sorted { $0.1 > $1.1 }
+        var kept = Set(dated.prefix(limit).map(\.0))
+        let calendar = Calendar.current
+        let oldest = calendar.date(byAdding: .day, value: -(days - 1), to: calendar.startOfDay(for: .now)) ?? .distantPast
+        var daysSeen = Set<Date>()
+        for (item, date) in dated where date >= oldest && daysSeen.insert(calendar.startOfDay(for: date)).inserted { kept.insert(item) }
+        for (item, _) in dated where !kept.contains(item) { try fm.removeItem(at: item) }
     }
 }

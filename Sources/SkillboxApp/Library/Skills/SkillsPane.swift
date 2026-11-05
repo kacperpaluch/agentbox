@@ -27,7 +27,7 @@ struct SkillsPane: View {
     @State private var confirmBatchDelete = false
     var tags: [String] { Array(Set(model.skills.flatMap(\.tags))).sorted() }
     var filtered: [Skill] {
-        var result = model.skills.filter { libraryMatches(name: $0.name, id: $0.id, tags: $0.tags, search: search, selectedTag: selectedTag) }
+        var result = model.skills.filter { libraryMatches(name: $0.name, id: $0.id, tags: $0.tags, content: model.skillTexts[$0.id]?.text, search: search, selectedTag: selectedTag) }
         switch sort { case .name: result.sort { $0.name < $1.name }; case .newest: result.sort { $0.updatedAt > $1.updatedAt }; case .source: result.sort { $0.source.kind.rawValue < $1.source.kind.rawValue } }
         return result
     }
@@ -55,7 +55,7 @@ struct SkillsPane: View {
             VStack(spacing: 0) {
                 actionBar
                 if !model.unregisteredSkills.isEmpty { unregisteredBanner }
-                skillList
+                if model.skills.isEmpty && model.unregisteredSkills.isEmpty { emptyLibrary } else { skillList }
             }
             // Both panes fill the height: without it an empty detail let the list shrink to its own
             // height and float in the middle, pushing the detail off the right edge.
@@ -119,6 +119,20 @@ struct SkillsPane: View {
         }
         .padding(.horizontal, Space.page).padding(.vertical, Space.row + 2)
         .background(.quaternary.opacity(0.4))
+    }
+
+    /// A first start: the three ways people already keep skills, instead of an empty list.
+    private var emptyLibrary: some View {
+        ContentUnavailableView {
+            Label("Biblioteka jest pusta", systemImage: "square.grid.2x2")
+        } description: {
+            Text("Dodaj skille, które już masz — folder z SKILL.md albo całe repozytorium Git — albo napisz własny. Potem przypiszesz je projektom.")
+        } actions: {
+            Button("Dodaj skill z folderu na dysku…") { chooseSkill() }.buttonStyle(.borderedProminent)
+            Button("Zaimportuj z repozytorium Git…") { showGit = true }
+            Button("Napisz własny…") { showNewSkill = true }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// Several skills selected: what can be done to all of them at once.
@@ -194,7 +208,7 @@ struct SkillsPane: View {
             ForEach(groups) { group in
                 DisclosureGroup(isExpanded: groupExpansion(group.name)) {
                     ForEach(group.items) { item in
-                        SkillRow(skill: item.skill, updateAvailable: model.updateAvailable.contains(item.skill.id))
+                        SkillRow(skill: item.skill, updateAvailable: model.updateAvailable.contains(item.skill.id), matchedInContent: !search.isEmpty && !libraryNameMatches(name: item.skill.name, id: item.skill.id, tags: item.skill.tags, search: search))
                             .tag(item.skill.id)
                     }
                 } label: {

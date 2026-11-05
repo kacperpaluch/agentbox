@@ -475,7 +475,7 @@ public actor SkillboxService {
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(path) }
         var config = try await store.configuration()
-        guard !config.projects.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(name) już istnieje") }
+        guard !config.projects.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { throw SkillboxError.invalidInput("projekt o nazwie \(name) już istnieje") }
         let project = Project(name: name, path: url.path)
         config.projects.append(project)
         config.selections[project.id.uuidString] = AttachmentSelection(tools: tools)
@@ -499,7 +499,7 @@ public actor SkillboxService {
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
         var config = try await store.configuration()
-        guard !config.projects.contains(where: { $0.name.caseInsensitiveCompare(project.name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(project.name) już istnieje") }
+        guard !config.projects.contains(where: { $0.name.caseInsensitiveCompare(project.name) == .orderedSame }) else { throw SkillboxError.invalidInput("projekt o nazwie \(project.name) już istnieje") }
         var stored = project; stored.path = url.path
         config.projects.append(stored)
         var mcp = try await store.mcpConfiguration()
@@ -513,7 +513,7 @@ public actor SkillboxService {
     public func updateProject(_ project: Project, selection: AttachmentSelection) async throws {
         var config = try await store.configuration()
         guard let index = config.projects.firstIndex(where: { $0.id == project.id }) else { throw SkillboxError.projectNotFound(project.name) }
-        guard !config.projects.contains(where: { $0.id != project.id && $0.name.caseInsensitiveCompare(project.name) == .orderedSame }) else { throw SkillboxError.invalidSkill("projekt o nazwie \(project.name) już istnieje") }
+        guard !config.projects.contains(where: { $0.id != project.id && $0.name.caseInsensitiveCompare(project.name) == .orderedSame }) else { throw SkillboxError.invalidInput("projekt o nazwie \(project.name) już istnieje") }
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
         // Pointing a project at another folder used to leave everything Agentbox had written in the
@@ -575,7 +575,7 @@ public actor SkillboxService {
     /// never reads. Saying so is more useful than a silent no-op.
     static func assertOwnSettings(_ project: Project, in config: LocalConfiguration) throws {
         guard config.inheritsRoot(project) else { return }
-        throw SkillboxError.invalidSkill("projekt \(project.name) korzysta z ustawień folderu nadrzędnego — zmień ustawienia folderu albo nadaj projektowi własne")
+        throw SkillboxError.invalidInput("projekt \(project.name) korzysta z ustawień folderu nadrzędnego — zmień ustawienia folderu albo nadaj projektowi własne")
     }
 
     /// A tag owns everything it pulls in, so keeping an individual id for a tagged skill or server
@@ -637,7 +637,7 @@ public actor SkillboxService {
         for id in projectIDs {
             guard let project = config.projects.first(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
             guard let rootID = project.rootID, config.roots.contains(where: { $0.id == rootID }) else {
-                throw SkillboxError.invalidSkill("projekt \(project.name) nie należy do folderu nadrzędnego")
+                throw SkillboxError.invalidInput("projekt \(project.name) nie należy do folderu nadrzędnego")
             }
         }
         let ids = Set(projectIDs)
@@ -725,7 +725,7 @@ public actor SkillboxService {
         try fm.createDirectory(at: target, withIntermediateDirectories: true)
         let existing = try fm.contentsOfDirectory(at: target, includingPropertiesForKeys: nil)
             .filter { $0.lastPathComponent != ".DS_Store" }
-        guard existing.isEmpty else { throw SkillboxError.invalidSkill("wybrany folder nie jest pusty") }
+        guard existing.isEmpty else { throw SkillboxError.invalidInput("wybrany folder nie jest pusty") }
         // The folder was empty, so everything copied into it is ours to take back. A half-made
         // copy would hold `mcp.json` outside any backup and block the next attempt as "not empty".
         var copied: [URL] = []

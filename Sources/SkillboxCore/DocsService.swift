@@ -7,7 +7,7 @@ extension SkillboxService {
     public func createDoc(id: String, name: String = "", tags: [String] = [], content: String) async throws -> AgentDoc {
         let id = id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().replacingOccurrences(of: " ", with: "-")
         guard id.range(of: "^[a-z0-9]+(?:-[a-z0-9]+)*$", options: .regularExpression) != nil else {
-            throw SkillboxError.invalidSkill("identyfikator dokumentu może zawierać tylko małe litery, cyfry i pojedyncze myślniki: \(id)")
+            throw SkillboxError.invalidInput("identyfikator dokumentu może zawierać tylko małe litery, cyfry i pojedyncze myślniki: \(id)")
         }
         var config = try await store.docsConfiguration()
         guard !config.docs.contains(where: { $0.id == id }) else { throw SkillboxError.duplicateSkill(id) }
@@ -64,7 +64,7 @@ extension SkillboxService {
     public func setDocs(projectID: UUID, docIDs: [String], tags: [String]) async throws {
         let local = try await store.configuration()
         if let project = local.projects.first(where: { $0.id == projectID }), local.inheritsRoot(project) {
-            throw SkillboxError.invalidSkill("projekt \(project.name) korzysta z ustawień folderu nadrzędnego — przypisz dokumenty do folderu albo nadaj projektowi własne ustawienia")
+            throw SkillboxError.invalidInput("projekt \(project.name) korzysta z ustawień folderu nadrzędnego — przypisz dokumenty do folderu albo nadaj projektowi własne ustawienia")
         }
         var config = local
         var selection = config.storedSelection(for: .project(projectID))

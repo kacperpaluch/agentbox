@@ -148,7 +148,14 @@ struct ProjectsView: View {
 
     @ViewBuilder private var projectTable: some View {
         if model.projects.isEmpty && model.projectRoots.isEmpty {
-            ContentUnavailableView("Brak projektów", systemImage: "folder.badge.plus", description: Text("Dodaj folder i wybierz skille dla Claude, Codex lub OpenCode."))
+            ContentUnavailableView {
+                Label("Brak projektów", systemImage: "folder.badge.plus")
+            } description: {
+                Text("Wskaż folder, w którym trzymasz repozytoria — każdy podfolder może stać się projektem, a nowe pojawią się same. Albo dodaj jeden projekt.")
+            } actions: {
+                Button("Wskaż folder z repozytoriami…") { showBatch = true }.buttonStyle(.borderedProminent)
+                Button("Dodaj jeden projekt…") { showProject = true }
+            }
         } else {
             let entries = shownGroups
             Table(of: ProjectTableRow.self, selection: $selection) {

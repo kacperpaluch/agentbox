@@ -6,6 +6,30 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-11-05
+
+### Dodano
+
+- Wyszukiwanie w `Biblioteka` przeszukuje także treść `SKILL.md` i tekst dokumentów; wiersz znaleziony tylko po treści ma oznaczenie `w treści`.
+- `Tagi…` w Bibliotece: lista tagów z liczbą skilli, serwerów, dokumentów i miejsc, które ich używają, oraz zmiana nazwy tagu wszędzie naraz — także w wyborach projektów, folderów, Tego Maca i domyślnych. Nazwa, która już istnieje, łączy oba tagi. CLI: `agentbox tags` i `agentbox tags rename <stary> <nowy>`.
+- Historia operacji jest zachowywana między uruchomieniami (100 ostatnich wpisów, plik 0600 poza biblioteką), a każdy wpis ma przycisk kopiowania; jest też `Kopiuj wszystko`.
+- Licznik przy `Projekty` w pasku bocznym: ile projektów czeka na synchronizację albo ma problem.
+- Puste widoki podpowiadają pierwszy krok: dodanie skilla z dysku lub z Git, wklejenie konfiguracji MCP, nowy dokument, wskazanie folderu z repozytoriami.
+- `agentbox --version`.
+- Testy uruchamiają się automatycznie w GitHub Actions przy każdym pushu i pull requeście.
+
+### Zmieniono
+
+- `Dodaj serwer` w MCP to menu `Ręcznie…` / `Wklej JSON…` / `Z opisu przez AI…`; formularz ręczny otwiera się od razu, bez zakładki z jednym przyciskiem.
+- Biblioteka pamięta ostatnio otwarty rodzaj wpisu.
+- Snapshoty biblioteki: poza 10 ostatnimi zostaje najnowszy z każdego z ostatnich 7 dni.
+- Sprawdzanie stanu projektów czyta każdy skill biblioteki raz na przebieg zamiast raz na projekt i klienta — przy 50 projektach z 20 skillami około dwa razy szybciej.
+- Błędy, które nie dotyczą skilli (np. „projekt o nazwie … już istnieje”), nie zaczynają się już od „Nieprawidłowy skill”.
+
+### Naprawiono
+
+- `docs/USER_GUIDE.md`: zdublowany wiersz `Ustawienia` w tabeli nawigacji i powtórzony numer kroku w `Pierwsze uruchomienie`.
+
 ## [0.40.0] - 2026-11-05
 
 ### Zmieniono

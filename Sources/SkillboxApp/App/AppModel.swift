@@ -51,6 +51,9 @@ import SkillboxCore
     var detectedFolders: [DetectedProjectFolder] = []
     /// Skill folders written straight into the library that the catalog does not list yet.
     var unregisteredSkills: [UnregisteredSkill] = []
+    /// `SKILL.md` texts for searching the library by content; refreshed by `reload()`, which only
+    /// rereads files whose modification date changed.
+    var skillTexts: [String: SkillSearchText] = [:]
     /// Set when the library folder cannot be opened at all (missing disk, no permissions).
     /// The UI then explains the situation instead of showing an empty library that looks like
     /// lost data.
@@ -61,11 +64,21 @@ import SkillboxCore
     /// writing `catalog.json`, a restored backup — so the window stops showing what the library
     /// looked like when it was opened.
     private let watcher = LibraryWatcher()
+    /// Where the history is kept between launches; `nil` keeps it in memory only.
+    private let historyFile: OperationLogFile?
+    /// Set once a write of the history failed, so the failure is shown once instead of every time.
+    private var historyWriteFailed = false
     private var reloadingFromDisk = false
     var service: SkillboxService?
     /// `root` is only passed by tests and previews, which must never touch the real library. The
     /// app itself takes the folder the user chose, so the argument stays at its default.
-    init(root: URL? = nil, startsAutomatically: Bool = true) {
+    ///
+    /// `historyFile` is where the operation history persists. The app uses the standard location;
+    /// a model given a `root` — a test or a preview — keeps it in memory unless it passes its own.
+    init(root: URL? = nil, startsAutomatically: Bool = true, historyFile: URL? = nil) {
+        let history = (historyFile ?? (root == nil ? OperationLogFile.standard : nil)).map(OperationLogFile.init(url:))
+        self.historyFile = history
+        let loadedHistory = history?.load()
         let saved = root?.path ?? UserDefaults.standard.string(forKey: "SkillboxLibraryRoot")
         let defaultPath = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Application Support/Skillbox").path
         // An unreadable choice must not open the default folder in its place — that may be another
@@ -84,6 +97,10 @@ import SkillboxCore
         }
         // Off in tests: a live FSEvents stream on the temporary library answers the test's own
         // writes, and its reload lands mid-assertion. `libraryChangedOnDisk` is tested directly.
+        if let loadedHistory {
+            operationLog = loadedHistory.entries
+            if let problem = loadedHistory.problem { operationLog.insert(OperationLogEntry(kind: .error, text: problem), at: 0) }
+        }
         if startsAutomatically { startWatchingLibrary(); Task { await reload(); await createFullBackupIfDue() } }
     }
 
@@ -114,7 +131,7 @@ import SkillboxCore
     // tags), so it recomputes them here too. That is the only place callers need to remember to
     // call — a skill tag edit or a new tagged MCP server no longer leaves the Projects tab showing
     // a stale "synced" badge until someone happens to touch a project directly.
-    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); docs = try await service?.docsConfiguration() ?? DocsConfiguration(); claudePluginLibrary = try await service?.libraryClaudePlugins() ?? []; selections = try await service?.allSelections() ?? [:]; projectDefaults = try await service?.projectDefaults() ?? AttachmentSelection(tools: Tool.allCases); enabledTools = try await service?.enabledTools() ?? Tool.allCases; if !skills.contains(where: { $0.id == selection }) { selection = skills.first?.id }; await loadMarkdown() } catch { reportError(error) }; do { unregisteredSkills = try await service?.unregisteredSkills() ?? [] } catch { reportError(error) }; await scanRoots(); await loadStatuses(); generation += 1 }
+    func reload() async { do { skills = try await service?.listSkills() ?? []; projects = try await service?.listProjects() ?? []; storedProjects = try await service?.storedProjects() ?? []; projectRoots = try await service?.projectRoots() ?? []; mcp = try await service?.mcpConfiguration() ?? MCPConfiguration(); docs = try await service?.docsConfiguration() ?? DocsConfiguration(); claudePluginLibrary = try await service?.libraryClaudePlugins() ?? []; selections = try await service?.allSelections() ?? [:]; projectDefaults = try await service?.projectDefaults() ?? AttachmentSelection(tools: Tool.allCases); enabledTools = try await service?.enabledTools() ?? Tool.allCases; if !skills.contains(where: { $0.id == selection }) { selection = skills.first?.id }; await loadMarkdown() } catch { reportError(error) }; do { unregisteredSkills = try await service?.unregisteredSkills() ?? [] } catch { reportError(error) }; do { skillTexts = try await service?.skillSearchTexts(reusing: skillTexts) ?? [:] } catch { reportError(error) }; await scanRoots(); await loadStatuses(); generation += 1 }
 
     // MARK: Parent folders
 
@@ -301,6 +318,15 @@ import SkillboxCore
         } catch { message = error.localizedDescription; record(.error, message); return false }
     }
     @discardableResult
+    func tagSummaries() async throws -> [TagSummary] { try await requireService().tagSummaries() }
+    /// Renames a tag in the whole library — entries and the places attaching by it — as one save.
+    @discardableResult
+    func renameTag(_ old: String, to new: String) async -> Bool {
+        await performing {
+            let changed = try await self.requireService().renameTag(old, to: new)
+            self.message = "Zmieniono #\(old) na #\(changed.name) (\(TagManagerView.scope(changed)))"
+        }
+    }
     func addSkillFiles(_ id: String, files: [URL], replacing: Bool = false) async -> Bool { await performing { try await self.requireService().addSkillFiles(skillID: id, files: files, replacing: replacing); self.message = "Dodano do \(id): \(files.map(\.lastPathComponent).joined(separator: ", "))" } }
     func saveTags(_ id: String, text: String) async { await perform { try await self.requireService().setTags(skillID: id, tags: Self.csv(text)); self.message = "Zapisano tagi" } }
     @discardableResult
@@ -437,6 +463,17 @@ import SkillboxCore
     }
     /// Projects the last status check found without a folder; the service re-checks the disk itself.
     var missingProjects: [Project] { projects.filter { statuses[$0.id]?.state == .missing } }
+    /// What the sidebar counts next to `Projekty`: projects with changes waiting and those with a
+    /// problem, so a library change that leaves projects out of date is noticed without the table.
+    var projectAttention: (pending: Int, problems: Int) {
+        statuses.values.reduce(into: (0, 0)) { result, status in
+            switch status.state {
+            case .synced: break
+            case .pending: result.0 += 1
+            case .blocked, .missing: result.1 += 1
+            }
+        }
+    }
     func deleteMissingProjects() async {
         await perform {
             let removed = try await self.requireService().deleteMissingProjects()
@@ -818,7 +855,18 @@ import SkillboxCore
         do { try await action(); if !message.isEmpty { record(.success, message) }; await reload(); return true }
         catch { await reload(); reportError(error); return false }
     }
-    private func record(_ kind: OperationLogEntry.Kind, _ text: String) { operationLog.insert(OperationLogEntry(kind: kind, text: text), at: 0); if operationLog.count > 100 { operationLog.removeLast(operationLog.count - 100) } }
+    private func record(_ kind: OperationLogEntry.Kind, _ text: String) {
+        operationLog.insert(OperationLogEntry(kind: kind, text: text), at: 0)
+        if operationLog.count > 100 { operationLog.removeLast(operationLog.count - 100) }
+        guard let historyFile else { return }
+        do { try historyFile.save(operationLog); historyWriteFailed = false }
+        catch {
+            // Shown in the window once, never written: writing it would fail the same way.
+            guard !historyWriteFailed else { return }
+            historyWriteFailed = true
+            operationLog.insert(OperationLogEntry(kind: .error, text: "Historia operacji nie zostanie zachowana po zamknięciu: \(error.localizedDescription)"), at: 0)
+        }
+    }
     func reportError(_ error: Error) { message = error.localizedDescription; record(.error, message) }
     static func csv(_ text: String) -> [String] { text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty } }
 }

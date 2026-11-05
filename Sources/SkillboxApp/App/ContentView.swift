@@ -17,13 +17,27 @@ struct ContentView: View {
             HStack {
                 Label(item.rawValue, systemImage: item.icon)
                 Spacer()
-                if item == .projects, !model.detectedFolders.isEmpty {
-                    Text(model.detectedFolders.count, format: .number)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(.quaternary, in: Capsule())
+                if item == .projects {
+                    let attention = model.projectAttention
+                    if attention.pending + attention.problems > 0 {
+                        Text(attention.pending + attention.problems, format: .number)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(attention.problems > 0 ? Color.orange : Color.accentColor, in: Capsule())
+                            .help("Do synchronizacji: \(attention.pending), z problemem: \(attention.problems)")
+                            .accessibilityLabel("Projekty do synchronizacji: \(attention.pending), z problemem: \(attention.problems)")
+                    }
+                    if !model.detectedFolders.isEmpty {
+                        Text(model.detectedFolders.count, format: .number)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(.quaternary, in: Capsule())
+                            .help("Nowe podfoldery: \(model.detectedFolders.count)")
+                    }
                 }
             }
             .contentShape(Rectangle())

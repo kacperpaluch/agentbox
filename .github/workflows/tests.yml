@@ -1,0 +1,21 @@
+name: Testy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wersja Swift
+        run: swift --version
+      - name: swift test
+        run: swift test --disable-sandbox

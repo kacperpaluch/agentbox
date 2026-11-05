@@ -23,6 +23,8 @@ public enum AgentboxCommand {
       agentbox mcp list|server|assign|preview|sync ...
       agentbox docs list|new|tag|delete|assign|preview|sync ...
       agentbox plugin list|add|remove|assign ...
+      agentbox tags [rename <stary> <nowy>]
+      agentbox --version
     """
 
     /// A command that ran to the end but did not do everything it was asked to — a project rolled
@@ -43,7 +45,7 @@ public enum AgentboxCommand {
     /// Standard input as text. Bytes that are not UTF-8 are refused instead of becoming an empty skill.
     private static func standardInputText() throws -> String {
         guard let text = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) else {
-            throw SkillboxError.invalidSkill("standardowe wejście nie jest tekstem UTF-8")
+            throw SkillboxError.invalidInput("standardowe wejście nie jest tekstem UTF-8")
         }
         return text
     }
@@ -82,7 +84,7 @@ public enum AgentboxCommand {
         case "files" where rest.count >= 1:
             return try await service.skillFiles(skillID: rest[0]).map { "\($0.path)\t\($0.size)\t\($0.isExecutable ? "x" : "-")" }
         case "add":
-            guard let value = rest.first else { throw SkillboxError.invalidSkill("podaj ścieżkę lub URL") }
+            guard let value = rest.first else { throw SkillboxError.invalidInput("podaj ścieżkę lub URL") }
             let subpath = option("--path", in: args), branch = option("--branch", in: args), id = option("--id", in: args)
             if value.contains("://") || value.hasSuffix(".git") {
                 let result = try await service.addGitCollection(url: value, subpath: subpath, branch: branch, id: id)
@@ -95,6 +97,13 @@ public enum AgentboxCommand {
             guard rest.count >= 2 else { throw UsageError("Użycie: agentbox tag <skill> <tag...>") }
             try await service.setTags(skillID: rest[0], tags: Array(rest.dropFirst()))
             return ["Zapisano tagi"]
+        case "tags":
+            if rest.isEmpty {
+                return try await service.tagSummaries().map { "\($0.name)\tskille: \($0.skills)\tserwery: \($0.servers)\tdokumenty: \($0.docs)\tmiejsca: \($0.places)" }
+            }
+            guard rest.count == 3, rest[0] == "rename" else { throw UsageError("Użycie: agentbox tags [rename <stary> <nowy>]") }
+            let changed = try await service.renameTag(rest[1], to: rest[2])
+            return ["Zmieniono \(rest[1]) na \(changed.name): skille \(changed.skills), serwery \(changed.servers), dokumenty \(changed.docs), miejsca \(changed.places)"]
         case "update":
             guard let target = rest.first else { throw UsageError("Użycie: agentbox update <skill|--all> [--dry-run]") }
             let plan = try await service.previewSkillUpdates(ids: target == "--all" ? nil : [target])
@@ -454,7 +463,7 @@ public enum AgentboxCommand {
                 try await service.saveMCPServer(MCPServer(name: name, transport: .http, url: url, headers: map("--headers", in: args), tags: csv("--tags", in: args)))
             } else if let command = option("--command", in: args) {
                 try await service.saveMCPServer(MCPServer(name: name, transport: .stdio, command: command, arguments: csv("--args", in: args), environment: map("--env", in: args), tags: csv("--tags", in: args)))
-            } else { throw SkillboxError.invalidSkill("podaj --url lub --command") }
+            } else { throw SkillboxError.invalidInput("podaj --url lub --command") }
             return ["Dodano serwer \(name)"]
         case "server" where rest.count >= 3 && rest[1] == "remove":
             let name = rest[2]
@@ -571,7 +580,7 @@ public enum AgentboxCommand {
     }
 
     private static func tool(_ raw: String) throws -> Tool {
-        guard let tool = Tool(rawValue: raw) else { throw SkillboxError.invalidSkill("nieznane narzędzie \(raw) — użyj claude, codex, opencode albo vibe") }
+        guard let tool = Tool(rawValue: raw) else { throw SkillboxError.invalidInput("nieznane narzędzie \(raw) — użyj claude, codex, opencode albo vibe") }
         return tool
     }
 
@@ -673,7 +682,7 @@ public enum AgentboxCommand {
     private static func pluginScope(_ value: String?) throws -> ClaudePluginScope {
         guard let value else { return .project }
         guard let scope = ClaudePluginScope(rawValue: value) else {
-            throw SkillboxError.invalidSkill("zakres pluginu to `project` albo `local`: \(value)")
+            throw SkillboxError.invalidInput("zakres pluginu to `project` albo `local`: \(value)")
         }
         return scope
     }

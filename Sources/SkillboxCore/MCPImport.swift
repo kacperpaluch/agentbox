@@ -7,8 +7,8 @@ extension SkillboxService {
         let parsed = try parseMCPJSON(text, singleServerName: singleServerName)
         let chosen = serverNames ?? Set(parsed.summary.servers.map(\.name))
         let servers = parsed.summary.servers.filter { chosen.contains($0.name) }
-        guard !servers.isEmpty else { throw SkillboxError.invalidSkill("nie wybrano serwerów MCP") }
-        if let invalid = servers.first(where: { $0.name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) == nil }) { throw SkillboxError.invalidSkill("nazwa MCP \(invalid.name) może zawierać litery, cyfry, _ i -") }
+        guard !servers.isEmpty else { throw SkillboxError.invalidInput("nie wybrano serwerów MCP") }
+        if let invalid = servers.first(where: { $0.name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) == nil }) { throw SkillboxError.invalidInput("nazwa MCP \(invalid.name) może zawierać litery, cyfry, _ i -") }
         guard Set(servers.map(\.name)).count == servers.count else { throw SkillboxError.mcpConflict("import zawiera powtórzone nazwy serwerów") }
         var config = try await store.mcpConfiguration()
         // What is reported is what is saved: a reimported server keeps its old id.
@@ -58,7 +58,7 @@ extension SkillboxService {
 
     /// The other direction: edited JSON back into form values, validated like an import.
     public func mcpServerDraft(fromJSON json: String, name: String) throws -> (server: MCPServer, fields: [MCPManagedField]) {
-        guard let value = Self.jsonObject(from: json) else { throw SkillboxError.invalidSkill("konfiguracja serwera nie jest poprawnym JSON") }
+        guard let value = Self.jsonObject(from: json) else { throw SkillboxError.invalidInput("konfiguracja serwera nie jest poprawnym JSON") }
         let server = try Self.parseEntry(name: name, value: value).server
         return (server, Self.managedFields(of: server, secrets: [:]))
     }
@@ -80,8 +80,8 @@ extension SkillboxService {
     /// reference to a system variable, everything else is stored as a local value in `mcp.json`.
     /// Tags and the enabled flag are passed alongside the JSON because the format cannot hold them.
     public func updateMCPServerJSON(_ id: UUID, name: String, json: String, enabled: Bool, tags: [String]) async throws -> MCPServer {
-        guard name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil else { throw SkillboxError.invalidSkill("nazwa MCP może zawierać litery, cyfry, _ i -") }
-        guard let value = Self.jsonObject(from: json) else { throw SkillboxError.invalidSkill("konfiguracja serwera nie jest poprawnym JSON") }
+        guard name.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil else { throw SkillboxError.invalidInput("nazwa MCP może zawierać litery, cyfry, _ i -") }
+        guard let value = Self.jsonObject(from: json) else { throw SkillboxError.invalidInput("konfiguracja serwera nie jest poprawnym JSON") }
         var config = try await store.mcpConfiguration()
         guard let index = config.servers.firstIndex(where: { $0.id == id }) else { throw SkillboxError.mcpConflict("serwer MCP nie istnieje") }
         guard !config.servers.contains(where: { $0.id != id && $0.name == name }) else { throw SkillboxError.mcpConflict("serwer \(name) już istnieje") }
@@ -117,7 +117,7 @@ extension SkillboxService {
     }
 
     private func parseMCPJSON(_ text: String, singleServerName: String? = nil) throws -> (summary: MCPImportSummary, secrets: [String: String]) {
-        guard let raw = Self.jsonObject(from: text) else { throw SkillboxError.invalidSkill("konfiguracja MCP nie jest poprawnym JSON") }
+        guard let raw = Self.jsonObject(from: text) else { throw SkillboxError.invalidInput("konfiguracja MCP nie jest poprawnym JSON") }
         let explicitEntries = raw["mcpServers"] as? [String: Any]
         let isSingleServerInput = explicitEntries == nil && Self.isServerEntry(raw)
         let entries: [String: Any]
@@ -242,6 +242,6 @@ extension SkillboxService {
     }
 
     private static func schemaError(_ path: String, _ expected: String) -> Error {
-        SkillboxError.invalidSkill("konfiguracja MCP: \(path) musi być typu: \(expected) — nic nie zapisano")
+        SkillboxError.invalidInput("konfiguracja MCP: \(path) musi być typu: \(expected) — nic nie zapisano")
     }
 }

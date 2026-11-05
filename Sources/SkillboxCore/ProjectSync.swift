@@ -72,6 +72,12 @@ extension SkillboxService {
         var statuses: [ProjectStatus] = []
         let projects = try await listProjects()
         let catalog = try await store.catalog()
+        // Every project compares against the same library copy, so each library skill is read once
+        // per run instead of once per project and client. Only the project side is read per project.
+        let library = await store.skillsDirectory
+        let used = Set(projects.flatMap { SkillboxService.selectedSkills(in: catalog, for: $0).map(\.id) })
+        var libraryTrees: [String: SkillTree] = [:]
+        for id in used { libraryTrees[id] = try? SkillTree.read(library.appending(path: id)) }
         for project in projects {
             await progress?(SyncProgress(done: statuses.count, total: projects.count, label: "Sprawdzam \(project.name)"))
             guard Self.projectFolderExists(project.path) else {
@@ -87,7 +93,7 @@ extension SkillboxService {
                 // edited straight in the library folder all keep their name, so the project kept
                 // reporting itself as synchronized while its files no longer matched the library.
                 let selected = SkillboxService.selectedSkills(in: catalog, for: project)
-                let drifted = await driftedTargets(preview, skills: selected)
+                let drifted = await driftedTargets(preview, skills: selected, libraryTrees: libraryTrees)
                 let outdated = preview.skills.reduce(0) { $0 + $1.updated.count } + drifted
                 let removed = preview.skills.reduce(0) { $0 + $1.removed.count } + preview.mcp.reduce(0) { $0 + $1.removed.count + $1.disabledGlobalRemoved.count } + (preview.docs.first?.removed.count ?? 0)
                 let stale = preview.mcp.contains { $0.staleFile != nil } ? 1 : 0
@@ -280,14 +286,22 @@ extension SkillboxService {
     /// By default a target whose name lists already report the change is not counted again, so the
     /// status does not show the same server as both added and outdated. `isUpToDate` passes
     /// `includingRenamed` because it needs one plain yes-or-no about the files.
-    func driftedTargets(_ preview: ProjectSyncPreview, skills: [Skill], includingRenamed: Bool = false) async -> Int {
+    ///
+    /// `libraryTrees` are the library copies already read for this run; a skill missing from it
+    /// could not be read and counts as drifted, exactly like a failed comparison.
+    func driftedTargets(_ preview: ProjectSyncPreview, skills: [Skill], includingRenamed: Bool = false, libraryTrees: [String: SkillTree]? = nil) async -> Int {
         let library = await store.skillsDirectory
+        func matches(_ id: String, in target: URL) -> Bool {
+            guard let libraryTrees else { return Self.directoryMatches(library.appending(path: id), target.appending(path: id)) }
+            guard let expected = libraryTrees[id], let copy = try? SkillTree.read(target.appending(path: id)) else { return false }
+            return copy == expected
+        }
         var count = 0
         // `updated` counts too: a skill the manifest already reports as outdated must not be
         // counted a second time here as drift.
         for item in preview.skills where includingRenamed || (item.added.isEmpty && item.removed.isEmpty && item.updated.isEmpty) {
             let target = URL(fileURLWithPath: item.target)
-            if skills.contains(where: { !Self.directoryMatches(library.appending(path: $0.id), target.appending(path: $0.id)) }) { count += 1 }
+            if skills.contains(where: { !matches($0.id, in: target) }) { count += 1 }
         }
         count += preview.mcp.filter { (includingRenamed || ($0.added.isEmpty && $0.removed.isEmpty)) && !Self.fileMatches($0.file, content: $0.content) }.count
         // Claude Code's opt-out lives in its own file, outside `content`. Leaving it out of the
@@ -450,7 +464,7 @@ extension SkillboxService {
             if fm.fileExists(atPath: target.path) { try fm.removeItem(at: target) }
             if entry.existed, let savedName = entry.savedName {
                 let saved = backup.appending(path: savedName)
-                guard fm.fileExists(atPath: saved.path) else { throw SkillboxError.invalidSkill("backup nie zawiera \(savedName)") }
+                guard fm.fileExists(atPath: saved.path) else { throw SkillboxError.invalidInput("backup nie zawiera \(savedName)") }
                 try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try fm.copyItem(at: saved, to: target)
             }

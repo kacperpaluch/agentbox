@@ -554,9 +554,13 @@ public enum SkillboxError: LocalizedError {
     case projectNotFound(String), commandFailed(String), unsafePath(String)
     case mcpConflict(String), skillConflict(String)
     case docNotFound(String), docConflict(String)
+    /// Input that is not about a skill — a project name, a backup, a command-line value. The text
+    /// says what is wrong on its own, so it is shown as written.
+    case invalidInput(String)
 
     public var errorDescription: String? {
         switch self {
+        case .invalidInput(let value): value.prefix(1).uppercased() + value.dropFirst()
         case .invalidSkill(let value): "Nieprawidłowy skill: \(value)"
         case .duplicateSkill(let value): "Skill już istnieje: \(value)"
         case .skillNotFound(let value): "Nie znaleziono skilla: \(value)"

@@ -660,4 +660,53 @@ final class AppModelTests: XCTestCase {
         XCTAssertFalse(SkillboxService.isExistingLibrary(at: target), "w wybranym folderze nie powstaje pusta biblioteka")
         XCTAssertEqual(model.operationLog.first?.kind, .error, "błąd zostaje w historii operacji")
     }
+
+    // MARK: Operation history on disk
+
+    /// Yesterday's error is still there after a restart, and the file holding it is 0600 — its
+    /// texts can quote configuration.
+    func testOperationHistorySurvivesARestartAndIsPrivate() async throws {
+        let history = root.appending(path: "historia/operation-log.json")
+        let first = AppModel(root: root.appending(path: "library"), startsAutomatically: false, historyFile: history)
+        await first.reload()
+        await first.saveTags("nie-ma-takiego", text: "x")
+        XCTAssertEqual(first.operationLog.first?.kind, .error)
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: history.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+        let second = AppModel(root: root.appending(path: "library"), startsAutomatically: false, historyFile: history)
+        XCTAssertEqual(second.operationLog.first?.text, first.operationLog.first?.text, "historia wraca po ponownym uruchomieniu")
+    }
+
+    /// A history file that cannot be read is kept aside, not overwritten by the next entry.
+    func testDamagedHistoryIsKeptAside() throws {
+        let folder = root.appending(path: "historia")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let history = folder.appending(path: "operation-log.json")
+        try "{ zepsuty".write(to: history, atomically: true, encoding: .utf8)
+
+        let model = AppModel(root: root.appending(path: "library"), startsAutomatically: false, historyFile: history)
+
+        XCTAssertEqual(model.operationLog.first?.kind, .error)
+        let kept = try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { $0.contains("damaged") }
+        XCTAssertEqual(kept.count, 1, "uszkodzony plik zostaje obok")
+    }
+
+    /// The sidebar counts projects that wait for a sync and those with a problem.
+    func testProjectAttentionCountsPendingAndProblems() async throws {
+        let model = try await makeModel()
+        await model.addLocal(try makeSkill("demo"))
+        let synced = try makeProjectFolder("aktualny"), pending = try makeProjectFolder("czeka")
+        await model.addProject(Project(name: "aktualny", path: synced.path), selection: AttachmentSelection(tools: [.claude], skillIDs: ["demo"]))
+        await model.addProject(Project(name: "czeka", path: pending.path), selection: AttachmentSelection(tools: [.claude], skillIDs: ["demo"]))
+        let gone = try makeProjectFolder("znika")
+        await model.addProject(Project(name: "znika", path: gone.path), selection: AttachmentSelection(tools: [.claude]))
+        _ = await model.syncEverything(try XCTUnwrap(model.projects.first { $0.name == "aktualny" }))
+        try FileManager.default.removeItem(at: gone)
+
+        await model.loadStatuses()
+
+        XCTAssertEqual(model.projectAttention.pending, 1)
+        XCTAssertEqual(model.projectAttention.problems, 1)
+    }
 }

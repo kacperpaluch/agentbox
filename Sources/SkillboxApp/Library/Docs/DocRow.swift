@@ -3,6 +3,8 @@ import SkillboxCore
 
 struct DocRow: View {
     let doc: AgentDoc
+    /// Shown only by a search that found this document through its text, not its name.
+    var matchedInContent = false
     let usageKey: AnyHashable
     let usage: () async -> UsageReport
     let onEdit: () -> Void
@@ -14,6 +16,7 @@ struct DocRow: View {
                 HStack(spacing: Space.row) {
                     Text(doc.name).rowTitle()
                     ForEach(doc.tags, id: \.self) { TagPill(tag: $0) }
+                    if matchedInContent { MetaBadge(text: "w treści", tint: .secondary) }
                 }
                 UsageCaption(key: usageKey, load: usage)
             }

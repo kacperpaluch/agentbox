@@ -22,7 +22,7 @@ public enum GlobalMCPDiscovery {
         let file = home.appending(path: ".claude.json")
         guard FileManager.default.fileExists(atPath: file.path) else { return [] }
         guard let object = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any] else {
-            throw SkillboxError.invalidSkill("\(file.path) nie jest obiektem JSON")
+            throw SkillboxError.invalidInput("\(file.path) nie jest obiektem JSON")
         }
         return Array((object["mcpServers"] as? [String: Any] ?? [:]).keys)
     }
