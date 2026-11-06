@@ -130,14 +130,18 @@ agentbox sync project sklep
 agentbox sync project sklep --dry-run
 agentbox sync all
 agentbox sync global --skills seo-audit,docx --tags seo --tools claude,opencode
+agentbox sync global --docs zasady-globalne --dry-run
+agentbox sync global --no-doc
 agentbox sync global --dry-run
 ```
 
 `sync project` i `sync all` synchronizują razem skille, MCP, dokumenty i pluginy Claude Code wybrane dla projektu, tą samą ścieżką transakcyjną co GUI: przed zapisem powstaje backup projektu, a błąd cofa zmiany. Plugin jest instalowany tylko wtedy, gdy projekt jeszcze go nie deklaruje — ten już zainstalowany nie kosztuje wywołania CLI Claude Code. `sync all` pomija projekty, których folderu nie ma na dysku, i wypisuje je jako `? nazwa — brak folderu, pominięto` (to nie jest błąd). Zatrzymuje serię na pierwszym błędzie i wypisuje wynik dla każdego projektu — `✓` zsynchronizowany, `✗` cofnięty, `–` pominięty. Jeśli którykolwiek projekt został cofnięty albo pominięty, polecenie po wypisaniu raportu kończy się kodem 1.
 
-`sync global` zapisuje wybór skilli, tagów i narzędzi, a następnie kopiuje je do katalogów użytkownika (`~/.claude/skills`, `~/.codex/skills`, `~/.config/opencode/skills`). Wywołany bez `--skills` i `--tags` używa wyboru zapisanego wcześniej w aplikacji. Wykluczenia ustawione w aplikacji zostają; skill podany wprost w `--skills` przestaje być wykluczony. Jeśli zapis do któregoś klienta się nie powiedzie, pozostali klienci wracają do stanu sprzed polecenia.
+`sync global` zapisuje wybór skilli, tagów, dokumentu i narzędzi, a następnie kopiuje skille do katalogów użytkownika (`~/.claude/skills`, `~/.codex/skills`, `~/.config/opencode/skills`, `~/.vibe/skills`), a dokument do plików instrukcji użytkownika. Wywołany bez `--skills`, `--tags` i opcji dokumentu używa wyboru zapisanego wcześniej w aplikacji. Wykluczenia ustawione w aplikacji zostają; skill podany wprost w `--skills` przestaje być wykluczony. Jeśli zapis do któregoś klienta się nie powiedzie, pozostali klienci — skille i dokumenty — wracają do stanu sprzed polecenia.
 
-`--dry-run` pokazuje planowane zmiany bez zapisu — również bez zapisu wyboru podanego w `--skills`, `--tags` i `--tools`.
+`--docs <id>` albo `--doc-tags <tag>` wybiera dokument dla Tego Maca, a `--no-doc` go odpina; skille zostają wtedy takie, jak były zapisane. Dokument trafia do `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.config/opencode/AGENTS.md` i `~/.vibe/AGENTS.md` zaznaczonych narzędzi, a wiersz `<narzędzie> dokument:` mówi, co się z nim stanie: `+id` (dodany), `~id` (nowa treść), `-id` (usunięty) albo `bez zmian`.
+
+`--dry-run` pokazuje planowane zmiany bez zapisu — również bez zapisu wyboru podanego w `--skills`, `--tags`, `--docs` i `--tools`.
 
 Synchronizacja zatrzymuje się, jeśli w katalogu docelowym istnieje katalog skilla o tej samej nazwie, którego Agentbox nie ma w swoim manifeście. Ręcznie napisany skill nie zostanie nadpisany — usuń go lub zmień nazwę, jeśli ma go zastąpić wersja z biblioteki.
 

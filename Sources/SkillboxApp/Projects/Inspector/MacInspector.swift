@@ -1,19 +1,21 @@
 import SwiftUI
 import SkillboxCore
 
-/// This Mac, shown like any other row of Projekty: skills copied to the user's directories, so every
-/// session of a client sees them whatever the project. It used to be a sheet behind `Więcej`, one
+/// This Mac, shown like any other row of Projekty: skills copied to the user's directories and one
+/// document written to each client's user-level instructions file, so every session of a client sees
+/// them whatever the project. It used to be a sheet behind `Więcej`, one
 /// row away from `Serwery klientów`, which means the opposite thing; both now live on this row.
 struct MacInspector: View {
     let model: AppModel
     @State private var selection = AttachmentSelection()
     @State private var saved = AttachmentSelection()
     @State private var previews: [SkillSyncPreview] = []
+    @State private var docPreviews: [GlobalDocPreview] = []
     @State private var error = ""
     @State private var showClientServers = false
 
     private var isDirty: Bool { selection != saved }
-    private var hasChanges: Bool { previews.contains { !$0.added.isEmpty || !$0.updated.isEmpty || !$0.removed.isEmpty } }
+    private var hasChanges: Bool { previews.contains { !$0.added.isEmpty || !$0.updated.isEmpty || !$0.removed.isEmpty } || docPreviews.contains(where: \.changed) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -23,22 +25,32 @@ struct MacInspector: View {
                     Spacer()
                     Button("Serwery klientów…") { showClientServers = true }
                 }
-                Text("Skille widoczne we wszystkich sesjach wybranych klientów.").rowMetadata()
+                Text("Skille i dokument widoczne we wszystkich sesjach wybranych klientów.").rowMetadata()
                 if model.globalState != nil { ProjectStatusBadge(state: model.globalState) }
             }
             .padding(Space.page)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.section) {
-                    AttachmentPicker(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, selection: $selection, includesServersAndDocs: false)
+                    AttachmentPicker(skills: model.skills, servers: model.mcp.servers, docs: model.docs.docs, selection: $selection, forMac: true)
                     if !error.isEmpty { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).textSelection(.enabled) }
                     GroupBox("Podgląd") {
                         VStack(alignment: .leading, spacing: Space.row) {
-                            if previews.isEmpty { Text("Nie wybrano żadnego narzędzia.").rowMetadata() }
+                            if previews.isEmpty && docPreviews.isEmpty { Text("Nie wybrano żadnego narzędzia.").rowMetadata() }
                             ForEach(previews, id: \.tool) { item in
                                 VStack(alignment: .leading, spacing: Space.tight) {
                                     Text(item.target).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
                                     SyncChangeRows(added: item.added, updated: item.updated, removed: item.removed)
+                                }
+                            }
+                            ForEach(docPreviews, id: \.tool) { item in
+                                VStack(alignment: .leading, spacing: Space.tight) {
+                                    Text(item.file).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
+                                    if item.changed {
+                                        SyncChangeRows(added: item.added, updated: item.updated ? item.docID.map { [$0] } ?? [] : [], removed: item.removed)
+                                    } else {
+                                        Text("Dokument \(item.docID ?? "") bez zmian").rowMetadata()
+                                    }
                                 }
                             }
                         }.padding(6).frame(maxWidth: .infinity, alignment: .leading)
@@ -66,14 +78,17 @@ struct MacInspector: View {
 
     private func save() async -> Bool {
         guard isDirty else { return true }
-        guard await model.saveSelection(selection, for: .global, named: "skille globalne") else { error = model.message; return false }
+        guard await model.saveSelection(selection, for: .global, named: "Ten Mac") else { error = model.message; return false }
         saved = selection
         return true
     }
 
     /// The preview follows the checkboxes, not the last saved choice.
     private func refresh() async {
-        do { previews = try await model.previewGlobalSync(selection); error = "" }
-        catch { previews = []; self.error = error.localizedDescription }
+        do {
+            previews = try await model.previewGlobalSync(selection)
+            docPreviews = try await model.previewGlobalDocs(selection)
+            error = ""
+        } catch { previews = []; docPreviews = []; self.error = error.localizedDescription }
     }
 }

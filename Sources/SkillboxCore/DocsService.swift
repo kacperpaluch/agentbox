@@ -89,13 +89,20 @@ extension SkillboxService {
         guard FileManager.default.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
         let docsConfig = try await store.docsConfiguration()
         let selection = local.storedSelection(for: .project(local.selectionID(for: project)))
+        let doc = try Self.resolvedDoc(selection, docs: docsConfig.docs, place: "projektu \(project.name)")
+        return try DocsRenderer.preview(project: URL(fileURLWithPath: project.path), doc: doc)
+    }
+
+    /// The one document a selection names, through explicit ids and tag matches. `place` completes
+    /// "do … pasuje" in the conflict message.
+    static func resolvedDoc(_ selection: AttachmentSelection, docs: [AgentDoc], place: String) throws -> AgentDoc? {
         let ids = Set(selection.docIDs)
         let tags = Set(selection.docTags.map { $0.lowercased() })
-        let matches = docsConfig.docs.filter { ids.contains($0.id) || !tags.isDisjoint(with: $0.tags.map { $0.lowercased() }) }
+        let matches = docs.filter { ids.contains($0.id) || !tags.isDisjoint(with: $0.tags.map { $0.lowercased() }) }
         guard matches.count <= 1 else {
-            throw SkillboxError.docConflict("do projektu \(project.name) pasuje więcej niż jeden dokument: \(matches.map(\.id).sorted().joined(separator: ", ")) — AGENTS.md może mieć tylko jedną treść naraz")
+            throw SkillboxError.docConflict("do \(place) pasuje więcej niż jeden dokument: \(matches.map(\.id).sorted().joined(separator: ", ")) — AGENTS.md może mieć tylko jedną treść naraz")
         }
-        return try DocsRenderer.preview(project: URL(fileURLWithPath: project.path), doc: matches.first)
+        return matches.first
     }
 
     /// `previews` is the preview a caller has already computed for this project — see `syncMCP`.
@@ -148,6 +155,21 @@ enum DocsRenderer {
         ]
     }
 
+    /// One client's user-level instructions file (`Tool.globalDocURL`), holding the document's full
+    /// text and nothing else. Its manifest sits next to it, as a project's sits next to `AGENTS.md`,
+    /// so `apply(previews:project:)` takes the file's folder as its `project`.
+    static func preview(globalFile file: URL, doc: AgentDoc?) throws -> DocPreview {
+        let previousID = try manifestDocID(file.deletingLastPathComponent())
+        let desired = doc.map { $0.content.hasSuffix("\n") ? $0.content : $0.content + "\n" }
+        let added: [String] = (doc != nil && doc?.id != previousID) ? [doc!.id] : []
+        let removed: [String] = (previousID != nil && previousID != doc?.id) ? [previousID!] : []
+        let content = try renderedFile(file: file, desired: desired, previouslyManaged: previousID != nil)
+        return DocPreview(file: file.path, content: content ?? "", added: added, removed: removed, leaveAsIs: content == nil)
+    }
+
+    /// Whether the folder holds an Agentbox document manifest, readable or not.
+    static func hasManifest(_ base: URL) -> Bool { FileManager.default.fileExists(atPath: manifestURL(base).path) }
+
     /// The full new content of one generated file, or "" meaning it should not exist.
     ///
     /// `desired == nil` means this project has no document selected. If Agentbox never managed the
@@ -178,7 +200,9 @@ enum DocsRenderer {
         if exists {
             try requireOwnable(file)
             if !previouslyManaged {
-                guard try SkillboxService.existingText(at: file) == desired else {
+                // An empty file holds nothing to lose: `~/.codex/AGENTS.md` is often left as one.
+                let existing = try SkillboxService.existingText(at: file)
+                guard existing == desired || existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     throw SkillboxError.docConflict("\(file.lastPathComponent) istnieje w \(file.deletingLastPathComponent().path) i nie jest zarządzany przez Agentbox")
                 }
             }

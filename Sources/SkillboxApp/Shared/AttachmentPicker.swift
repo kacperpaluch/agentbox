@@ -11,13 +11,14 @@ struct AttachmentPicker: View {
     /// A project property rather than an attachment, so it stays a separate binding — and the global
     /// target has no repository to write a `.gitignore` into, which is why it can be left out.
     var manageGitignore: Binding<Bool>?
-    /// The Mac itself can only take skills: the files a global MCP server would live in are ones
-    /// Agentbox deliberately never writes, and a global `AGENTS.md` has no defined location. Showing
-    /// those pickers there would offer a choice nothing acts on.
-    var includesServersAndDocs = true
-    init(skills: [Skill], servers: [MCPServer], docs: [AgentDoc], claudePlugins: [ClaudePluginDefinition] = [], selection: Binding<AttachmentSelection>, manageGitignore: Binding<Bool>? = nil, includesServersAndDocs: Bool = true) {
+    /// The Mac itself takes skills and a document but no servers: the files a global MCP server
+    /// would live in are ones Agentbox deliberately never writes. Showing that picker there would
+    /// offer a choice nothing acts on.
+    var forMac = false
+    private var includesServers: Bool { !forMac }
+    init(skills: [Skill], servers: [MCPServer], docs: [AgentDoc], claudePlugins: [ClaudePluginDefinition] = [], selection: Binding<AttachmentSelection>, manageGitignore: Binding<Bool>? = nil, forMac: Bool = false) {
         self.skills = skills; self.servers = servers; self.docs = docs; self.claudePlugins = claudePlugins
-        self._selection = selection; self.manageGitignore = manageGitignore; self.includesServersAndDocs = includesServersAndDocs
+        self._selection = selection; self.manageGitignore = manageGitignore; self.forMac = forMac
     }
 
     private var availableTags: [String] { Array(Set(skills.flatMap(\.tags))).sorted() }
@@ -43,14 +44,14 @@ struct AttachmentPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             GroupBox("Narzędzia") { CheckGrid(minimum: 110) { ForEach(enabledTools, id: \.self) { tool in Toggle(tool.rawValue.capitalized, isOn: setBinding(tool, in: toolsBinding)).toggleStyle(.checkbox).fixedSize() } }.padding(6) }
-            TextField(includesServersAndDocs ? "Szukaj skilli i serwerów MCP" : "Szukaj skilli", text: $query)
+            TextField(includesServers ? "Szukaj skilli i serwerów MCP" : "Szukaj skilli", text: $query)
                 .textFieldStyle(.roundedBorder)
             section("skills", title: "Skille", summary: summary(chosenSkills, of: skills.count, tags: selection.skillTags)) {
                 // Tags first: they decide which skills below arrive on their own.
                 if !availableTags.isEmpty { TagCheckGrid(title: "Tagi", tags: availableTags, selection: skillTagsBinding) }
                 SkillCheckGrid(title: "Lista", skills: shownSkills, selection: $selection, emptyText: query.isEmpty ? "Biblioteka jest pusta." : noMatch)
             }
-            if includesServersAndDocs {
+            if includesServers {
                 section("mcp", title: "Serwery MCP", summary: summary(chosenServers, of: servers.count, tags: selection.serverTags)) {
                     if !mcpTags.isEmpty { TagCheckGrid(title: "Tagi", tags: mcpTags, selection: serverTagsBinding) }
                     GroupBox("Lista") {
@@ -62,13 +63,11 @@ struct AttachmentPicker: View {
             if !claudePlugins.isEmpty {
                 section("plugins", title: "Pluginy Claude", summary: summary(chosenPlugins, of: claudePlugins.count, tags: [])) { pluginSection }
             }
-            if includesServersAndDocs || manageGitignore != nil {
-                if matchedDocs.count > 1 { docConflict }
-                section("more", title: "Więcej opcji", summary: moreSummary) {
-                    if includesServersAndDocs { docSection }
-                    if let manageGitignore {
-                        GroupBox("Git") { Toggle("Dopisuj wygenerowane pliki MCP do .gitignore projektu", isOn: manageGitignore).toggleStyle(.checkbox).help("Agentbox dopisuje tylko własny blok i nigdy nie usuwa istniejących wpisów.").padding(6).frame(maxWidth: .infinity, alignment: .leading) }
-                    }
+            if matchedDocs.count > 1 { docConflict }
+            section("more", title: forMac ? "Dokument" : "Więcej opcji", summary: moreSummary) {
+                docSection
+                if let manageGitignore {
+                    GroupBox("Git") { Toggle("Dopisuj wygenerowane pliki MCP do .gitignore projektu", isOn: manageGitignore).toggleStyle(.checkbox).help("Agentbox dopisuje tylko własny blok i nigdy nie usuwa istniejących wpisów.").padding(6).frame(maxWidth: .infinity, alignment: .leading) }
                 }
             }
         }
@@ -96,10 +95,8 @@ struct AttachmentPicker: View {
 
     private var moreSummary: String {
         var parts: [String] = []
-        if includesServersAndDocs {
-            let named = selection.docIDs.first.flatMap { id in docs.first { $0.id == id }?.name }
-            parts.append("dokument: " + (named ?? (selection.docTags.isEmpty ? "brak" : selection.docTags.map { "#\($0)" }.joined(separator: " "))))
-        }
+        let named = selection.docIDs.first.flatMap { id in docs.first { $0.id == id }?.name }
+        parts.append("dokument: " + (named ?? (selection.docTags.isEmpty ? "brak" : selection.docTags.map { "#\($0)" }.joined(separator: " "))))
         if let manageGitignore { parts.append(".gitignore: " + (manageGitignore.wrappedValue ? "tak" : "nie")) }
         return parts.joined(separator: " · ")
     }
@@ -140,13 +137,13 @@ struct AttachmentPicker: View {
     /// like skills and MCP servers. Tags can still match more than one document; that is a conflict
     /// synchronization reports, so it is flagged before it gets that far.
     @ViewBuilder private var docSection: some View {
-        GroupBox("Dokument (AGENTS.md / CLAUDE.md)") {
+        GroupBox(forMac ? "Dokument (instrukcje globalne)" : "Dokument (AGENTS.md / CLAUDE.md)") {
             VStack(alignment: .leading, spacing: 8) {
                 Picker("Dokument", selection: docBinding) {
                     Text("Brak").tag(String?.none)
                     ForEach(docs.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) { doc in Text(doc.name).tag(Optional(doc.id)) }
                 }
-                .help("Tekst trafia jako AGENTS.md; CLAUDE.md dostaje import @AGENTS.md.")
+                .help(forMac ? "Pełna treść trafia do ~/.claude/CLAUDE.md oraz AGENTS.md w ~/.codex, ~/.config/opencode i ~/.vibe — dla zaznaczonych narzędzi." : "Tekst trafia jako AGENTS.md; CLAUDE.md dostaje import @AGENTS.md.")
                 if !docTags.isEmpty { TagCheckGrid(title: "Tagi dokumentów", tags: docTags, selection: docTagsBinding) }
             }.padding(6)
         }

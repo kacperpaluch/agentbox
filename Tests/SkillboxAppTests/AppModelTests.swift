@@ -459,6 +459,17 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(AppModel.globalState([quiet, busy]), .pending(added: 2, outdated: 1, removed: 1))
     }
 
+    /// The document counts once per client file it adds, rewrites or removes; a file already in
+    /// place counts as nothing.
+    func testTheMacRowCountsTheDocumentPerClient() {
+        let same = GlobalDocPreview(tool: .claude, file: "/h/.claude/CLAUDE.md", docID: "z", added: [], removed: [], changed: false)
+        XCTAssertEqual(AppModel.globalState([], docs: [same]), .synced)
+        let fresh = GlobalDocPreview(tool: .codex, file: "/h/.codex/AGENTS.md", docID: "z", added: ["z"], removed: [], changed: true)
+        let edited = GlobalDocPreview(tool: .vibe, file: "/h/.vibe/AGENTS.md", docID: "z", added: [], removed: [], changed: true)
+        let gone = GlobalDocPreview(tool: .opencode, file: "/h/.config/opencode/AGENTS.md", docID: nil, added: [], removed: ["z"], changed: true)
+        XCTAssertEqual(AppModel.globalState([], docs: [same, fresh, edited, gone]), .pending(added: 1, outdated: 1, removed: 1))
+    }
+
     // MARK: Library watcher
 
     func testCreatingAGroupRootReportsFailureAndThenSuccess() async throws {

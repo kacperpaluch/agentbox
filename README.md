@@ -216,7 +216,7 @@ Pliki konfiguracyjne i manifesty powstają tylko wtedy, gdy projekt ma co synchr
 
 ### Skille globalne
 
-Wiersz `Ten Mac` na górze tabeli `Projekty` synchronizuje wybrane skille do katalogów użytkownika zamiast do projektu: `~/.claude/skills`, `~/.codex/skills`, `~/.config/opencode/skills` i `~/.vibe/skills`. Wybór narzędzi, skilli i tagów jest zapisywany, a podgląd pokazuje zmiany przed zapisem. Globalnie trafiają wyłącznie skille — pliki, w których żyłby globalny serwer MCP, to pliki, których Agentbox celowo nigdy nie zapisuje.
+Wiersz `Ten Mac` na górze tabeli `Projekty` synchronizuje wybrane skille do katalogów użytkownika zamiast do projektu: `~/.claude/skills`, `~/.codex/skills`, `~/.config/opencode/skills` i `~/.vibe/skills`. Może też nieść jeden dokument z biblioteki — globalne instrukcje, które trafiają w całości do `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.config/opencode/AGENTS.md` i `~/.vibe/AGENTS.md`. Wybór narzędzi, skilli, tagów i dokumentu jest zapisywany, a podgląd pokazuje zmiany przed zapisem. Globalnie nie trafiają serwery MCP — pliki, w których żyłby globalny serwer MCP, to pliki, których Agentbox celowo nigdy nie zapisuje.
 
 ### Domyślne dla nowych projektów
 

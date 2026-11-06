@@ -216,16 +216,25 @@ Pliki i manifesty powstają tylko wtedy, gdy projekt ma co synchronizować — p
 
 W zakładce `Wybór`, w sekcji `Więcej opcji`, można włączyć `Dopisuj wygenerowane pliki MCP do .gitignore projektu`. `.git/info/exclude`, którego Agentbox używa domyślnie, chroni tylko ten jeden klon — kolega z zespołu, który sklonuje repozytorium, nie jest chroniony wcale. `.gitignore` jedzie z repozytorium, więc obejmuje wszystkich. Agentbox dopisuje wyłącznie własny, oznaczony blok i nigdy nie usuwa istniejących wpisów. Opcja jest domyślnie włączona dla nowych projektów i wyłączona dla tych utworzonych wcześniej.
 
-### Skille globalne
+### Skille i dokument globalny
 
-Wiersz `Ten Mac` na górze tabeli `Projekty` synchronizuje wybrane skille do katalogu użytkownika, a nie do projektu. Są wtedy widoczne we wszystkich sesjach danego klienta:
+Wiersz `Ten Mac` na górze tabeli `Projekty` synchronizuje wybrane skille i jeden dokument do katalogów użytkownika, a nie do projektu. Są wtedy widoczne we wszystkich sesjach danego klienta. Skille trafiają do:
 
 - Claude Code — `~/.claude/skills`,
 - Codex — `~/.codex/skills`,
 - OpenCode — `~/.config/opencode/skills`,
 - Mistral Vibe — `~/.vibe/skills`.
 
-Zaznacz wiersz `Ten Mac`, a w inspektorze narzędzia oraz skille lub tagi. Kolumna `Stan` pokazuje, czy katalogi użytkownika odpowiadają wyborowi. `Podgląd` w inspektorze na bieżąco pokazuje planowane dodania, aktualizacje i usunięcia, `Zapisz` zapamiętuje wybór w `selections.json` pod kluczem `global`, a `Synchronizuj` (albo `Zapisz i synchronizuj`) zapisuje zmiany na dysku. Odznaczenie skilla usuwa go z katalogu użytkownika przy kolejnej synchronizacji — również tutaj usuwane są wyłącznie katalogi z manifestu Agentbox.
+Dokument wybrany w sekcji `Dokument` trafia w całości do pliku instrukcji użytkownika każdego zaznaczonego klienta:
+
+- Claude Code — `~/.claude/CLAUDE.md` (pełna treść, nie import `@AGENTS.md` jak w projekcie),
+- Codex — `~/.codex/AGENTS.md`,
+- OpenCode — `~/.config/opencode/AGENTS.md`,
+- Mistral Vibe — `~/.vibe/AGENTS.md`.
+
+Plik w projekcie (`AGENTS.md`, `CLAUDE.md`) nadal działa obok niego — klienci wczytują oba, a przy sprzecznych zasadach zwykle wygrywa ten bliższy projektu. Obowiązują te same reguły co w projekcie: pasować może tylko jeden dokument, własny plik o innej treści zatrzymuje synchronizację z komunikatem `Konflikt dokumentu` (pusty plik jest przejmowany), a odznaczenie dokumentu albo narzędzia usuwa wyłącznie plik zapisany przez Agentbox. Obok każdego pliku powstaje manifest `.skillbox/docs-manifest.json` (np. `~/.codex/.skillbox/`). Skille i dokumenty są zapisywane razem: błąd przy którymkolwiek pliku cofa wszystkie wcześniejsze zmiany tej synchronizacji.
+
+Zaznacz wiersz `Ten Mac`, a w inspektorze narzędzia, skille lub tagi oraz dokument. Kolumna `Stan` pokazuje, czy katalogi użytkownika odpowiadają wyborowi. `Podgląd` w inspektorze na bieżąco pokazuje planowane dodania, aktualizacje i usunięcia, `Zapisz` zapamiętuje wybór w `selections.json` pod kluczem `global`, a `Synchronizuj` (albo `Zapisz i synchronizuj`) zapisuje zmiany na dysku. Odznaczenie skilla usuwa go z katalogu użytkownika przy kolejnej synchronizacji — również tutaj usuwane są wyłącznie katalogi z manifestu Agentbox.
 
 ### Używane narzędzia
 

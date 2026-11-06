@@ -21,6 +21,18 @@ public enum Tool: String, Codable, CaseIterable, Sendable {
         case .vibe: home.appending(path: ".vibe/skills")
         }
     }
+
+    /// The instructions file each client reads in every session, whatever the project. Claude Code
+    /// reads only `CLAUDE.md` at user level, so the document goes there in full rather than as the
+    /// `@AGENTS.md` import a project gets. Same shortcut as `globalSkillsURL` for CODEX_HOME/VIBE_HOME.
+    public func globalDocURL(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
+        switch self {
+        case .claude: home.appending(path: ".claude/CLAUDE.md")
+        case .codex: home.appending(path: ".codex/AGENTS.md")
+        case .opencode: home.appending(path: ".config/opencode/AGENTS.md")
+        case .vibe: home.appending(path: ".vibe/AGENTS.md")
+        }
+    }
 }
 
 public struct SkillSource: Codable, Hashable, Sendable {
@@ -427,6 +439,23 @@ public struct SkillSyncPreview: Sendable {
     public var removed: [String]
     public init(tool: Tool, target: String, added: [String], updated: [String], removed: [String]) {
         self.tool = tool; self.target = target; self.added = added; self.updated = updated; self.removed = removed
+    }
+}
+
+/// The plan for one client's user-level instructions file on this Mac (`Tool.globalDocURL`).
+public struct GlobalDocPreview: Sendable, Hashable {
+    public var tool: Tool
+    public var file: String
+    /// The document the file will hold, `nil` when it goes away.
+    public var docID: String?
+    public var added: [String]
+    public var removed: [String]
+    /// The file on disk differs from what synchronization would leave there.
+    public var changed: Bool
+    /// Same document as before, new text.
+    public var updated: Bool { changed && added.isEmpty && removed.isEmpty && docID != nil }
+    public init(tool: Tool, file: String, docID: String?, added: [String], removed: [String], changed: Bool) {
+        self.tool = tool; self.file = file; self.docID = docID; self.added = added; self.removed = removed; self.changed = changed
     }
 }
 

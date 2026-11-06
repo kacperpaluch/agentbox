@@ -329,17 +329,30 @@ public enum AgentboxCommand {
             return Self.lines(for: preview)
         case "global":
             let ids = csv("--skills", in: args), tags = csv("--tags", in: args)
+            let docIDs = csv("--docs", in: args), docTags = csv("--doc-tags", in: args), noDoc = args.contains("--no-doc")
+            let namesSkills = !ids.isEmpty || !tags.isEmpty
+            let namesDoc = !docIDs.isEmpty || !docTags.isEmpty || noDoc
             var draft: AttachmentSelection?
-            if !ids.isEmpty || !tags.isEmpty {
+            if namesSkills || namesDoc {
                 // Only what the command names changes. A fresh selection dropped the exclusions
                 // made in the app; a skill named here explicitly is no longer excluded.
                 var selection = try await service.storedSelection(for: .global)
-                selection.tools = try await Self.tools(in: args, service: service)
-                selection.skillIDs = ids
-                selection.skillTags = tags
-                selection.excludedSkillIDs.removeAll { ids.contains($0) }
+                if namesSkills || option("--tools", in: args) != nil || selection.tools.isEmpty {
+                    selection.tools = try await Self.tools(in: args, service: service)
+                }
+                if namesSkills {
+                    selection.skillIDs = ids
+                    selection.skillTags = tags
+                    selection.excludedSkillIDs.removeAll { ids.contains($0) }
+                }
+                if namesDoc {
+                    selection.docIDs = noDoc ? [] : docIDs
+                    selection.docTags = noDoc ? [] : docTags
+                }
                 draft = selection
             }
+            // The document plan comes first: once the sync has run, it would only say "bez zmian".
+            let docs = try await service.previewGlobalDocs(selection: draft)
             let previews: [SkillSyncPreview]
             if dry {
                 // A preview writes nothing, the selection included.
@@ -348,8 +361,9 @@ public enum AgentboxCommand {
                 if let draft { try await service.setSelection(draft, for: .global) }
                 previews = try await service.syncGlobalSelection()
             }
-            guard !previews.isEmpty else { return ["Nie wybrano narzędzi dla synchronizacji globalnej"] }
+            guard !previews.isEmpty || !docs.isEmpty else { return ["Nie wybrano narzędzi dla synchronizacji globalnej"] }
             return previews.map { "\($0.tool.rawValue): +\($0.added.count) ~\($0.updated.count) -\($0.removed.count) → \($0.target)" }
+                + docs.map { "\($0.tool.rawValue) dokument: \(Self.docState($0)) → \($0.file)" }
         case "all":
             let missing = try await service.projectsWithoutFolder().map { "? \($0.name) — brak folderu, pominięto" }
             guard !dry else {
@@ -392,7 +406,14 @@ public enum AgentboxCommand {
         return lines + plan.unchanged.map { "Bez zmian: \($0)" } + plan.failed.map { "✗ \($0.id): \($0.reason)" }
     }
 
-    private static let syncUsage = "Użycie: agentbox sync project <nazwa> | global [--skills a,b] [--tags x] [--tools claude,codex] | all [--dry-run]"
+    private static let syncUsage = "Użycie: agentbox sync project <nazwa> | global [--skills a,b] [--tags x] [--docs id | --doc-tags x | --no-doc] [--tools claude,codex] | all [--dry-run]"
+
+    private static func docState(_ preview: GlobalDocPreview) -> String {
+        if let added = preview.added.first { return "+\(added)" + (preview.removed.first.map { " (zamiast \($0))" } ?? "") }
+        if let removed = preview.removed.first { return "-\(removed)" }
+        if preview.updated { return "~\(preview.docID ?? "")" }
+        return "bez zmian"
+    }
 
     private static func refresh(service: SkillboxService) async throws -> [String] {
         var lines = ["1/3 Sprawdzanie aktualizacji skilli…"]

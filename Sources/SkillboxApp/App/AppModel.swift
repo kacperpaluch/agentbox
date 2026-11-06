@@ -489,14 +489,18 @@ import SkillboxCore
     }
     func loadGlobalState() async {
         guard let service else { return }
-        do { globalState = Self.globalState(try await service.previewGlobalSync()) }
+        do { globalState = Self.globalState(try await service.previewGlobalSync(), docs: try await service.previewGlobalDocs()) }
         catch { globalState = .blocked(error.localizedDescription) }
     }
     /// The Mac's row reads like a project's: changes waiting, or up to date. No previews means no
     /// client is ticked and nothing Agentbox wrote is left behind — there is nothing to report.
-    static func globalState(_ previews: [SkillSyncPreview]) -> ProjectStatus.State? {
-        guard !previews.isEmpty else { return nil }
-        let added = previews.reduce(0) { $0 + $1.added.count }, updated = previews.reduce(0) { $0 + $1.updated.count }, removed = previews.reduce(0) { $0 + $1.removed.count }
+    /// A document counts once per client file it adds, rewrites or removes.
+    static func globalState(_ previews: [SkillSyncPreview], docs: [GlobalDocPreview] = []) -> ProjectStatus.State? {
+        guard !previews.isEmpty || !docs.isEmpty else { return nil }
+        let changedDocs = docs.filter(\.changed)
+        let added = previews.reduce(0) { $0 + $1.added.count } + changedDocs.reduce(0) { $0 + $1.added.count }
+        let updated = previews.reduce(0) { $0 + $1.updated.count } + changedDocs.count { $0.updated }
+        let removed = previews.reduce(0) { $0 + $1.removed.count } + changedDocs.count { $0.added.isEmpty && !$0.removed.isEmpty }
         return added + updated + removed == 0 ? .synced : .pending(added: added, outdated: updated, removed: removed)
     }
     func unsyncProject(_ project: Project) async {
@@ -795,7 +799,7 @@ import SkillboxCore
         do {
             guard let service else { throw SkillboxError.commandFailed("Brak usługi") }
             let previews = try await service.syncGlobalSelection()
-            message = "Zsynchronizowano skille globalne: \(previews.count) narzędzi"
+            message = "Zsynchronizowano Ten Mac: \(previews.count) narzędzi"
             record(.success, message); await loadGlobalState(); return true
         } catch { message = error.localizedDescription; record(.error, message); await loadGlobalState(); return false }
     }
@@ -803,6 +807,7 @@ import SkillboxCore
     // like every other place — only the preview stays a call of its own, because it inspects the
     // user's skill directories rather than the library.
     func previewGlobalSync(_ selection: AttachmentSelection? = nil) async throws -> [SkillSyncPreview] { try await requireService().previewGlobalSync(selection: selection) }
+    func previewGlobalDocs(_ selection: AttachmentSelection? = nil) async throws -> [GlobalDocPreview] { try await requireService().previewGlobalDocs(selection: selection) }
     func analyzeMCP(_ text: String, singleServerName: String? = nil) async throws -> MCPImportSummary { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.analyzeMCPJSON(text, singleServerName: singleServerName) }
     func generateMCP(_ instructions: String, apiKey: String, model: String) async throws -> String { guard let service else { throw SkillboxError.commandFailed("Brak usługi") }; return try await service.generateMCPConfiguration(instructions: instructions, apiKey: apiKey, model: model) }
     /// `classifications` is what the import sheet shows the user; the store keeps a `${VAR}`

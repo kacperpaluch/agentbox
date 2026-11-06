@@ -6,6 +6,16 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-11-06
+
+### Dodano
+
+- Globalny dokument dla `Ten Mac`: wybrany dokument z biblioteki trafia w całości do plików instrukcji użytkownika — `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.config/opencode/AGENTS.md` i `~/.vibe/AGENTS.md` — dla zaznaczonych narzędzi. Podgląd pokazuje każdy plik, a synchronizacja zapisuje dokument razem ze skillami w jednej transakcji: błąd cofa i skille, i dokumenty. Odznaczenie dokumentu albo narzędzia usuwa tylko plik zapisany przez Agentbox; własny plik o innej treści zatrzymuje synchronizację z komunikatem. CLI: `agentbox sync global --docs <id>` (także `--doc-tags`, `--no-doc`).
+
+### Zmieniono
+
+- Pusty `AGENTS.md` w projekcie (i pusty plik instrukcji Tego Maca), którym Agentbox jeszcze nie zarządza, jest przejmowany zamiast zgłaszać konflikt — nie ma w nim czego stracić.
+
 ## [0.41.0] - 2026-11-05
 
 ### Dodano
