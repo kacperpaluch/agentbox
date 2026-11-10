@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 extension SkillboxService {
@@ -66,12 +67,21 @@ extension SkillboxService {
         if let project = local.projects.first(where: { $0.id == projectID }), local.inheritsRoot(project) {
             throw SkillboxError.invalidInput("projekt \(project.name) korzysta z ustawień folderu nadrzędnego — przypisz dokumenty do folderu albo nadaj projektowi własne ustawienia")
         }
+        let docs = try await store.docsConfiguration().docs
+        try Self.requireKnown(docIDs, among: docs.map(\.id), kind: "dokumenty")
         var config = local
         var selection = config.storedSelection(for: .project(projectID))
-        selection.docIDs = Self.prunedDocIDs(Array(Set(docIDs)), tags: tags, docs: try await store.docsConfiguration().docs)
+        selection.docIDs = Self.prunedDocIDs(Array(Set(docIDs)), tags: tags, docs: docs)
         selection.docTags = Self.normalizedTags(tags)
         config.selections[projectID.uuidString] = selection
         try await store.save(config)
+    }
+
+    /// An assignment replaces what was there, so a mistyped id must stop it rather than quietly
+    /// become "nothing assigned" — the rule `mcp assign` already follows.
+    static func requireKnown(_ ids: [String], among known: [String], kind: String) throws {
+        let unknown = Set(ids).subtracting(known)
+        guard unknown.isEmpty else { throw SkillboxError.invalidInput("nieznane \(kind): \(unknown.sorted().joined(separator: ", ")) — nic nie zmieniono") }
     }
 
     static func prunedDocIDs(_ docIDs: [String], tags: [String], docs: [AgentDoc]) -> [String] {
@@ -121,17 +131,25 @@ extension SkillboxService {
 /// to read the same instructions as other agents without duplicating the text. Both files always move
 /// together: there is no way to synchronize one without the other.
 enum DocsRenderer {
-    private struct ManifestFile: Codable { var docID: String? }
+    /// `contentDigest` is what Agentbox last wrote as the document itself (`AGENTS.md`, or the one
+    /// file of a global target). Optional: manifests written before it existed have none.
+    private struct ManifestFile: Codable { var docID: String?; var contentDigest: String? }
+
+    private static func digest(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
 
     private static func manifestURL(_ project: URL) -> URL { project.appending(path: ".skillbox/docs-manifest.json") }
 
     /// The managed document, or `nil` when there is no manifest. A manifest that exists but cannot
     /// be read is an error: taken as "nothing managed", it turned Agentbox's own files into
     /// conflicts and was then overwritten instead of reported.
-    static func manifestDocID(_ project: URL) throws -> String? {
+    static func manifestDocID(_ project: URL) throws -> String? { try manifest(project)?.docID }
+
+    private static func manifest(_ project: URL) throws -> ManifestFile? {
         let url = manifestURL(project)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        do { return try JSONDecoder().decode(ManifestFile.self, from: Data(contentsOf: url)).docID } catch {
+        do { return try JSONDecoder().decode(ManifestFile.self, from: Data(contentsOf: url)) } catch {
             throw SkillboxError.docConflict("\(url.path) jest uszkodzony (\(error.localizedDescription)) — popraw lub usuń plik, zanim Agentbox zmieni dokumenty projektu")
         }
     }
@@ -140,14 +158,15 @@ enum DocsRenderer {
     /// created, and an existing managed copy is removed. `doc == nil` with nothing previously
     /// managed instead leaves an unrelated existing file alone — see `renderedFile`.
     static func preview(project: URL, doc: AgentDoc?) throws -> [DocPreview] {
-        let previousID = try manifestDocID(project)
+        let stored = try manifest(project)
+        let previousID = stored?.docID
         let managed = previousID != nil
         let agents = project.appending(path: "AGENTS.md")
         let claude = project.appending(path: "CLAUDE.md")
         let agentsDesired = doc.map { $0.content.hasSuffix("\n") ? $0.content : $0.content + "\n" }
         let added: [String] = (doc != nil && doc?.id != previousID) ? [doc!.id] : []
         let removed: [String] = (previousID != nil && previousID != doc?.id) ? [previousID!] : []
-        let agentsContent = try renderedFile(file: agents, desired: agentsDesired, previouslyManaged: managed)
+        let agentsContent = try renderedFile(file: agents, desired: agentsDesired, previouslyManaged: managed, written: stored?.contentDigest)
         let claudeContent = try renderedClaudeImport(file: claude, document: agentsDesired, previouslyManaged: managed)
         return [
             DocPreview(file: agents.path, content: agentsContent ?? "", added: added, removed: removed, leaveAsIs: agentsContent == nil),
@@ -159,11 +178,12 @@ enum DocsRenderer {
     /// text and nothing else. Its manifest sits next to it, as a project's sits next to `AGENTS.md`,
     /// so `apply(previews:project:)` takes the file's folder as its `project`.
     static func preview(globalFile file: URL, doc: AgentDoc?) throws -> DocPreview {
-        let previousID = try manifestDocID(file.deletingLastPathComponent())
+        let stored = try manifest(file.deletingLastPathComponent())
+        let previousID = stored?.docID
         let desired = doc.map { $0.content.hasSuffix("\n") ? $0.content : $0.content + "\n" }
         let added: [String] = (doc != nil && doc?.id != previousID) ? [doc!.id] : []
         let removed: [String] = (previousID != nil && previousID != doc?.id) ? [previousID!] : []
-        let content = try renderedFile(file: file, desired: desired, previouslyManaged: previousID != nil)
+        let content = try renderedFile(file: file, desired: desired, previouslyManaged: previousID != nil, written: stored?.contentDigest)
         return DocPreview(file: file.path, content: content ?? "", added: added, removed: removed, leaveAsIs: content == nil)
     }
 
@@ -180,7 +200,11 @@ enum DocsRenderer {
     /// A file that exists, is not yet managed, and holds something other than `desired` blocks the
     /// write — the same rule that already protects unmanaged skills and MCP entries.
     /// Returns `nil` when the file must be left exactly as it is — see `DocPreview.leaveAsIs`.
-    private static func renderedFile(file: URL, desired: String?, previouslyManaged: Bool) throws -> String? {
+    ///
+    /// `written` is the digest of what Agentbox last put there. A managed file that holds neither
+    /// that nor `desired` was edited in place — agents append to `AGENTS.md` all the time — and
+    /// replacing or removing it would throw that work away without a word.
+    private static func renderedFile(file: URL, desired: String?, previouslyManaged: Bool, written: String? = nil) throws -> String? {
         let fm = FileManager.default
         let exists = fm.fileExists(atPath: file.path) || (try? fm.attributesOfItem(atPath: file.path)) != nil
         guard let desired else {
@@ -194,7 +218,7 @@ enum DocsRenderer {
             }
             // The name was ours; whatever stands there now has to be the kind of thing we wrote
             // before it is removed. A directory under that name would go recursively.
-            if exists { try requireOwnable(file) }
+            if exists { try requireOwnable(file); try requireUnedited(file, written: written, desired: nil) }
             return ""
         }
         if exists {
@@ -205,9 +229,18 @@ enum DocsRenderer {
                 guard existing == desired || existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     throw SkillboxError.docConflict("\(file.lastPathComponent) istnieje w \(file.deletingLastPathComponent().path) i nie jest zarządzany przez Agentbox")
                 }
-            }
+            } else { try requireUnedited(file, written: written, desired: desired) }
         }
         return desired
+    }
+
+    /// Without a recorded digest (a manifest older than this check) there is nothing to compare
+    /// with, and the file is replaced as it always was; the next write records one.
+    private static func requireUnedited(_ file: URL, written: String?, desired: String?) throws {
+        guard let written else { return }
+        let existing = try SkillboxService.existingText(at: file)
+        guard existing != desired, digest(existing) != written else { return }
+        throw SkillboxError.docConflict("\(file.path) został zmieniony od ostatniej synchronizacji — przenieś zmiany do dokumentu w bibliotece (plik o treści identycznej z dokumentem nie blokuje) albo usuń plik, a Agentbox zapisze go ponownie")
     }
 
     static let claudeImport = "@AGENTS.md\n"
@@ -287,8 +320,15 @@ enum DocsRenderer {
             else if let removed = previews.first?.removed.first, removed == currentID { currentID = nil }
             let url = manifestURL(project)
             if let currentID {
-                try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try JSONEncoder().encode(ManifestFile(docID: currentID)).write(to: url, options: .atomic)
+                // The document itself is always the first preview; `CLAUDE.md` only imports it.
+                let content = previews.first.flatMap { $0.leaveAsIs || $0.content.isEmpty ? nil : $0.content }
+                let data = try JSONEncoder().encode(ManifestFile(docID: currentID, contentDigest: content.map(digest)))
+                // Also called for a project whose files are already current, so an unchanged
+                // manifest is left alone instead of being rewritten on every synchronization.
+                if (try? Data(contentsOf: url)) != data {
+                    try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try data.write(to: url, options: .atomic)
+                }
             } else if fm.fileExists(atPath: url.path) {
                 try fm.removeItem(at: url)
                 let directory = url.deletingLastPathComponent()

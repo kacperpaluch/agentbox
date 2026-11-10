@@ -338,8 +338,9 @@ public actor SkillboxStore {
         try fm.moveItem(at: stage, to: target)
         // Manual backups used to accumulate forever — the only cleanup was the user remembering to
         // delete old ones by hand. Now that a daily one is created automatically, an unbounded list
-        // would just grow silently; capped the same way snapshots and restore rollbacks already are.
-        try pruneFullRestoreBackups(at: directory, keeping: 14)
+        // would just grow silently; capped the same way snapshots are, so a day of skill updates —
+        // one backup each — cannot push out everything older than that day.
+        try prune(directory, keeping: 14, days: 7)
         return FullBackupInfo(name: name, createdAt: .now, applicationVersion: applicationVersion)
     }
 
@@ -493,14 +494,15 @@ public actor SkillboxStore {
             // A snapshot of `mcp.json` is a copy of whatever secrets it holds.
             try Self.restrictIfSensitive(copy, fm: fm)
         }
-        try pruneSnapshots(keeping: 10, days: 7)
+        try prune(snapshotsDirectory, keeping: 10, days: 7)
     }
 
-    /// Keeps the `limit` newest snapshots plus the newest one of each of the last `days` days. Ten
+    /// Keeps the `limit` newest entries plus the newest one of each of the last `days` days. Ten
     /// slots alone meant a burst of small edits — tags one by one — pushed out yesterday's state.
-    private func pruneSnapshots(keeping limit: Int, days: Int) throws {
-        guard fm.fileExists(atPath: snapshotsDirectory.path) else { return }
-        let items = try fm.contentsOfDirectory(at: snapshotsDirectory, includingPropertiesForKeys: [.contentModificationDateKey])
+    /// Used for snapshots and full backups; hidden files (`.DS_Store`) are not entries.
+    private func prune(_ directory: URL, keeping limit: Int, days: Int) throws {
+        guard fm.fileExists(atPath: directory.path) else { return }
+        let items = try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles])
         let dated = items.map { ($0, (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) }
             .sorted { $0.1 > $1.1 }
         var kept = Set(dated.prefix(limit).map(\.0))

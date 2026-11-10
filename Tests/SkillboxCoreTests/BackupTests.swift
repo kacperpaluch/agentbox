@@ -23,7 +23,6 @@ final class BackupTests: AgentboxTestCase {
         let json = #"{"n8n-mcp":{"type":"stdio","command":"npx","args":["-y","n8n-mcp"],"env":{"N8N_API_KEY":"secret-one","N8N_API_URL":"http://lan:5678"}},"n8n-tailscale":{"type":"stdio","command":"npx","args":["-y","n8n-mcp"],"env":{"N8N_API_KEY":"secret-two","N8N_API_URL":"http://tailnet:5678"}},"context7":{"type":"http","url":"https://mcp.context7.com/mcp","headers":{"CONTEXT7_API_KEY":"secret-three"}}}"#
         let summary = try await service.analyzeMCPJSON(json)
         XCTAssertEqual(summary.servers.count, 3)
-        XCTAssertEqual(summary.secretCount, 0)
         XCTAssertEqual(summary.servers.first(where: { $0.name == "n8n-mcp" })?.literalEnvironment?["N8N_API_URL"], "http://lan:5678")
         XCTAssertEqual(summary.servers.first(where: { $0.name == "context7" })?.literalHeaders?["CONTEXT7_API_KEY"], "secret-three")
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appending(path: "mcp-secrets.json").path))

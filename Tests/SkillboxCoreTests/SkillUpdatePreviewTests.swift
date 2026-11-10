@@ -35,7 +35,7 @@ final class SkillUpdatePreviewTests: AgentboxTestCase {
         XCTAssertEqual(plan.updates.map(\.id), ["one"])
         XCTAssertEqual(plan.unchanged, ["two"])
         XCTAssertEqual(try libraryText("one"), "old one", "podgląd nie zapisuje biblioteki")
-        let available = try await service.checkUpdates()
+        let available = Set(try await service.previewSkillUpdates().updates.map(\.id))
         XCTAssertEqual(available, ["one"])
 
         try write("one/SKILL.md", "new remote version after preview")
@@ -57,7 +57,7 @@ final class SkillUpdatePreviewTests: AgentboxTestCase {
         let service = try await imported()
         try "edited in the library".write(to: library.appending(path: "skills/one/SKILL.md"), atomically: true, encoding: .utf8)
 
-        let scan = try await service.checkUpdates()
+        let scan = Set(try await service.previewSkillUpdates().updates.map(\.id))
         XCTAssertTrue(scan.isEmpty, "głowa repozytorium się nie ruszyła")
         let broad = try await service.previewSkillUpdates()
         XCTAssertEqual(broad.unchanged, ["one", "two"])
@@ -68,7 +68,7 @@ final class SkillUpdatePreviewTests: AgentboxTestCase {
 
         try write("one/SKILL.md", "moved head")
         try commit()
-        let afterCommit = try await service.checkUpdates()
+        let afterCommit = Set(try await service.previewSkillUpdates().updates.map(\.id))
         XCTAssertEqual(afterCommit, ["one"], "nowy commit wraca do porównania zawartości")
     }
 

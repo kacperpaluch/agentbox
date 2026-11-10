@@ -372,6 +372,9 @@ extension SkillboxService {
                     try SkillboxService.writeSkillManifest(selected, to: projectURL.appending(path: tool.projectSkillsPath))
                 }
             }
+            // Nothing to write, but a manifest older than the content digest gets one here —
+            // otherwise an edit made in the project later could not be told from a library update.
+            try DocsRenderer.apply(previews: preview.docs, project: projectURL)
             Self.removeLegacyBackupDirectories(projectURL)
             return (preview, true)
         }

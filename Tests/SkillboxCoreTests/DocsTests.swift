@@ -145,7 +145,7 @@ final class DocsTests: AgentboxTestCase {
         // A second change, blocked from ever landing: the skill gets a new version, and AGENTS.md is
         // replaced by a directory so the write that would follow it fails.
         try "version two".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
-        _ = try await service.update(skillID: "demo")
+        try await service.updateSkills(ids: ["demo"])
         try FileManager.default.removeItem(at: projectURL.appending(path: "AGENTS.md"))
         try FileManager.default.createDirectory(at: projectURL.appending(path: "AGENTS.md"), withIntermediateDirectories: true)
 

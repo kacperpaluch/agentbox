@@ -6,6 +6,17 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.42.1] - 2026-11-10
+
+### Naprawiono
+
+- `AGENTS.md` (i plik instrukcji Tego Maca) zmieniony na dysku od ostatniej synchronizacji nie jest już po cichu nadpisywany ani usuwany. Synchronizacja i `Usuń pliki Agentbox` zatrzymują się z komunikatem; wystarczy przenieść zmianę do dokumentu w bibliotece albo usunąć plik. Projekty zsynchronizowane starszą wersją zyskują tę ochronę po pierwszej synchronizacji.
+- Tego samego folderu nie można już dodać jako dwóch projektów ani przenieść projektu do folderu innego projektu — takie projekty usuwały sobie nawzajem pliki.
+- CLI: `project set --skills`, `docs assign --docs` i `sync global --skills/--docs` odrzucają nieznany identyfikator i niczego nie zmieniają, tak jak `mcp assign`.
+- CLI: `sync global --tools …` podane bez innych opcji zmienia wybór narzędzi zamiast być ignorowane; `agentbox add git@host:użytkownik/repo` (bez `.git`) jest rozpoznawane jako adres Git.
+- Uszkodzony `.claude/settings.json` projektu blokuje projekt z komunikatem, zamiast być czytany jako „brak pluginów” i uruchamiać instalację przy każdej synchronizacji.
+- Pełne backupy: oprócz 14 najnowszych zostaje najnowszy z każdego z ostatnich 7 dni, więc seria aktualizacji skilli jednego dnia nie wypycha wszystkich starszych.
+
 ## [0.42.0] - 2026-11-06
 
 ### Dodano

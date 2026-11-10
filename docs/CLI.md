@@ -74,7 +74,7 @@ agentbox project add sklep /pełna/ścieżka/do/sklepu --tools claude,codex,open
 agentbox project set sklep --skills seo-audit,docx --tags seo
 ```
 
-`project set` ustawia bezpośrednie skille i dynamiczne tagi. Pusta opcja usuwa wcześniejsze przypisania danego typu.
+`project set` ustawia bezpośrednie skille i dynamiczne tagi. Pusta opcja usuwa wcześniejsze przypisania danego typu. Nieznany identyfikator w `--skills` odrzuca całe polecenie i niczego nie zmienia.
 
 ```bash
 agentbox project status
@@ -234,7 +234,7 @@ agentbox docs sync sklep
 agentbox docs delete standard
 ```
 
-`docs assign` zastępuje bezpośrednie dokumenty i tagi projektu — dokładnie jak `mcp assign`. Do jednego projektu może pasować tylko jeden dokument naraz; więcej dopasowań przez tagi jest konfliktem, który `docs preview`/`docs sync` zgłoszą zamiast wybrać dowolny.
+`docs assign` zastępuje bezpośrednie dokumenty i tagi projektu — dokładnie jak `mcp assign`, łącznie z odrzuceniem nieznanego identyfikatora w `--docs`. `AGENTS.md` zmieniony w projekcie od ostatniej synchronizacji zatrzymuje `docs sync` i `sync project`: przenieś zmianę do dokumentu w bibliotece albo usuń plik. Do jednego projektu może pasować tylko jeden dokument naraz; więcej dopasowań przez tagi jest konfliktem, który `docs preview`/`docs sync` zgłoszą zamiast wybrać dowolny.
 
 Zsynchronizowany dokument ląduje jako `AGENTS.md` (pełna treść) i `CLAUDE.md` (wygenerowany import `@AGENTS.md`) w katalogu głównym projektu, niezależnie od tego, jakie narzędzia ma projekt zaznaczone.
 

@@ -10,6 +10,7 @@ DerivedData/
 .env.*
 !.env.example
 mcp-secrets.json
+/mcp.json
 projects.local.json
 *.pem
 *.p12

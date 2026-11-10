@@ -86,7 +86,9 @@ public enum AgentboxCommand {
         case "add":
             guard let value = rest.first else { throw SkillboxError.invalidInput("podaj ścieżkę lub URL") }
             let subpath = option("--path", in: args), branch = option("--branch", in: args), id = option("--id", in: args)
-            if value.contains("://") || value.hasSuffix(".git") {
+            // `git@host:user/repo` has neither `://` nor, always, a `.git` suffix; a folder that
+            // happens to be spelled like one is still a folder.
+            if value.contains("://") || value.hasSuffix(".git") || (SkillboxService.isAllowedGitLocation(value) && !FileManager.default.fileExists(atPath: value)) {
                 let result = try await service.addGitCollection(url: value, subpath: subpath, branch: branch, id: id)
                 var lines = ["Dodano \(result.imported.count): \(result.imported.map(\.id).joined(separator: ", "))"]
                 if !result.skipped.isEmpty { lines.append("Pominięto \(result.skipped.count): " + result.skipped.map { "\($0.id) (\($0.reason))" }.joined(separator: "; ")) }
@@ -332,8 +334,11 @@ public enum AgentboxCommand {
             let docIDs = csv("--docs", in: args), docTags = csv("--doc-tags", in: args), noDoc = args.contains("--no-doc")
             let namesSkills = !ids.isEmpty || !tags.isEmpty
             let namesDoc = !docIDs.isEmpty || !docTags.isEmpty || noDoc
+            // The selection is replaced, so a mistyped id must stop it — like `mcp assign`.
+            try SkillboxService.requireKnown(ids, among: try await service.listSkills().map(\.id), kind: "skille")
+            try SkillboxService.requireKnown(docIDs, among: try await service.docsConfiguration().docs.map(\.id), kind: "dokumenty")
             var draft: AttachmentSelection?
-            if namesSkills || namesDoc {
+            if namesSkills || namesDoc || option("--tools", in: args) != nil {
                 // Only what the command names changes. A fresh selection dropped the exclusions
                 // made in the app; a skill named here explicitly is no longer excluded.
                 var selection = try await service.storedSelection(for: .global)

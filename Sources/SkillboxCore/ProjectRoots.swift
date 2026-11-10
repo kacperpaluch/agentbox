@@ -132,13 +132,6 @@ extension SkillboxService {
         try await store.save(config)
     }
 
-    /// Turns a folder that already holds projects into a parent folder.
-    ///
-    /// Projects added one by one — or in a batch before parent folders existed — have no folder to
-    /// inherit from, so without this the shared settings would be reachable only for folders added
-    /// from scratch. Every project passed in joins the folder; `following` says which ones drop
-    /// their own settings for the folder's, and the rest keep exactly what they synchronize today.
-    @discardableResult
     /// A project's opt-outs from a tool's own global servers are kept under its selection id, which
     /// followers stop reading. The folder keeps what every follower hid — the rule the form already
     /// applies to skill exclusions — and their own entries go. A folder nobody follows yet starts
@@ -157,6 +150,13 @@ extension SkillboxService {
         mcp.projectDisabledGlobalServers = perSelection.isEmpty ? nil : perSelection
     }
 
+    /// Turns a folder that already holds projects into a parent folder.
+    ///
+    /// Projects added one by one — or in a batch before parent folders existed — have no folder to
+    /// inherit from, so without this the shared settings would be reachable only for folders added
+    /// from scratch. Every project passed in joins the folder; `following` says which ones drop
+    /// their own settings for the folder's, and the rest keep exactly what they synchronize today.
+    @discardableResult
     public func adoptProjectsIntoRoot(_ root: ProjectRoot, following: [UUID], keepingOwnSettings: [UUID], selection: AttachmentSelection, treatingExistingAsKnown: Bool = true) async throws -> ProjectRoot {
         var isDirectory: ObjCBool = false
         let rootURL = URL(fileURLWithPath: root.path).standardizedFileURL

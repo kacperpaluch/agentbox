@@ -215,7 +215,7 @@ public struct LocalConfiguration: Codable, Sendable {
     public var activeTools: [Tool] { enabledTools.map { enabled in Tool.allCases.filter(enabled.contains) } ?? Tool.allCases }
     /// Every place's attachments, keyed by project id, folder id or `"global"`. Read from and
     /// written to `selections.json` by the store — never part of `projects.local.json`, which is
-    /// this Mac's local record and stays out of the Git backup.
+    /// this Mac's local record.
     public var selections: [String: AttachmentSelection] = [:]
     /// Covers `projects.local.json` and `selections.json` together, since they are saved together.
     public var storedVersion = StoredVersion()
@@ -241,10 +241,10 @@ public struct LocalConfiguration: Codable, Sendable {
 /// `selections.json`. One file answering "what is attached where", for projects, parent folders and
 /// this Mac alike.
 ///
-/// It is tracked in the Git backup, unlike `projects.local.json`. That is deliberate: the keys are
-/// bare UUIDs and the values name skills, servers and documents that all live in the library
-/// anyway — no paths, no project names, nothing local. It also means a restore now brings back
-/// which skills a project used, which the old layout could only do for servers and documents.
+/// Unlike `projects.local.json` it holds nothing about this Mac: the keys are bare UUIDs and the
+/// values name skills, servers and documents that all live in the library anyway — no paths, no
+/// project names. Snapshots and full backups copy it, so a restore brings back which skills a
+/// project used.
 public struct SelectionsConfiguration: Codable, Sendable {
     public var version = 1
     public var selections: [String: AttachmentSelection] = [:]
@@ -345,13 +345,12 @@ public struct GlobalMCPServerRef: Identifiable, Hashable, Sendable {
 
 public struct MCPImportSummary: Sendable {
     public var servers: [MCPServer]
-    public var secretCount: Int
     public var stdioCount: Int
     public var httpCount: Int
     public var fields: [MCPImportField]
     /// True when the pasted JSON is one server definition rather than a map of named servers.
     public var isSingleServerInput: Bool
-    public init(servers: [MCPServer], secretCount: Int, stdioCount: Int, httpCount: Int, fields: [MCPImportField] = [], isSingleServerInput: Bool = false) { self.servers = servers; self.secretCount = secretCount; self.stdioCount = stdioCount; self.httpCount = httpCount; self.fields = fields; self.isSingleServerInput = isSingleServerInput }
+    public init(servers: [MCPServer], stdioCount: Int, httpCount: Int, fields: [MCPImportField] = [], isSingleServerInput: Bool = false) { self.servers = servers; self.stdioCount = stdioCount; self.httpCount = httpCount; self.fields = fields; self.isSingleServerInput = isSingleServerInput }
 }
 
 /// How one MCP value is written down: as a reference to a system environment variable, or as the

@@ -67,4 +67,23 @@ extension SkillboxService {
     func storedSelection(id: UUID) async throws -> AttachmentSelection {
         try await store.configuration().storedSelection(for: .project(id))
     }
+
+    // Shorthands over the calls the CLI and the app make, so a test reads as one step.
+
+    func configureProject(id: UUID, skillIDs: [String], tags: [String]) async throws {
+        guard let project = try await storedProjects().first(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
+        try await configureProject(name: project.name, skillIDs: skillIDs, tags: tags)
+    }
+
+    func syncProject(name: String) async throws -> [Tool: SyncResult] {
+        guard let project = try await listProjects().first(where: { $0.name == name }) else { throw SkillboxError.projectNotFound(name) }
+        return try await syncProject(id: project.id)
+    }
+
+    /// What `agentbox update <skill>` does: preview, then apply exactly what was previewed.
+    @discardableResult
+    func updateSkills(ids: [String]) async throws -> SkillUpdateResult {
+        let plan = try await previewSkillUpdates(ids: ids)
+        return SkillUpdateResult(updated: try await applySkillUpdates(plan.updates), failed: plan.failed, unchanged: plan.unchanged)
+    }
 }

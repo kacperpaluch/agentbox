@@ -104,8 +104,8 @@ struct AttachmentPicker: View {
     // MARK: Bindings into the selection
     //
     // The grids below speak `Set`, the stored selection speaks sorted `Array` — sorted so that
-    // ticking two boxes in a different order does not produce a different `mcp.json`, which would
-    // show up as noise in the Git backup diff.
+    // ticking two boxes in a different order does not produce a different `selections.json`, and
+    // with it a snapshot that differs for no reason.
 
     private var toolsBinding: Binding<Set<Tool>> {
         Binding(get: { Set(selection.tools) }, set: { selection.tools = $0.sorted { $0.rawValue < $1.rawValue } })

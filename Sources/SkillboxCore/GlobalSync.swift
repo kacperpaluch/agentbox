@@ -4,8 +4,8 @@ import Foundation
 /// per-user skill directory (`Tool.globalSkillsURL`) and instructions file (`Tool.globalDocURL`).
 ///
 /// The Mac itself is just another place attachments land, so it has no selection type of its own —
-/// it is `SelectionTarget.global`, read and written like a project or a folder. The choice still
-/// lives in `projects.local.json`, because it describes this Mac rather than the library.
+/// it is `SelectionTarget.global`, read and written like a project or a folder, and stored with
+/// the others in `selections.json` under the key `"global"`.
 ///
 /// MCP servers are not synchronized globally: `~/.codex/config.toml` and Claude Code's user scope
 /// are files Agentbox deliberately never writes (see `ClientServersView`). The server fields of a

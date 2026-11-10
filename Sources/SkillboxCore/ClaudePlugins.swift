@@ -118,7 +118,7 @@ extension SkillboxService {
         // say what it declares — the same answer `previewClaudePlugins` gives — so only a plugin that
         // is genuinely missing costs a process. Fifty projects sharing one plugin used to spend three
         // minutes reinstalling what was already there.
-        let installed = (try? claudePlugins(projectPath: projectPath)) ?? []
+        let installed = try claudePlugins(projectPath: projectPath)
         let missing = selected.filter { !Self.isDeclared($0, among: installed) }
         guard !missing.isEmpty else { return }
         let project = URL(fileURLWithPath: projectPath).standardizedFileURL
@@ -139,7 +139,7 @@ extension SkillboxService {
     public func previewClaudePlugins(projectPath: String, ids: [UUID]) async throws -> [ClaudePluginPreview] {
         let selected = (try await store.catalog().claudePlugins ?? []).filter { ids.contains($0.id) }
         guard !selected.isEmpty else { return [] }
-        let installed = (try? claudePlugins(projectPath: projectPath)) ?? []
+        let installed = try claudePlugins(projectPath: projectPath)
         return selected
             .map { ClaudePluginPreview(id: $0.id, name: $0.name, plugin: $0.plugin, scope: $0.scope, isInstalled: Self.isDeclared($0, among: installed)) }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }

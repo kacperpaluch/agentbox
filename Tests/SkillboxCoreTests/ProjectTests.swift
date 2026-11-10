@@ -135,7 +135,7 @@ final class ProjectTests: AgentboxTestCase {
         try await service.configureProject(id: project.id, skillIDs: ["demo"], tags: [])
         _ = try await service.syncProject(id: project.id)
         try "version two".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
-        _ = try await service.update(skillID: "demo")
+        try await service.updateSkills(ids: ["demo"])
 
         // The stored record, not the stale local copy: updateProject would otherwise wipe the
         // skill selection and the codex target would have nothing to fail on.
@@ -403,7 +403,7 @@ final class ProjectTests: AgentboxTestCase {
         try await Task.sleep(for: .milliseconds(1100))
         // Biblioteka rusza do przodu tylko dla jednego projektu.
         try "wersja 2".write(to: root.appending(path: "data/skills/notes/SKILL.md"), atomically: true, encoding: .utf8)
-        _ = try await service.update(skillID: "notes")
+        try await service.updateSkills(ids: ["notes"])
         _ = try await service.syncProjectTransaction(projectID: ids["aktualny"]!)
 
         let manual = root.appending(path: "projects/zablokowany/.claude/skills/notes")

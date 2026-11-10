@@ -49,16 +49,9 @@ public actor SkillboxService {
         return try String(contentsOf: url, encoding: .utf8)
     }
 
-    public func checkUpdates() async throws -> Set<String> {
-        let plan = try await previewSkillUpdates()
-        if let failure = plan.failed.first { throw SkillboxError.commandFailed("\(failure.id): \(failure.reason)") }
-        return Set(plan.updates.map(\.id))
-    }
-
     @discardableResult
     public func addLocal(path: String, id suppliedID: String? = nil) async throws -> Skill {
         let source = URL(fileURLWithPath: path).standardizedFileURL
-        let skillsDirectory = await store.skillsDirectory
         var catalog = try await store.catalog()
         let skill = try plannedImport(from: source, source: SkillSource(kind: .local, location: source.path), suppliedID: suppliedID, into: &catalog)
         let saved = catalog
@@ -453,29 +446,13 @@ public actor SkillboxService {
     }
 
     @discardableResult
-    public func update(skillID: String) async throws -> Skill {
-        let result = try await updateSkills(ids: [skillID])
-        if let failure = result.failed.first { throw SkillboxError.commandFailed(failure.reason) }
-        let catalog = try await store.catalog()
-        guard let skill = result.updated.first ?? catalog.skills.first(where: { $0.id == skillID }) else { throw SkillboxError.skillNotFound(skillID) }
-        return skill
-    }
-
-    /// CLI and GUI apply the same reviewed bytes, with a full backup before replacement.
-    @discardableResult
-    public func updateSkills(ids: [String]) async throws -> SkillUpdateResult {
-        let plan = try await previewSkillUpdates(ids: ids)
-        let updated = try await applySkillUpdates(plan.updates)
-        return SkillUpdateResult(updated: updated, failed: plan.failed, unchanged: plan.unchanged)
-    }
-
-    @discardableResult
     public func addProject(name: String, path: String, tools: [Tool]) async throws -> Project {
         let url = URL(fileURLWithPath: path).standardizedFileURL
         var isDirectory: ObjCBool = false
         guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(path) }
         var config = try await store.configuration()
         guard !config.projects.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { throw SkillboxError.invalidInput("projekt o nazwie \(name) już istnieje") }
+        try Self.assertFolderFree(url.path, in: config)
         let project = Project(name: name, path: url.path)
         config.projects.append(project)
         config.selections[project.id.uuidString] = AttachmentSelection(tools: tools)
@@ -500,6 +477,7 @@ public actor SkillboxService {
         guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else { throw SkillboxError.projectNotFound(project.path) }
         var config = try await store.configuration()
         guard !config.projects.contains(where: { $0.name.caseInsensitiveCompare(project.name) == .orderedSame }) else { throw SkillboxError.invalidInput("projekt o nazwie \(project.name) już istnieje") }
+        try Self.assertFolderFree(url.path, in: config)
         var stored = project; stored.path = url.path
         config.projects.append(stored)
         var mcp = try await store.mcpConfiguration()
@@ -521,6 +499,11 @@ public actor SkillboxService {
         // manifests first — the same `unsyncProject` a removal uses. A folder that was moved no
         // longer exists at the old path, and its files travelled with it to the new one.
         let previousPath = config.projects[index].path
+        // Only a move is checked, so a library that already holds two projects in one folder can
+        // still be edited — and taken apart.
+        if URL(fileURLWithPath: previousPath).standardizedFileURL.path != URL(fileURLWithPath: project.path).standardizedFileURL.path {
+            try Self.assertFolderFree(project.path, in: config, besides: project.id)
+        }
         config.projects[index] = project
         // A project following its parent folder reads the folder's selection, so writing one under
         // its own id would only leave a record nothing ever uses.
@@ -541,6 +524,14 @@ public actor SkillboxService {
         }
     }
 
+    /// Two projects in one folder share its manifests, so each synchronization would remove what
+    /// the other one wrote.
+    static func assertFolderFree(_ path: String, in config: LocalConfiguration, besides id: UUID? = nil) throws {
+        let folder = URL(fileURLWithPath: path).standardizedFileURL.path
+        guard let taken = config.projects.first(where: { $0.id != id && URL(fileURLWithPath: $0.path).standardizedFileURL.path == folder }) else { return }
+        throw SkillboxError.invalidInput("folder \(folder) jest już dodany jako projekt \(taken.name)")
+    }
+
     static func prunedServerIDs(_ serverIDs: [UUID], tags: [String], servers: [MCPServer]) -> [UUID] {
         let tagsByID = Dictionary(servers.map { ($0.id, $0.tags ?? []) }, uniquingKeysWith: { first, _ in first })
         return pruneRedundant(serverIDs, coveredBy: tags) { tagsByID[$0] ?? [] }
@@ -554,21 +545,15 @@ public actor SkillboxService {
         try await store.save(config)
     }
 
-    public func configureProject(id: UUID, skillIDs: [String], tags: [String]) async throws {
-        var config = try await store.configuration()
-        guard let index = config.projects.firstIndex(where: { $0.id == id }) else { throw SkillboxError.projectNotFound(id.uuidString) }
-        try Self.assertOwnSettings(config.projects[index], in: config)
-        try await setSkillSelection(&config, id: id, skillIDs: skillIDs, tags: tags)
-        try await store.save(config)
-    }
-
     /// Replaces only the skill half of a place's selection, leaving its servers, document and tools
     /// alone — what `agentbox project set --skills/--tags` means.
     private func setSkillSelection(_ config: inout LocalConfiguration, id: UUID, skillIDs: [String], tags: [String]) async throws {
+        let catalog = try await store.catalog()
+        try Self.requireKnown(skillIDs, among: catalog.skills.map(\.id), kind: "skille")
         var selection = config.storedSelection(for: .project(id))
         selection.skillIDs = skillIDs
         selection.skillTags = tags
-        config.selections[id.uuidString] = Self.pruned(selection, catalog: try await store.catalog(), mcp: try await store.mcpConfiguration(), docs: try await store.docsConfiguration())
+        config.selections[id.uuidString] = Self.pruned(selection, catalog: catalog, mcp: try await store.mcpConfiguration(), docs: try await store.docsConfiguration())
     }
 
     /// Configuring a project that follows its parent folder would write a selection synchronization
@@ -590,20 +575,6 @@ public actor SkillboxService {
     /// already covers, and no skill id that the project excludes anyway.
     static func normalizedTags(_ tags: [String]) -> [String] {
         Array(Set(tags.map { $0.lowercased() }.filter { !$0.isEmpty })).sorted()
-    }
-
-    /// Saves a project record along with the attachments still written on the value passed in —
-    /// what a caller holding a `Project` from `storedProjects()` means by "save this".
-    ///
-    /// It keeps the project's servers and document as they are: those are not carried on `Project`,
-    /// so a caller editing `tools` or `skillIDs` has no way to express them and must not clear them.
-    public func updateProject(_ project: Project) async throws {
-        var selection = try await store.configuration().storedSelection(for: .project(project.id))
-        selection.tools = project.tools
-        selection.skillIDs = project.skillIDs
-        selection.skillTags = project.tags
-        selection.excludedSkillIDs = project.excludedSkillIDs ?? []
-        try await updateProject(project, selection: selection)
     }
 
     public func deleteProject(id: UUID) async throws { try await deleteProjects(ids: [id]) }
@@ -740,12 +711,6 @@ public actor SkillboxService {
             for item in copied.reversed() { report.attempt(item.path) { try fm.removeItem(at: item) } }
             throw report.error(after: error)
         }
-    }
-
-    public func syncProject(name: String, dryRun: Bool = false) async throws -> [Tool: SyncResult] {
-        let config = try await store.configuration()
-        guard let project = config.resolvedProjects.first(where: { $0.name == name }) else { throw SkillboxError.projectNotFound(name) }
-        return try await syncProject(id: project.id, dryRun: dryRun)
     }
 
     public func syncProject(id: UUID, dryRun: Bool = false) async throws -> [Tool: SyncResult] {
