@@ -168,6 +168,10 @@ extension SkillboxService {
                         let base = temp.resolvingSymlinksInPath().standardizedFileURL.path
                         let resolved = source.resolvingSymlinksInPath().standardizedFileURL.path
                         guard resolved == base || resolved.hasPrefix(base + "/") else { throw SkillboxError.unsafePath(skill.id) }
+                        // Without this the reason was the system's "file … couldn't be opened", which hid that the author had moved the folder.
+                        if let subpath = skill.source.subpath, !FileManager.default.fileExists(atPath: source.path) {
+                            throw SkillboxError.invalidSkill("w repozytorium nie ma już folderu \(subpath) — autor mógł go przenieść")
+                        }
                         record(try await inspectedUpdate(skill, source: source, revision: revision))
                     } catch { failed.append(SkippedSkill(id: skill.id, reason: error.localizedDescription)) }
                 }

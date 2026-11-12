@@ -151,7 +151,7 @@ Synchronizacja zatrzymuje się, jeśli w katalogu docelowym istnieje katalog ski
 agentbox refresh
 ```
 
-`refresh` wykonuje kolejno: przygotowanie aktualizacji skilli Git, pełny backup **przed** przyjęciem sprawdzonych wersji oraz transakcyjną synchronizację skilli, MCP, dokumentów i pluginów we wszystkich projektach. Nieudane sprawdzenie repozytorium zatrzymuje ten pełny workflow przed aktualizacją. Błąd synchronizacji zatrzymuje serię; projekt, który go zgłosił, korzysta z rollbacku, a projekty zakończone wcześniej pozostają zsynchronizowane.
+`refresh` wykonuje kolejno: przygotowanie aktualizacji skilli Git, pełny backup **przed** przyjęciem sprawdzonych wersji oraz transakcyjną synchronizację skilli, MCP, dokumentów i pluginów we wszystkich projektach. Nieudane sprawdzenie repozytorium zatrzymuje ten pełny workflow przed aktualizacją; `refresh` wypisuje wtedy każdy skill, którego nie udało się sprawdzić, z powodem (np. folder przeniesiony przez autora repozytorium) i kończy się kodem 1. Błąd synchronizacji zatrzymuje serię; projekt, który go zgłosił, korzysta z rollbacku, a projekty zakończone wcześniej pozostają zsynchronizowane.
 
 Przebieg kończy blok `PODSUMOWANIE` z bilansem całości:
 

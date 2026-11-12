@@ -6,6 +6,13 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.42.2] - 2026-11-12
+
+### Naprawiono
+
+- `agentbox refresh` wymienia każdy skill, którego nie udało się sprawdzić, a nie tylko pierwszy, i dopisuje, że niczego nie zmieniono.
+- Gdy autor repozytorium przeniósł folder skilla, sprawdzanie aktualizacji (CLI i okno) mówi „w repozytorium nie ma już folderu `skills/…`” zamiast systemowego „The file … couldn't be opened”.
+
 ## [0.42.1] - 2026-11-10
 
 ### Naprawiono

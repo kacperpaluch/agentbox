@@ -176,3 +176,28 @@ final class SkillUpdatePreviewTests: AgentboxTestCase {
         XCTAssertEqual(try libraryText("two"), "new two")
     }
 }
+
+extension SkillUpdatePreviewTests {
+    /// The author moved every skill into another folder. `refresh` used to report only the first
+    /// skill, with the system's "file couldn't be opened"; it must name each one and change nothing.
+    func testRefreshNamesEverySkillWhoseFolderMovedInItsRepository() async throws {
+        let service = try await imported()
+        let catalog = try Data(contentsOf: library.appending(path: "catalog.json"))
+        try FileManager.default.createDirectory(at: repo.appending(path: "plugins"), withIntermediateDirectories: true)
+        for name in ["one", "two"] { try FileManager.default.moveItem(at: repo.appending(path: name), to: repo.appending(path: "plugins/\(name)")) }
+        try commit()
+        do {
+            _ = try await AgentboxCommand.run(["refresh"], service: service)
+            XCTFail("oczekiwano błędu")
+        } catch let failure as AgentboxCommand.PartialFailure {
+            for name in ["one", "two"] {
+                XCTAssertTrue(failure.lines.contains { $0.hasPrefix("✗ \(name) — ") && $0.contains("nie ma już folderu \(name)") }, failure.lines.joined(separator: "\n"))
+            }
+            XCTAssertEqual(failure.errorDescription, "nie udało się sprawdzić 2 skilli — nic nie zmieniono")
+        }
+        XCTAssertEqual(try Data(contentsOf: library.appending(path: "catalog.json")), catalog)
+        XCTAssertEqual(try libraryText("one"), "old one")
+        let backups = try await service.fullBackups()
+        XCTAssertTrue(backups.isEmpty)
+    }
+}

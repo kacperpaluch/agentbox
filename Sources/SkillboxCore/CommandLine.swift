@@ -423,7 +423,10 @@ public enum AgentboxCommand {
     private static func refresh(service: SkillboxService) async throws -> [String] {
         var lines = ["1/3 Sprawdzanie aktualizacji skilli…"]
         let plan = try await service.previewSkillUpdates()
-        if let failure = plan.failed.first { throw SkillboxError.commandFailed("\(failure.id): \(failure.reason)") }
+        // Every failed skill is named: one repository that moved its folders fails several at once.
+        guard plan.failed.isEmpty else {
+            throw PartialFailure(lines: lines + plan.failed.map { "✗ \($0.id) — \($0.reason)" }, errorDescription: "nie udało się sprawdzić \(PolishNoun.skillGenitive(plan.failed.count)) — nic nie zmieniono")
+        }
         lines.append("2/3 Pełny backup przed aktualizacją i przyjęcie sprawdzonych wersji…")
         let updated = try await service.applySkillUpdates(plan.updates)
         let updates = updated.map(\.id)
