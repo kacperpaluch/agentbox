@@ -6,6 +6,12 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.42.3] - 2026-11-20
+
+### Naprawiono
+
+- Plik skilla inny niż `SKILL.md` (np. `scripts/*.py`) zmieniony wprost w folderze biblioteki oznacza kopie jako nieaktualne: `sync global`, `sync project` i `sync all` z `--dry-run`, podgląd synchronizacji oraz stan Tego Maca w oknie pokazują `~1`. Wcześniej podgląd opierał się tylko na dacie zmiany w katalogu i pokazywał `~0`.
+
 ## [0.42.2] - 2026-11-12
 
 ### Naprawiono

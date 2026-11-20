@@ -885,12 +885,12 @@ public actor SkillboxService {
         try assertNoUnmanagedSkillConflict(ids: Array(ids), target: target, managed: previous, library: library)
         let fm = FileManager.default
         // Outdated means the library copy moved on, or the directory disappeared from the project.
-        // Both timestamps originate from the same `Skill.updatedAt` and are stored with ISO8601
-        // second granularity, so an up-to-date skill compares exactly equal.
+        // `updatedAt` only moves when Agentbox edits the skill; a file changed straight in the
+        // library folder (a script, not `SKILL.md`) keeps it, so the bytes are compared as well.
         let outdated = current.filter { skill in
             guard let written = manifest.skills[skill.id] else { return false }
             if !fm.fileExists(atPath: target.appending(path: skill.id).path) { return true }
-            return skill.updatedAt > written
+            return skill.updatedAt > written || !directoryMatches(library.appending(path: skill.id), target.appending(path: skill.id))
         }
         return SkillSyncPreview(
             tool: tool,

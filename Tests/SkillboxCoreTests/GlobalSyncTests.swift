@@ -31,6 +31,37 @@ final class GlobalSyncTests: AgentboxTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: home.appending(path: ".claude/skills/notes").path))
     }
 
+    /// A script edited straight in the library folder keeps `SKILL.md` and `updatedAt` as they
+    /// were. The preview used to answer `~0` from the timestamp alone, on the Mac and in projects.
+    func testScriptEditedInTheLibraryFolderIsReportedAsOutdated() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/notes"), home = root.appending(path: "home"), folder = root.appending(path: "app")
+        for directory in [source.appending(path: "scripts"), home, folder] { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
+        try "---\nname: notes\ndescription: Demo\n---\n".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        try "print(1)\n".write(to: source.appending(path: "scripts/run.py"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        try await service.setSelection(AttachmentSelection(tools: [.claude], skillIDs: ["notes"]), for: .global)
+        let project = try await service.addProject(Project(name: "app", path: folder.path), selection: AttachmentSelection(tools: [.claude], skillIDs: ["notes"]))
+        _ = try await service.syncGlobalSelection(home: home)
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+
+        try "print(2)\n".write(to: root.appending(path: "data/skills/notes/scripts/run.py"), atomically: true, encoding: .utf8)
+        let global = try await service.previewGlobalSync(home: home), local = try await service.previewProjectSync(projectID: project.id)
+        XCTAssertEqual(global.map(\.updated), [["notes"]])
+        XCTAssertEqual(local.skills.map(\.updated), [["notes"]])
+        guard case .pending(_, 1, _) = try await service.projectStatuses().first?.state else { return XCTFail("oczekiwano ~1 w statusie projektu") }
+
+        _ = try await service.syncGlobalSelection(home: home)
+        _ = try await service.syncProjectTransaction(projectID: project.id)
+        for copy in [home.appending(path: ".claude/skills/notes/scripts/run.py"), folder.appending(path: ".claude/skills/notes/scripts/run.py")] {
+            XCTAssertEqual(try String(contentsOf: copy, encoding: .utf8), "print(2)\n")
+        }
+        let globalAfter = try await service.previewGlobalSync(home: home), localAfter = try await service.previewProjectSync(projectID: project.id)
+        XCTAssertEqual(globalAfter.map(\.updated), [[]])
+        XCTAssertEqual(localAfter.skills.map(\.updated), [[]])
+    }
+
     /// The second client fails; the first one, already written, must come back as it was.
     func testFailingClientRollsBackTheClientsAlreadyWritten() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
