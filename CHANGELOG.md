@@ -6,6 +6,17 @@ Format jest oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/). 
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-11-20
+
+### Dodano
+
+- Ten Mac: skill poprawiony wprost w katalogu użytkownika (np. `~/.claude/skills`) jest wykrywany jak zmiana w projekcie. Inspektor `Ten Mac` ostrzega, że synchronizacja go nadpisze, i oferuje `Przejmij zmiany do biblioteki…`; w CLI `agentbox global adopt-changes [--yes]`, a `sync global --dry-run` dopisuje ostrzeżenie.
+
+### Zmieniono
+
+- `sync global` nie przepisuje klienta, którego kopie już odpowiadają bibliotece.
+- Sprawdzanie stanu projektów czyta każdy skill z biblioteki raz na całe sprawdzenie.
+
 ## [0.42.3] - 2026-11-20
 
 ### Naprawiono

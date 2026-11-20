@@ -516,6 +516,14 @@ import SkillboxCore
         return try await service.driftedSkills(projectID: project.id)
     }
 
+    /// Skills changed in this Mac's user directories since the last global sync.
+    func driftedGlobalSkills() async throws -> [DriftedSkill] { try await requireService().driftedGlobalSkills() }
+
+    @discardableResult
+    func adoptGlobalChanges(_ changes: [DriftedSkill]) async -> Bool {
+        await performing { let updated = try await self.requireService().adoptSkillChanges(changes); self.message = "Przejęto zmiany z Tego Maca: \(updated.map(\.id).joined(separator: ", "))" }
+    }
+
     /// Both halves of "przejmij z projektu" as one action, so the sheet reports one result and the
     /// library takes one recovery snapshot for what the user thinks of as a single decision.
     @discardableResult

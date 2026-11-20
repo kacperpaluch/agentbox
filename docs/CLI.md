@@ -133,6 +133,8 @@ agentbox sync global --skills seo-audit,docx --tags seo --tools claude,opencode
 agentbox sync global --docs zasady-globalne --dry-run
 agentbox sync global --no-doc
 agentbox sync global --dry-run
+agentbox global adopt-changes
+agentbox global adopt-changes --yes
 ```
 
 `sync project` i `sync all` synchronizują razem skille, MCP, dokumenty i pluginy Claude Code wybrane dla projektu, tą samą ścieżką transakcyjną co GUI: przed zapisem powstaje backup projektu, a błąd cofa zmiany. Plugin jest instalowany tylko wtedy, gdy projekt jeszcze go nie deklaruje — ten już zainstalowany nie kosztuje wywołania CLI Claude Code. `sync all` pomija projekty, których folderu nie ma na dysku, i wypisuje je jako `? nazwa — brak folderu, pominięto` (to nie jest błąd). Zatrzymuje serię na pierwszym błędzie i wypisuje wynik dla każdego projektu — `✓` zsynchronizowany, `✗` cofnięty, `–` pominięty. Jeśli którykolwiek projekt został cofnięty albo pominięty, polecenie po wypisaniu raportu kończy się kodem 1.
@@ -141,7 +143,9 @@ agentbox sync global --dry-run
 
 `--docs <id>` albo `--doc-tags <tag>` wybiera dokument dla Tego Maca, a `--no-doc` go odpina; skille zostają wtedy takie, jak były zapisane. Dokument trafia do `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.config/opencode/AGENTS.md` i `~/.vibe/AGENTS.md` zaznaczonych narzędzi, a wiersz `<narzędzie> dokument:` mówi, co się z nim stanie: `+id` (dodany), `~id` (nowa treść), `-id` (usunięty) albo `bez zmian`.
 
-`--dry-run` pokazuje planowane zmiany bez zapisu — również bez zapisu wyboru podanego w `--skills`, `--tags`, `--docs` i `--tools`.
+`--dry-run` pokazuje planowane zmiany bez zapisu — również bez zapisu wyboru podanego w `--skills`, `--tags`, `--docs` i `--tools`. Skill zmieniony wprost w katalogu użytkownika dostaje osobny wiersz `! <narzędzie>: <skill> zmieniony w …`, bo synchronizacja by go nadpisała. Klient, którego kopie już odpowiadają bibliotece, nie jest przepisywany.
+
+`global adopt-changes` to `project adopt-changes` dla Tego Maca: bez `--yes` wypisuje zarządzane skille zmienione w katalogach użytkownika od ostatniej synchronizacji, z `--yes` zastępuje nimi kopie w bibliotece. Skille z Git są oznaczone i pomijane.
 
 Synchronizacja zatrzymuje się, jeśli w katalogu docelowym istnieje katalog skilla o tej samej nazwie, którego Agentbox nie ma w swoim manifeście. Ręcznie napisany skill nie zostanie nadpisany — usuń go lub zmień nazwę, jeśli ma go zastąpić wersja z biblioteki.
 

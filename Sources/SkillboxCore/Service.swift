@@ -878,7 +878,9 @@ public actor SkillboxService {
         }
     }
 
-    static func skillPreview(tool: Tool, target: URL, current: [Skill], library: URL) throws -> SkillSyncPreview {
+    /// `libraryTrees` are library skills already read by the caller; a skill missing from it could
+    /// not be read and counts as outdated, exactly like a failed comparison.
+    static func skillPreview(tool: Tool, target: URL, current: [Skill], library: URL, libraryTrees: [String: SkillTree]? = nil) throws -> SkillSyncPreview {
         let manifest = try skillManifest(at: target)
         let previous = Set(manifest.skills.keys)
         let ids = Set(current.map(\.id))
@@ -890,7 +892,10 @@ public actor SkillboxService {
         let outdated = current.filter { skill in
             guard let written = manifest.skills[skill.id] else { return false }
             if !fm.fileExists(atPath: target.appending(path: skill.id).path) { return true }
-            return skill.updatedAt > written || !directoryMatches(library.appending(path: skill.id), target.appending(path: skill.id))
+            let copy = target.appending(path: skill.id)
+            let matches = libraryTrees.map { trees in trees[skill.id].map { (try? SkillTree.read(copy)) == $0 } ?? false }
+                ?? directoryMatches(library.appending(path: skill.id), copy)
+            return skill.updatedAt > written || !matches
         }
         return SkillSyncPreview(
             tool: tool,

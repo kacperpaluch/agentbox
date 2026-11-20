@@ -18,6 +18,7 @@ public enum AgentboxCommand {
       agentbox sync project <name> [--dry-run]
       agentbox sync all [--dry-run]
       agentbox sync global [--skills a,b] [--tags x] [--tools claude,codex,opencode,vibe]
+      agentbox global adopt-changes [--yes]
       agentbox tools [set claude,codex]
       agentbox refresh
       agentbox mcp list|server|assign|preview|sync ...
@@ -137,6 +138,17 @@ public enum AgentboxCommand {
             // A folder left out must be visible to automation, not just printed.
             guard blocked.isEmpty else { throw PartialFailure(lines: lines, errorDescription: "pominięto \(blocked.count) folderów") }
             return lines
+        // `project adopt-changes` for this Mac: skills changed in a client's user directory.
+        case "global" where rest.first == "adopt-changes":
+            let drifted = try await service.driftedGlobalSkills()
+            guard !drifted.isEmpty else { return ["Żaden zarządzany skill nie zmienił się na Tym Macu"] }
+            guard args.contains("--yes") else {
+                return ["Zmienione na Tym Macu: \(drifted.count)"]
+                    + drifted.map { "  \($0.skillID)\t\($0.tool.rawValue)\t\($0.path)\($0.isGitBacked ? "\t(z Git — zmień repozytorium źródłowe)" : "")" }
+                    + ["Dodaj --yes, aby zastąpić kopie w bibliotece wersjami z Tego Maca."]
+            }
+            let adopted = try await service.adoptSkillChanges(drifted.filter { !$0.isGitBacked })
+            return ["Przejęto zmiany: \(adopted.map(\.id).joined(separator: ", "))"]
         case "tools":
             if rest.first == "set", rest.count >= 2 {
                 try await service.setEnabledTools(try rest[1].split(separator: ",").map { try tool(String($0)) })
@@ -359,7 +371,10 @@ public enum AgentboxCommand {
             // The document plan comes first: once the sync has run, it would only say "bez zmian".
             let docs = try await service.previewGlobalDocs(selection: draft)
             let previews: [SkillSyncPreview]
+            var drifted: [String] = []
             if dry {
+                // Synchronizing overwrites these copies; the preview is where that has to show.
+                drifted = try await service.driftedGlobalSkills().map { "! \($0.tool.rawValue): \($0.skillID) zmieniony w \($0.path) — sync go nadpisze; agentbox global adopt-changes przejmie zmianę do biblioteki" }
                 // A preview writes nothing, the selection included.
                 previews = try await service.previewGlobalSync(selection: draft)
             } else {
@@ -368,7 +383,7 @@ public enum AgentboxCommand {
             }
             guard !previews.isEmpty || !docs.isEmpty else { return ["Nie wybrano narzędzi dla synchronizacji globalnej"] }
             return previews.map { "\($0.tool.rawValue): +\($0.added.count) ~\($0.updated.count) -\($0.removed.count) → \($0.target)" }
-                + docs.map { "\($0.tool.rawValue) dokument: \(Self.docState($0)) → \($0.file)" }
+                + docs.map { "\($0.tool.rawValue) dokument: \(Self.docState($0)) → \($0.file)" } + drifted
         case "all":
             let missing = try await service.projectsWithoutFolder().map { "? \($0.name) — brak folderu, pominięto" }
             guard !dry else {

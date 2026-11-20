@@ -62,6 +62,58 @@ final class GlobalSyncTests: AgentboxTestCase {
         XCTAssertEqual(localAfter.skills.map(\.updated), [[]])
     }
 
+    /// A copy edited in `~/.claude/skills` is reported like a project's, and adopting it puts the
+    /// edit into the library instead of letting the next sync overwrite it.
+    func testCopyEditedInTheUserDirectoryIsReportedAndAdopted() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/notes"), home = root.appending(path: "home")
+        for directory in [source, home] { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
+        try "---\nname: notes\ndescription: Demo\n---\nwersja 1\n".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        try await service.setSelection(AttachmentSelection(tools: [.claude], skillIDs: ["notes"]), for: .global)
+        _ = try await service.syncGlobalSelection(home: home)
+        let none = try await service.driftedGlobalSkills(home: home)
+        XCTAssertTrue(none.isEmpty)
+
+        let copy = home.appending(path: ".claude/skills/notes/SKILL.md")
+        try "---\nname: notes\ndescription: Demo\n---\npoprawka na Macu\n".write(to: copy, atomically: true, encoding: .utf8)
+        let drifted = try await service.driftedGlobalSkills(home: home)
+        XCTAssertEqual(drifted.map(\.skillID), ["notes"])
+        XCTAssertNil(drifted.first?.projectID)
+        XCTAssertEqual(drifted.first?.tool, .claude)
+
+        _ = try await service.adoptSkillChanges(drifted)
+        let library = try await service.skillMarkdown(skillID: "notes")
+        XCTAssertTrue(library.contains("poprawka na Macu"))
+        let after = try await service.previewGlobalSync(home: home)
+        XCTAssertEqual(after.map(\.updated), [[]], "kopia, z której przejęto zmianę, jest już aktualna")
+        let remaining = try await service.driftedGlobalSkills(home: home)
+        XCTAssertTrue(remaining.isEmpty)
+    }
+
+    /// Synchronizing a Mac whose copies already match rewrites nothing; a library change still lands.
+    func testUnchangedClientIsNotRewritten() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let source = root.appending(path: "source/notes"), home = root.appending(path: "home")
+        for directory in [source, home] { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
+        try "---\nname: notes\ndescription: Demo\n---\n".write(to: source.appending(path: "SKILL.md"), atomically: true, encoding: .utf8)
+        let service = try SkillboxService(root: root.appending(path: "data"))
+        _ = try await service.addLocal(path: source.path)
+        try await service.setSelection(AttachmentSelection(tools: [.claude], skillIDs: ["notes"]), for: .global)
+        _ = try await service.syncGlobalSelection(home: home)
+
+        let copy = home.appending(path: ".claude/skills/notes/SKILL.md")
+        let past = Date(timeIntervalSince1970: 1_000_000)
+        try FileManager.default.setAttributes([.modificationDate: past], ofItemAtPath: copy.path)
+        _ = try await service.syncGlobalSelection(home: home)
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: copy.path)[.modificationDate] as? Date, past)
+
+        try "---\nname: notes\ndescription: Demo\n---\nnowe\n".write(to: root.appending(path: "data/skills/notes/SKILL.md"), atomically: true, encoding: .utf8)
+        _ = try await service.syncGlobalSelection(home: home)
+        XCTAssertTrue(try String(contentsOf: copy, encoding: .utf8).contains("nowe"))
+    }
+
     /// The second client fails; the first one, already written, must come back as it was.
     func testFailingClientRollsBackTheClientsAlreadyWritten() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)

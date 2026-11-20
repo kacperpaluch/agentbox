@@ -85,14 +85,19 @@ extension SkillboxService {
         let docPlans = try await globalDocPlans(nil, home: home)
         let chosen = try await globalSelectionForSync(nil)
         let abandoned = Self.abandonedGlobalTools(chosen: chosen, among: try await enabledTools(), home: home)
-        let current = try await selectedSkills(ids: chosen.skillIDs, tags: chosen.skillTags, excluding: chosen.excludedSkillIDs).map(\.id)
+        let selected = try await selectedSkills(ids: chosen.skillIDs, tags: chosen.skillTags, excluding: chosen.excludedSkillIDs)
+        let current = selected.map(\.id)
+        // A client whose copies already match the library is left alone: rewriting identical bytes
+        // also copied every one of its skills aside first. The preview compares the bytes.
+        let changed = Set(previews.filter { !$0.added.isEmpty || !$0.updated.isEmpty || !$0.removed.isEmpty }.map(\.tool))
+        let written = chosen.tools.filter(changed.contains)
         let fm = FileManager.default
         let scratch = Self.scratchDirectory()
         try fm.createDirectory(at: scratch, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         var keep = false
         defer { if !keep { try? fm.removeItem(at: scratch) } }
         var saved: [(target: URL, existed: Bool, entries: [(name: String, copy: URL?)])] = []
-        for (index, tool) in (chosen.tools + abandoned).enumerated() {
+        for (index, tool) in (written + abandoned).enumerated() {
             let target = tool.globalSkillsURL(home: home)
             let names = Set(try Self.managedSkillIDs(at: target)).union(current).union([".skillbox.json"])
             var entries: [(name: String, copy: URL?)] = []
@@ -122,7 +127,7 @@ extension SkillboxService {
             saved.append((target, fm.fileExists(atPath: target.path), entries))
         }
         do {
-            for tool in chosen.tools {
+            for tool in written {
                 try Self.injectedFailure?("global:\(tool.rawValue)")
                 _ = try await syncGlobal(tool: tool, skillIDs: chosen.skillIDs, tags: chosen.skillTags, excluding: chosen.excludedSkillIDs, home: home)
             }
@@ -153,6 +158,11 @@ extension SkillboxService {
             }
             keep = !report.succeeded
             throw report.error(after: error, keeping: keep ? scratch.path : nil)
+        }
+        // Only the manifest's bookkeeping moves for an unchanged client, as for a project that is up
+        // to date: an older manifest gets its digests, so a later edit of a copy can be recognised.
+        if !selected.isEmpty {
+            for tool in chosen.tools where !changed.contains(tool) { try Self.writeSkillManifest(selected, to: tool.globalSkillsURL(home: home)) }
         }
         return previews
     }

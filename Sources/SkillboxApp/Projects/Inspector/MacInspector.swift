@@ -11,6 +11,8 @@ struct MacInspector: View {
     @State private var saved = AttachmentSelection()
     @State private var previews: [SkillSyncPreview] = []
     @State private var docPreviews: [GlobalDocPreview] = []
+    @State private var drifted: [DriftedSkill] = []
+    @State private var confirmingAdopt = false
     @State private var error = ""
     @State private var showClientServers = false
 
@@ -43,6 +45,13 @@ struct MacInspector: View {
                                     SyncChangeRows(added: item.added, updated: item.updated, removed: item.removed)
                                 }
                             }
+                            ForEach(drifted) { item in
+                                Label("\(item.skillName) · \(item.tool.rawValue): zmiana w kopii, synchronizacja ją nadpisze\(item.isGitBacked ? " (skill z Git — zmień repozytorium źródłowe)" : "")", systemImage: "exclamationmark.triangle")
+                                    .foregroundStyle(.orange).help(item.path)
+                            }
+                            if drifted.contains(where: { !$0.isGitBacked }) {
+                                Button("Przejmij zmiany do biblioteki…") { confirmingAdopt = true }.disabled(model.isWorking)
+                            }
                             ForEach(docPreviews, id: \.tool) { item in
                                 VStack(alignment: .leading, spacing: Space.tight) {
                                     Text(item.file).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
@@ -69,6 +78,12 @@ struct MacInspector: View {
             }
         }
         .sheet(isPresented: $showClientServers) { ClientServersView(model: model) }
+        .confirmationDialog("Przejąć zmiany z Tego Maca do biblioteki?", isPresented: $confirmingAdopt) {
+            Button("Przejmij zmiany", role: .destructive) {
+                Task { if !(await model.adoptGlobalChanges(drifted.filter { !$0.isGitBacked })) { error = model.message }; await refresh() }
+            }
+            Button("Anuluj", role: .cancel) {}
+        } message: { Text("Kopie w bibliotece zostaną zastąpione wersjami z katalogów użytkownika. Projekty z tymi skillami dostaną zmianę przy synchronizacji.") }
         .onChange(of: selection) { Task { await refresh() } }
         .onChange(of: model.generation) { if !isDirty { load() } }
         .task { load(); await refresh() }
@@ -88,7 +103,8 @@ struct MacInspector: View {
         do {
             previews = try await model.previewGlobalSync(selection)
             docPreviews = try await model.previewGlobalDocs(selection)
+            drifted = try await model.driftedGlobalSkills()
             error = ""
-        } catch { previews = []; docPreviews = []; self.error = error.localizedDescription }
+        } catch { previews = []; docPreviews = []; drifted = []; self.error = error.localizedDescription }
     }
 }

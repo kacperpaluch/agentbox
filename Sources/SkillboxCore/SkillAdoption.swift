@@ -1,6 +1,7 @@
 import Foundation
 
-/// A managed skill whose copy inside a project no longer matches the library's.
+/// A managed skill whose copy inside a project — or in this Mac's user directory — no longer
+/// matches the library's.
 ///
 /// Only the unambiguous case is reported: the library copy still holds what was written into this
 /// project, so the difference can only have come from the project side, where the user was working.
@@ -12,7 +13,8 @@ import Foundation
 public struct DriftedSkill: Identifiable, Hashable, Sendable {
     public var skillID: String
     public var skillName: String
-    public var projectID: UUID
+    /// `nil` for this Mac's copy in a client's user directory (`Tool.globalSkillsURL`).
+    public var projectID: UUID?
     public var projectName: String
     public var tool: Tool
     /// The project's copy — the one that would replace the library's.
@@ -25,7 +27,7 @@ public struct DriftedSkill: Identifiable, Hashable, Sendable {
     /// so a library edited in the meantime is never overwritten by a stale proposal.
     var libraryDigest: String
     var projectDigest: String
-    public var id: String { "\(projectID.uuidString)|\(tool.rawValue)|\(skillID)" }
+    public var id: String { "\(projectID?.uuidString ?? "global")|\(tool.rawValue)|\(skillID)" }
 }
 
 extension SkillboxService {
@@ -37,7 +39,6 @@ extension SkillboxService {
         let catalog = try await store.catalog()
         let library = await store.skillsDirectory
         let known = Dictionary(catalog.skills.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let fm = FileManager.default
         var found: [DriftedSkill] = []
         for project in config.resolvedProjects.sorted(by: { $0.name < $1.name }) where projectID == nil || project.id == projectID {
             let projectURL = URL(fileURLWithPath: project.path)
@@ -51,29 +52,53 @@ extension SkillboxService {
                     if projectID != nil { throw error }
                     continue
                 }
-                for (id, written) in manifest.skills.sorted(by: { $0.key < $1.key }) {
-                    guard let skill = known[id] else { continue }
-                    let copy = target.appending(path: id)
-                    guard fm.fileExists(atPath: copy.path),
-                          let projectDigest = Self.skillDigest(copy),
-                          let libraryDigest = Self.skillDigest(library.appending(path: id)),
-                          projectDigest != libraryDigest else { continue }
-                    if let recorded = manifest.digests?[id] {
-                        // Only the project moved away from what was written.
-                        guard projectDigest != recorded, libraryDigest == recorded else { continue }
-                    } else {
-                        // The library moved on since this project was written, so what differs here
-                        // is an ordinary pending update, not something the project has to offer back.
-                        guard skill.updatedAt <= written else { continue }
-                    }
-                    found.append(DriftedSkill(
-                        skillID: id, skillName: skill.name,
-                        projectID: project.id, projectName: project.name,
-                        tool: tool, path: copy.path, isGitBacked: skill.source.kind == .git,
-                        libraryDigest: libraryDigest, projectDigest: projectDigest
-                    ))
-                }
+                found += Self.driftedSkills(in: target, manifest: manifest, known: known, library: library, owner: (project.id, project.name), tool: tool)
             }
+        }
+        return found
+    }
+
+    /// Skills changed in this Mac's user directories since the last `sync global` — the same
+    /// question as `driftedSkills`, asked of every enabled client that holds an Agentbox manifest.
+    /// Without it an edit made in `~/.claude/skills` was overwritten by the next sync unannounced.
+    public func driftedGlobalSkills(home: URL = FileManager.default.homeDirectoryForCurrentUser) async throws -> [DriftedSkill] {
+        let catalog = try await store.catalog()
+        let library = await store.skillsDirectory
+        let known = Dictionary(catalog.skills.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var found: [DriftedSkill] = []
+        for tool in try await enabledTools() {
+            let target = tool.globalSkillsURL(home: home)
+            guard FileManager.default.fileExists(atPath: target.appending(path: ".skillbox.json").path) else { continue }
+            found += Self.driftedSkills(in: target, manifest: try Self.skillManifest(at: target), known: known, library: library, owner: (nil, "Ten Mac"), tool: tool)
+        }
+        return found
+    }
+
+    /// The managed copies in one target that changed there, and only there, since they were written.
+    private static func driftedSkills(in target: URL, manifest: SkillManifest, known: [String: Skill], library: URL, owner: (id: UUID?, name: String), tool: Tool) -> [DriftedSkill] {
+        let fm = FileManager.default
+        var found: [DriftedSkill] = []
+        for (id, written) in manifest.skills.sorted(by: { $0.key < $1.key }) {
+            guard let skill = known[id] else { continue }
+            let copy = target.appending(path: id)
+            guard fm.fileExists(atPath: copy.path),
+                  let projectDigest = Self.skillDigest(copy),
+                  let libraryDigest = Self.skillDigest(library.appending(path: id)),
+                  projectDigest != libraryDigest else { continue }
+            if let recorded = manifest.digests?[id] {
+                // Only the copy moved away from what was written.
+                guard projectDigest != recorded, libraryDigest == recorded else { continue }
+            } else {
+                // The library moved on since this copy was written, so what differs here
+                // is an ordinary pending update, not something the copy has to offer back.
+                guard skill.updatedAt <= written else { continue }
+            }
+            found.append(DriftedSkill(
+                skillID: id, skillName: skill.name,
+                projectID: owner.id, projectName: owner.name,
+                tool: tool, path: copy.path, isGitBacked: skill.source.kind == .git,
+                libraryDigest: libraryDigest, projectDigest: projectDigest
+            ))
         }
         return found
     }

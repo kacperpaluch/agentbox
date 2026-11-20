@@ -84,16 +84,16 @@ extension SkillboxService {
                 statuses.append(ProjectStatus(projectID: project.id, state: .missing)); continue
             }
             do {
-                let preview = try await previewProjectSync(projectID: project.id)
+                let preview = try await previewProjectSync(projectID: project.id, libraryTrees: libraryTrees)
                 // A plugin Claude Code has not been asked for yet is as pending as a missing skill:
                 // without it here a project stayed `synchronized` while its selection was not applied.
                 let added = preview.skills.reduce(0) { $0 + $1.added.count } + preview.mcp.reduce(0) { $0 + $1.added.count + $1.disabledGlobalAdded.count } + (preview.docs.first?.added.count ?? 0) + preview.missingPlugins.count
                 // Everything above counts *names*: a skill id, a server name, a document id. A
-                // server whose command was corrected, a document rewritten in place or a skill
-                // edited straight in the library folder all keep their name, so the project kept
-                // reporting itself as synchronized while its files no longer matched the library.
+                // server whose command was corrected or a document rewritten in place keeps its
+                // name, so the project kept reporting itself as synchronized while its files no
+                // longer matched the library. Skills need no such pass: `skillPreview` compares them.
                 let selected = SkillboxService.selectedSkills(in: catalog, for: project)
-                let drifted = await driftedTargets(preview, skills: selected, libraryTrees: libraryTrees)
+                let drifted = await driftedTargets(preview, skills: selected)
                 let outdated = preview.skills.reduce(0) { $0 + $1.updated.count } + drifted
                 let removed = preview.skills.reduce(0) { $0 + $1.removed.count } + preview.mcp.reduce(0) { $0 + $1.removed.count + $1.disabledGlobalRemoved.count } + (preview.docs.first?.removed.count ?? 0)
                 let stale = preview.mcp.contains { $0.staleFile != nil } ? 1 : 0
@@ -245,6 +245,11 @@ extension SkillboxService {
     }
 
     public func previewProjectSync(projectID: UUID) async throws -> ProjectSyncPreview {
+        try await previewProjectSync(projectID: projectID, libraryTrees: nil)
+    }
+
+    /// `libraryTrees` are library skills already read for this run (see `projectStatuses`).
+    func previewProjectSync(projectID: UUID, libraryTrees: [String: SkillTree]?) async throws -> ProjectSyncPreview {
         let config = try await store.configuration()
         guard let project = config.resolvedProjects.first(where: { $0.id == projectID }) else { throw SkillboxError.projectNotFound(projectID.uuidString) }
         let catalog = try await store.catalog()
@@ -252,7 +257,7 @@ extension SkillboxService {
         let library = await store.skillsDirectory
         let perTool: [(Tool, [Skill])] = try project.tools.map { ($0, selected) } + Self.abandonedTools(project: project, among: config.activeTools).map { ($0, []) }
         let skills = try perTool.map { tool, current in
-            try SkillboxService.skillPreview(tool: tool, target: try SkillboxService.managedTarget(project: URL(fileURLWithPath: project.path), tool: tool), current: current, library: library)
+            try SkillboxService.skillPreview(tool: tool, target: try SkillboxService.managedTarget(project: URL(fileURLWithPath: project.path), tool: tool), current: current, library: library, libraryTrees: libraryTrees)
         }
         let ids = config.selections[config.selectionID(for: project).uuidString]?.claudePluginIDs ?? []
         let plugins = try await previewClaudePlugins(projectPath: project.path, ids: ids)
@@ -286,22 +291,14 @@ extension SkillboxService {
     /// By default a target whose name lists already report the change is not counted again, so the
     /// status does not show the same server as both added and outdated. `isUpToDate` passes
     /// `includingRenamed` because it needs one plain yes-or-no about the files.
-    ///
-    /// `libraryTrees` are the library copies already read for this run; a skill missing from it
-    /// could not be read and counts as drifted, exactly like a failed comparison.
-    func driftedTargets(_ preview: ProjectSyncPreview, skills: [Skill], includingRenamed: Bool = false, libraryTrees: [String: SkillTree]? = nil) async -> Int {
+    func driftedTargets(_ preview: ProjectSyncPreview, skills: [Skill], includingRenamed: Bool = false) async -> Int {
         let library = await store.skillsDirectory
-        func matches(_ id: String, in target: URL) -> Bool {
-            guard let libraryTrees else { return Self.directoryMatches(library.appending(path: id), target.appending(path: id)) }
-            guard let expected = libraryTrees[id], let copy = try? SkillTree.read(target.appending(path: id)) else { return false }
-            return copy == expected
-        }
         var count = 0
-        // `updated` counts too: a skill the manifest already reports as outdated must not be
-        // counted a second time here as drift.
-        for item in preview.skills where includingRenamed || (item.added.isEmpty && item.removed.isEmpty && item.updated.isEmpty) {
+        // Skills only for `includingRenamed`: `skillPreview` already compares every managed skill
+        // byte for byte and lists a differing one as `updated`, so a target with empty lists matches.
+        for item in preview.skills where includingRenamed {
             let target = URL(fileURLWithPath: item.target)
-            if skills.contains(where: { !matches($0.id, in: target) }) { count += 1 }
+            if skills.contains(where: { !Self.directoryMatches(library.appending(path: $0.id), target.appending(path: $0.id)) }) { count += 1 }
         }
         count += preview.mcp.filter { (includingRenamed || ($0.added.isEmpty && $0.removed.isEmpty)) && !Self.fileMatches($0.file, content: $0.content) }.count
         // Claude Code's opt-out lives in its own file, outside `content`. Leaving it out of the
